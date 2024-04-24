@@ -103,7 +103,7 @@ public:
   double getHeight(double volume) override;
   double getVolume(double height) override;
 
-  const double radius_;  // radius of the base of the cap
+  const double radius_;  // radius of the spherical cap
 };
 
 }  // namespace geometry
