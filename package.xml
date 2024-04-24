@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>sodf</name>
+  <version>0.0.0</version>
+  <description>Semantic Object Description Format</description>
+
+  <author>Captain Yoshi</author>
+  <maintainer email="captain.yoshisaur@gmail.com">Captain Yoshi</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+
+</package>

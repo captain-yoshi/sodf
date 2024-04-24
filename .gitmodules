@@ -1,0 +1,3 @@
+[submodule "quarticRootsFlocke"]
+	path = ext/quarticRootsFlocke
+	url = https://github.com/ebertolazzi/quarticRootsFlocke
