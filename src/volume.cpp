@@ -88,7 +88,7 @@ double getHeight(const SphericalCapVolume& shape, double volume)
 
   double a = (1.0 / 6.0) * M_PI;
   double b = 0.0;
-  double c = 0.5 * M_PI * a * a;
+  double c = 0.5 * M_PI * shape.cap_radius_ * shape.cap_radius_;
   double d = -volume;
 
   double roots[5] = {};
