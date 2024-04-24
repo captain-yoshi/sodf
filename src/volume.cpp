@@ -184,7 +184,7 @@ double getVolume(const SphericalCapVolume& shape, double height)
   if (height <= 0.0 || height > shape.height_)
     return 0.0;
 
-  return (1.0 / 6.0) * M_PI * height * (3 * shape.radius_ * shape.radius_ + height * height);
+  return (1.0 / 6.0) * M_PI * height * (3 * shape.cap_radius_ * shape.cap_radius_ + height * height);
 }
 
 BaseVolume::BaseVolume(double height, double volume) : height_(height), volume_(volume)
@@ -234,8 +234,8 @@ double TruncatedConeVolume::getVolume(double height)
   return ::sodf::geometry::getVolume(*this, height);
 }
 
-SphericalCapVolume::SphericalCapVolume(double radius, double height)
-  : radius_(radius), BaseVolume(height, getVolume(height))
+SphericalCapVolume::SphericalCapVolume(double cap_radius, double height)
+  : cap_radius_(cap_radius), BaseVolume(height, getVolume(height))
 {
 }
 

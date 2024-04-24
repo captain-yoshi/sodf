@@ -98,12 +98,12 @@ public:
 class SphericalCapVolume : public BaseVolume
 {
 public:
-  SphericalCapVolume(double radius, double height);
+  SphericalCapVolume(double cap_radius, double height);
 
   double getHeight(double volume) override;
   double getVolume(double height) override;
 
-  const double radius_;  // radius of the spherical cap
+  const double cap_radius_;  // radius of the spherical cap
 };
 
 }  // namespace geometry
