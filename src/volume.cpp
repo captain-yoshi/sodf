@@ -57,7 +57,7 @@ double getHeight(std::vector<BaseVolume> shapes, double volume, double epsilon)
 
 double getHeight(const RectangularPrismVolume& shape, double volume)
 {
-  if (volume <= 0.0)
+  if (volume <= 0.0 || volume > shape.volume_)
     return 0.0;
 
   return volume / (shape.length_ * shape.width_);
@@ -65,7 +65,7 @@ double getHeight(const RectangularPrismVolume& shape, double volume)
 
 double getHeight(const CylinderVolume& shape, double volume)
 {
-  if (volume <= 0.0)
+  if (volume <= 0.0 || volume > shape.volume_)
     return 0.0;
 
   return volume / (M_PI * shape.radius_ * shape.radius_);
@@ -73,7 +73,7 @@ double getHeight(const CylinderVolume& shape, double volume)
 
 double getHeight(const TruncatedConeVolume& shape, double volume)
 {
-  if (volume <= 0.0)
+  if (volume <= 0.0 || volume > shape.volume_)
     return 0.0;
 
   return ((double)3.0 * volume / M_PI) * (double)1.0 /
@@ -83,7 +83,7 @@ double getHeight(const TruncatedConeVolume& shape, double volume)
 
 double getHeight(const SphericalCapVolume& shape, double volume)
 {
-  if (volume <= 0.0)
+  if (volume <= 0.0 || volume > shape.volume_)
     return 0.0;
 
   double a = (1.0 / 6.0) * M_PI;
@@ -154,7 +154,7 @@ double getVolume(std::vector<BaseVolume> shapes, double height, double epsilon)
 
 double getVolume(const RectangularPrismVolume& shape, double height)
 {
-  if (height <= 0.0)
+  if (height <= 0.0 || height > shape.height_)
     return 0.0;
 
   return shape.length_ * shape.width_ * height;
@@ -162,7 +162,7 @@ double getVolume(const RectangularPrismVolume& shape, double height)
 
 double getVolume(const CylinderVolume& shape, double height)
 {
-  if (height <= 0.0)
+  if (height <= 0.0 || height > shape.height_)
     return 0.0;
 
   return M_PI * shape.radius_ * shape.radius_ * height;
@@ -170,7 +170,7 @@ double getVolume(const CylinderVolume& shape, double height)
 
 double getVolume(const TruncatedConeVolume& shape, double height)
 {
-  if (height <= 0.0)
+  if (height <= 0.0 || height > shape.height_)
     return 0.0;
 
   return (1.0 / 3.0) * M_PI *
@@ -181,7 +181,7 @@ double getVolume(const TruncatedConeVolume& shape, double height)
 
 double getVolume(const SphericalCapVolume& shape, double height)
 {
-  if (height <= 0.0)
+  if (height <= 0.0 || height > shape.height_)
     return 0.0;
 
   return (1.0 / 6.0) * M_PI * height * (3 * shape.radius_ * shape.radius_ + height * height);
