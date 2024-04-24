@@ -104,6 +104,7 @@ public:
   double getVolume(double height) override;
 
   const double cap_radius_;  // radius of the spherical cap
+  const double radius_;      // radius of the sphere
 };
 
 }  // namespace geometry

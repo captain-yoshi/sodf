@@ -86,9 +86,9 @@ double getHeight(const SphericalCapVolume& shape, double volume)
   if (volume <= 0.0 || volume > shape.volume_)
     return 0.0;
 
-  double a = (1.0 / 6.0) * M_PI;
-  double b = 0.0;
-  double c = 0.5 * M_PI * shape.cap_radius_ * shape.cap_radius_;
+  double a = -M_PI / 3.0;
+  double b = M_PI * shape.radius_;
+  double c = 0;
   double d = -volume;
 
   double roots[5] = {};
@@ -184,7 +184,8 @@ double getVolume(const SphericalCapVolume& shape, double height)
   if (height <= 0.0 || height > shape.height_)
     return 0.0;
 
-  return (1.0 / 6.0) * M_PI * height * (3 * shape.cap_radius_ * shape.cap_radius_ + height * height);
+  // Use the sphere radius formula
+  return M_PI * height * height * (shape.radius_ - (1.0 / 3.0) * height);
 }
 
 BaseVolume::BaseVolume(double height, double volume) : height_(height), volume_(volume)
@@ -235,7 +236,9 @@ double TruncatedConeVolume::getVolume(double height)
 }
 
 SphericalCapVolume::SphericalCapVolume(double cap_radius, double height)
-  : cap_radius_(cap_radius), BaseVolume(height, getVolume(height))
+  : cap_radius_(cap_radius)
+  , radius_((cap_radius * cap_radius + height * height) / (2 * height))
+  , BaseVolume(height, getVolume(height))
 {
 }
 
