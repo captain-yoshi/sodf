@@ -12,7 +12,6 @@ set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
 catkin_package(
   LIBRARIES
     ${PROJECT_NAME}
-    quarticRootsFlocke
   INCLUDE_DIRS
     include
     ${quarticRootsFlocke_INCLUDE_DIRS}
