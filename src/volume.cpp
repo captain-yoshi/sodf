@@ -106,7 +106,7 @@ double getHeight(const SphericalCapVolume& shape, double volume)
   double roots[5] = {};
 
   PolynomialRoots::Cubic csolve(a, b, c, d);
-  csolve.info(std::cout);
+  // csolve.info(std::cout);
   auto roots_size = csolve.getPositiveRoots(roots);
 
   if (roots_size == 0)
