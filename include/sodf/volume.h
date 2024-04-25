@@ -20,15 +20,15 @@ class SphericalCapVolume;
 /**
  * @brief Computes the height of the shape/s given a volume
  */
-double getHeight(std::vector<BaseVolume> shapes);
-double getHeight(std::vector<BaseVolume> shapes, double volume);
+double getHeight(const std::vector<BaseVolume*>& shapes);
+double getHeight(const std::vector<BaseVolume*>& shapes, double volume, double epsilon);
 double getHeight(const RectangularPrismVolume& shape, double volume);
 double getHeight(const CylinderVolume& shape, double volume);
 double getHeight(const TruncatedConeVolume& shape, double volume);
 double getHeight(const SphericalCapVolume& shape, double volume);
 
-double getVolume(std::vector<BaseVolume> shapes);
-double getVolume(std::vector<BaseVolume> shapes, double height);
+double getVolume(const std::vector<BaseVolume*>& shapes);
+double getVolume(const std::vector<BaseVolume*>& shapes, double height, double epsilon);
 double getVolume(const RectangularPrismVolume& shape, double height);
 double getVolume(const CylinderVolume& shape, double height);
 double getVolume(const TruncatedConeVolume& shape, double height);

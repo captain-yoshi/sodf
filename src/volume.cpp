@@ -6,17 +6,17 @@
 namespace sodf {
 namespace geometry {
 
-double getHeight(std::vector<BaseVolume> shapes)
+double getHeight(const std::vector<BaseVolume*>& shapes)
 {
   double height = 0.0;
 
   for (std::size_t i = 0; i < shapes.size(); ++i)
-    height += shapes[i].height();
+    height += shapes[i]->height();
 
   return height;
 }
 
-double getHeight(std::vector<BaseVolume> shapes, double volume, double epsilon)
+double getHeight(const std::vector<BaseVolume*>& shapes, double volume, double epsilon)
 {
   double height = 0.0;
 
@@ -28,17 +28,17 @@ double getHeight(std::vector<BaseVolume> shapes, double volume, double epsilon)
     auto& shape = shapes[i];
 
     // guard against bad shape
-    if (shape.volume() == 0.0)
+    if (shape->volume() == 0.0)
       return 0.0;
 
-    if (volume >= shape.volume())
+    if (volume >= shape->volume())
     {
-      height += shape.height();
-      volume = volume - shape.volume();
+      height += shape->height();
+      volume = volume - shape->volume();
     }
     else
     {
-      double shape_height = shape.getHeight(volume);
+      double shape_height = shape->getHeight(volume);
       if (shape_height == 0.0)
         return 0.0;
 
@@ -115,17 +115,17 @@ double getHeight(const SphericalCapVolume& shape, double volume)
     return roots[0];
 }
 
-double getVolume(std::vector<BaseVolume> shapes)
+double getVolume(const std::vector<BaseVolume*>& shapes)
 {
   double volume = 0.0;
 
   for (std::size_t i = 0; i < shapes.size(); ++i)
-    volume += shapes[i].volume();
+    volume += shapes[i]->volume();
 
   return volume;
 }
 
-double getVolume(std::vector<BaseVolume> shapes, double height, double epsilon)
+double getVolume(const std::vector<BaseVolume*>& shapes, double height, double epsilon)
 {
   double volume = 0.0;
 
@@ -137,17 +137,17 @@ double getVolume(std::vector<BaseVolume> shapes, double height, double epsilon)
     auto& shape = shapes[i];
 
     // guard against bad shape
-    if (shape.height() == 0.0)
+    if (shape->height() == 0.0)
       return 0.0;
 
-    if (height >= shape.height())
+    if (height >= shape->height())
     {
-      volume += shape.volume();
-      height = height - shape.height();
+      volume += shape->volume();
+      height = height - shape->height();
     }
     else
     {
-      double shape_volume = shape.getVolume(height);
+      double shape_volume = shape->getVolume(height);
       if (shape_volume == 0.0)
         return 0.0;
 
