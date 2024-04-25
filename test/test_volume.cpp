@@ -30,6 +30,30 @@ TEST(RectangularPrismVolume, getHeight)
   EXPECT_NEAR(0.8, shape.getHeight(0.12), VOLUME_EPSILON);
 }
 
+TEST(CylinderVolume, getVolume)
+{
+  CylinderVolume shape(0.5, 0.8);
+
+  EXPECT_EQ(0.0, shape.getVolume(-0.5));
+  EXPECT_EQ(0.0, shape.getVolume(0.0));
+  EXPECT_EQ(0.0, shape.getVolume(0.9));
+
+  EXPECT_NEAR(0.31415926535897931, shape.getVolume(0.4), VOLUME_EPSILON);
+  EXPECT_NEAR(0.62831853071795862, shape.getVolume(0.8), VOLUME_EPSILON);
+}
+
+TEST(CylinderVolume, getHeight)
+{
+  CylinderVolume shape(0.5, 0.8);
+
+  EXPECT_EQ(0.0, shape.getHeight(-0.5));
+  EXPECT_EQ(0.0, shape.getHeight(0.0));
+  EXPECT_EQ(0.0, shape.getHeight(0.628319));
+
+  EXPECT_NEAR(0.4, shape.getHeight(0.31415926535897931), VOLUME_EPSILON);
+  EXPECT_NEAR(0.8, shape.getHeight(0.6283185307179586), VOLUME_EPSILON);
+}
+
 TEST(TruncatedConeVolume, getVolume)
 {
   TruncatedConeVolume shape1(0.5, 0.3, 0.8);
