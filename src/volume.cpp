@@ -6,7 +6,7 @@
 namespace sodf {
 namespace geometry {
 
-double getHeight(const std::vector<BaseVolume*>& shapes)
+double getHeight(const std::vector<BaseVolumePtr>& shapes)
 {
   double height = 0.0;
 
@@ -16,7 +16,7 @@ double getHeight(const std::vector<BaseVolume*>& shapes)
   return height;
 }
 
-double getHeight(const std::vector<BaseVolume*>& shapes, double volume, double epsilon)
+double getHeight(const std::vector<BaseVolumePtr>& shapes, double volume, double epsilon)
 {
   double height = 0.0;
 
@@ -115,7 +115,7 @@ double getHeight(const SphericalCapVolume& shape, double volume)
     return roots[0];
 }
 
-double getVolume(const std::vector<BaseVolume*>& shapes)
+double getVolume(const std::vector<BaseVolumePtr>& shapes)
 {
   double volume = 0.0;
 
@@ -125,7 +125,7 @@ double getVolume(const std::vector<BaseVolume*>& shapes)
   return volume;
 }
 
-double getVolume(const std::vector<BaseVolume*>& shapes, double height, double epsilon)
+double getVolume(const std::vector<BaseVolumePtr>& shapes, double height, double epsilon)
 {
   double volume = 0.0;
 

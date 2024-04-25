@@ -118,11 +118,11 @@ TEST(SphericalCapVolume, getHeight)
 
 TEST(ShapeCollectionVolume, getVolume)
 {
-  std::vector<BaseVolume*> shapes;
-  shapes.push_back(new SphericalCapVolume(5.0, 5.0));
-  shapes.push_back(new TruncatedConeVolume(5, 7, 10.0));
-  shapes.push_back(new CylinderVolume(7, 15.0));
-  shapes.push_back(new RectangularPrismVolume(7, 7, 20.0));
+  std::vector<BaseVolumePtr> shapes;
+  shapes.push_back(std::make_shared<SphericalCapVolume>(5.0, 5.0));
+  shapes.push_back(std::make_shared<TruncatedConeVolume>(5, 7, 10.0));
+  shapes.push_back(std::make_shared<CylinderVolume>(7, 15.0));
+  shapes.push_back(std::make_shared<RectangularPrismVolume>(7, 7, 20.0));
 
   double total_height = 0.0;
   for (std::size_t i = 0; i < shapes.size(); ++i)
@@ -143,11 +143,11 @@ TEST(ShapeCollectionVolume, getVolume)
 
 TEST(ShapeCollectionVolume, getHeight)
 {
-  std::vector<BaseVolume*> shapes;
-  shapes.push_back(new SphericalCapVolume(5.0, 5.0));
-  shapes.push_back(new TruncatedConeVolume(5, 7, 10.0));
-  shapes.push_back(new CylinderVolume(7, 15.0));
-  shapes.push_back(new RectangularPrismVolume(7, 7, 20.0));
+  std::vector<BaseVolumePtr> shapes;
+  shapes.push_back(std::make_shared<SphericalCapVolume>(5.0, 5.0));
+  shapes.push_back(std::make_shared<TruncatedConeVolume>(5, 7, 10.0));
+  shapes.push_back(std::make_shared<CylinderVolume>(7, 15.0));
+  shapes.push_back(std::make_shared<RectangularPrismVolume>(7, 7, 20.0));
 
   double total_height = 0.0;
   for (std::size_t i = 0; i < shapes.size(); ++i)
