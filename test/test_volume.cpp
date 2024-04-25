@@ -16,7 +16,38 @@ TEST(RectangularPrismVolume, getVolume)
 
   EXPECT_NEAR(0.06, shape.getVolume(0.4), VOLUME_EPSILON);
   EXPECT_NEAR(0.12, shape.getVolume(0.8), VOLUME_EPSILON);
+}
 
+TEST(TruncatedConeVolume, getVolume)
+{
+  TruncatedConeVolume shape1(0.5, 0.3, 0.8);
+
+  EXPECT_EQ(0.0, shape1.getVolume(-0.5));
+  EXPECT_EQ(0.0, shape1.getVolume(0.0));
+  EXPECT_EQ(0.0, shape1.getVolume(0.9));
+
+  EXPECT_NEAR(0.25551620249196988, shape1.getVolume(0.4), VOLUME_EPSILON);
+  EXPECT_NEAR(0.4105014400690663, shape1.getVolume(0.8), VOLUME_EPSILON);
+
+  TruncatedConeVolume shape2(0.3, 0.5, 0.8);
+  EXPECT_NEAR(0.4105014400690663 - 0.25551620249196988, shape2.getVolume(0.4), VOLUME_EPSILON);
+  EXPECT_NEAR(0.4105014400690663, shape2.getVolume(0.8), VOLUME_EPSILON);
+}
+
+TEST(TruncatedConeVolume, getHeight)
+{
+  TruncatedConeVolume shape1(0.5, 0.3, 0.8);
+
+  EXPECT_EQ(0.0, shape1.getHeight(-0.5));
+  EXPECT_EQ(0.0, shape1.getHeight(0.0));
+  EXPECT_EQ(0.0, shape1.getHeight(0.411));
+
+  EXPECT_NEAR(0.4, shape1.getHeight(0.25551620249196988), VOLUME_EPSILON);
+  EXPECT_NEAR(0.8, shape1.getHeight(0.4105014400), VOLUME_EPSILON);
+
+  TruncatedConeVolume shape2(0.3, 0.5, 0.8);
+  EXPECT_NEAR(0.4, shape2.getHeight(0.4105014400 - 0.25551620249196988), VOLUME_EPSILON);
+  EXPECT_NEAR(0.8, shape2.getHeight(0.4105014400), VOLUME_EPSILON);
 }
 
 TEST(SphericalCapVolume, getVolume)
