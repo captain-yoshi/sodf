@@ -12,11 +12,11 @@ TEST(RectangularPrismVolume, getVolume)
 
   EXPECT_EQ(0.0, shape.getVolume(-0.5));
   EXPECT_EQ(0.0, shape.getVolume(0.0));
+  EXPECT_EQ(0.0, shape.getVolume(0.9));
 
   EXPECT_NEAR(0.06, shape.getVolume(0.4), VOLUME_EPSILON);
   EXPECT_NEAR(0.12, shape.getVolume(0.8), VOLUME_EPSILON);
 
-  EXPECT_EQ(0.0, shape.getVolume(0.9));
 }
 
 TEST(SphericalCapVolume, getVolume)
