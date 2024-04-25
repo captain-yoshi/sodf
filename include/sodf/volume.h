@@ -97,6 +97,7 @@ public:
 
   const double base_radius_;
   const double top_radius_;
+  const double alpha_;  // angle
 };
 
 class SphericalCapVolume : public BaseVolume

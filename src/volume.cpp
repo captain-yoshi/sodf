@@ -173,10 +173,12 @@ double getVolume(const TruncatedConeVolume& shape, double height)
   if (height <= 0.0 || height > shape.height())
     return 0.0;
 
-  return (1.0 / 3.0) * M_PI *
-         (shape.base_radius_ * shape.base_radius_ + shape.base_radius_ * shape.top_radius_ +
-          shape.top_radius_ * shape.top_radius_) *
-         height;
+  // Compute new top radii wrt. original shape
+  double new_top_radius = (std::tan(shape.alpha_) * height - shape.base_radius_) * -1.0;
+
+  return (1.0 / 3.0) * M_PI * height *
+         (shape.base_radius_ * shape.base_radius_ + shape.base_radius_ * new_top_radius +
+          new_top_radius * new_top_radius);
 }
 
 double getVolume(const SphericalCapVolume& shape, double height)
