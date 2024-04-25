@@ -116,6 +116,60 @@ TEST(SphericalCapVolume, getHeight)
   EXPECT_NEAR(5.0, shape1.getHeight(261.799387799149), VOLUME_EPSILON);
 }
 
+TEST(ShapeCollectionVolume, getVolume)
+{
+  std::vector<BaseVolume*> shapes;
+  shapes.push_back(new SphericalCapVolume(5.0, 5.0));
+  shapes.push_back(new TruncatedConeVolume(5, 7, 10.0));
+  shapes.push_back(new CylinderVolume(7, 15.0));
+  shapes.push_back(new RectangularPrismVolume(7, 7, 20.0));
+
+  double total_height = 0.0;
+  for (std::size_t i = 0; i < shapes.size(); ++i)
+    total_height += shapes[i]->height();
+
+  double total_volume = 0.0;
+  for (std::size_t i = 0; i < shapes.size(); ++i)
+    total_volume += shapes[i]->volume();
+
+  EXPECT_NEAR(total_volume, getVolume(shapes, total_height, VOLUME_EPSILON), VOLUME_EPSILON);
+  EXPECT_NEAR(shapes[0]->volume() + shapes[1]->getVolume(5.0), getVolume(shapes, 5.0 + 5.0, VOLUME_EPSILON),
+              VOLUME_EPSILON);
+  EXPECT_NEAR(shapes[0]->volume() + shapes[1]->volume() + shapes[2]->getVolume(3.0),
+              getVolume(shapes, 5.0 + 10.0 + 3.0, VOLUME_EPSILON), VOLUME_EPSILON);
+  EXPECT_NEAR(shapes[0]->volume() + shapes[1]->volume() + shapes[2]->volume() + shapes[3]->getVolume(18),
+              getVolume(shapes, 5.0 + 10.0 + 15.0 + 18.0, VOLUME_EPSILON), VOLUME_EPSILON);
+}
+
+TEST(ShapeCollectionVolume, getHeight)
+{
+  std::vector<BaseVolume*> shapes;
+  shapes.push_back(new SphericalCapVolume(5.0, 5.0));
+  shapes.push_back(new TruncatedConeVolume(5, 7, 10.0));
+  shapes.push_back(new CylinderVolume(7, 15.0));
+  shapes.push_back(new RectangularPrismVolume(7, 7, 20.0));
+
+  double total_height = 0.0;
+  for (std::size_t i = 0; i < shapes.size(); ++i)
+    total_height += shapes[i]->height();
+
+  double total_volume = 0.0;
+  for (std::size_t i = 0; i < shapes.size(); ++i)
+    total_volume += shapes[i]->volume();
+
+  EXPECT_NEAR(total_height, getHeight(shapes, total_volume, VOLUME_EPSILON), VOLUME_EPSILON);
+  EXPECT_NEAR(5.0 + 5.0, getHeight(shapes, shapes[0]->volume() + shapes[1]->getVolume(5.0), VOLUME_EPSILON),
+              VOLUME_EPSILON);
+  EXPECT_NEAR(5.0 + 10.0 + 3.0,
+              getHeight(shapes, shapes[0]->volume() + shapes[1]->volume() + shapes[2]->getVolume(3.0), VOLUME_EPSILON),
+              VOLUME_EPSILON);
+  EXPECT_NEAR(5.0 + 10.0 + 15.0 + 18.0,
+              getHeight(shapes,
+                        shapes[0]->volume() + shapes[1]->volume() + shapes[2]->volume() + shapes[3]->getVolume(18),
+                        VOLUME_EPSILON),
+              VOLUME_EPSILON);
+}
+
 int main(int argc, char** argv)
 {
   testing::InitGoogleTest(&argc, argv);
