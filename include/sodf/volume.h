@@ -40,15 +40,19 @@ double getVolume(const SphericalCapVolume& shape, double height);
 class BaseVolume
 {
 public:
-  BaseVolume(double height, double volume);
+  BaseVolume(double height);
 
   virtual ~BaseVolume(){};
 
-  virtual double getHeight(double volume) = 0;
-  virtual double getVolume(double height) = 0;
+  virtual double getHeight(double volume) const = 0;
+  virtual double getVolume(double height) const = 0;
 
-  const double volume_;
-  const double height_;  // Z axis
+  double height() const;
+  double volume() const;
+
+protected:
+  double volume_;
+  double height_;  // Z axis
 };
 
 /**
@@ -59,8 +63,8 @@ class RectangularPrismVolume : public BaseVolume
 public:
   RectangularPrismVolume(double width /*x*/, double length /*y*/, double height /*z*/);
 
-  double getHeight(double volume) override;
-  double getVolume(double height) override;
+  double getHeight(double volume) const override;
+  double getVolume(double height) const override;
 
   const double width_;   // X axis
   const double length_;  // Y axis
@@ -74,8 +78,8 @@ class CylinderVolume : public BaseVolume
 public:
   CylinderVolume(double radius, double height);
 
-  double getHeight(double volume) override;
-  double getVolume(double height) override;
+  double getHeight(double volume) const override;
+  double getVolume(double height) const override;
 
   const double radius_;  // Plane along X and Y axis
 };
@@ -88,8 +92,8 @@ class TruncatedConeVolume : public BaseVolume
 public:
   TruncatedConeVolume(double base_radius, double top_radius, double height);
 
-  double getHeight(double volume) override;
-  double getVolume(double height) override;
+  double getHeight(double volume) const override;
+  double getVolume(double height) const override;
 
   const double base_radius_;
   const double top_radius_;
@@ -100,8 +104,8 @@ class SphericalCapVolume : public BaseVolume
 public:
   SphericalCapVolume(double cap_radius, double height);
 
-  double getHeight(double volume) override;
-  double getVolume(double height) override;
+  double getHeight(double volume) const override;
+  double getVolume(double height) const override;
 
   const double cap_radius_;  // radius of the spherical cap
   const double radius_;      // radius of the sphere
