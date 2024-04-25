@@ -76,9 +76,21 @@ double getHeight(const TruncatedConeVolume& shape, double volume)
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
 
-  return ((double)3.0 * volume / M_PI) * (double)1.0 /
-         (shape.base_radius_ * shape.base_radius_ + shape.base_radius_ * shape.top_radius_ +
-          shape.top_radius_ * shape.top_radius_);
+  double a = (1.0 / 3.0) * M_PI * std::tan(shape.alpha_) * std::tan(shape.alpha_);
+  double b = -M_PI * std::tan(shape.alpha_) * shape.base_radius_;
+  double c = M_PI * shape.base_radius_ * shape.base_radius_;
+  double d = -volume;
+
+  double roots[5] = {};
+
+  PolynomialRoots::Cubic csolve(a, b, c, d);
+  // csolve.info(std::cout);
+  auto roots_size = csolve.getPositiveRoots(roots);
+
+  if (roots_size == 0)
+    return 0.0;
+  else
+    return roots[0];
 }
 
 double getHeight(const SphericalCapVolume& shape, double volume)
@@ -174,6 +186,7 @@ double getVolume(const TruncatedConeVolume& shape, double height)
     return 0.0;
 
   // Compute new top radii wrt. original shape
+  // https://math.stackexchange.com/a/2219108
   double new_top_radius = (std::tan(shape.alpha_) * height - shape.base_radius_) * -1.0;
 
   return (1.0 / 3.0) * M_PI * height *
