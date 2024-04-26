@@ -1,4 +1,4 @@
-#include <sodf/volume.h>
+#include <sodf/geometry/volume.h>
 
 #include <cmath>
 #include <PolynomialRoots.hh>

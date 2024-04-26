@@ -30,7 +30,7 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME}
-  src/volume.cpp
+  src/geometry/volume.cpp
 )
 
 add_subdirectory(test)
