@@ -33,5 +33,6 @@ if (CATKIN_ENABLE_TESTING)
     endmacro()
 
     sodf_add_gtest(test_volume.cpp)
+    sodf_add_gtest(test_transform.cpp)
 
 endif()

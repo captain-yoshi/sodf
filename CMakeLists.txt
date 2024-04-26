@@ -3,8 +3,12 @@ project(sodf)
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(catkin REQUIRED
+find_package(Eigen3 REQUIRED)
+
+find_package(catkin REQUIRED COMPONENTS
   roscpp
+  geometry_msgs
+  tf2_eigen
 )
 
 set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
@@ -17,6 +21,10 @@ catkin_package(
     ${quarticRootsFlocke_INCLUDE_DIRS}
   CATKIN_DEPENDS
     roscpp
+    geometry_msgs
+    tf2_eigen
+  DEPENDS
+    EIGEN3
 )
 
 # add quarticRootsFlocke as an internal library
@@ -31,6 +39,7 @@ include_directories(
 
 add_library(${PROJECT_NAME}
   src/geometry/volume.cpp
+  src/geometry/transform.cpp
 )
 
 add_subdirectory(test)
