@@ -34,5 +34,6 @@ if (CATKIN_ENABLE_TESTING)
 
     sodf_add_gtest(test_volume.cpp)
     sodf_add_gtest(test_transform.cpp)
+    sodf_add_gtest(test_object.cpp)
 
 endif()
