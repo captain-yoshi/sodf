@@ -38,6 +38,8 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME}
+  src/elements/container.cpp
+
   src/geometry/volume.cpp
   src/geometry/transform.cpp
 )
