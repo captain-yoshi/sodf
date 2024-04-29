@@ -34,6 +34,7 @@ add_subdirectory(ext/quarticRootsFlocke quarticRootsFlocke)
 include_directories(
   include
   ${quarticRootsFlocke_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
 )
 
