@@ -3,12 +3,13 @@ project(sodf)
 
 set(CMAKE_CXX_STANDARD 17)
 
+find_package(orocos_kdl)
 find_package(Eigen3 REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   geometry_msgs
-  tf2_eigen
+  eigen_conversions
 )
 
 set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
@@ -16,15 +17,16 @@ set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
 catkin_package(
   LIBRARIES
     ${PROJECT_NAME}
+    ${orocos_kdl_LIBRARIES}
   INCLUDE_DIRS
     include
-    ${quarticRootsFlocke_INCLUDE_DIRS}
   CATKIN_DEPENDS
     roscpp
     geometry_msgs
-    tf2_eigen
+    eigen_conversions
   DEPENDS
     EIGEN3
+    orocos_kdl
 )
 
 # add quarticRootsFlocke as an internal library
@@ -33,9 +35,10 @@ add_subdirectory(ext/quarticRootsFlocke quarticRootsFlocke)
 
 include_directories(
   include
-  ${quarticRootsFlocke_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
+  ${quarticRootsFlocke_INCLUDE_DIRS}
+  ${orocos_kdl_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 add_library(${PROJECT_NAME}
@@ -48,6 +51,10 @@ add_library(${PROJECT_NAME}
 )
 
 add_subdirectory(test)
+
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+)
 
 install(TARGETS
   ${PROJECT_NAME}
