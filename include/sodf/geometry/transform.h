@@ -2,8 +2,9 @@
 #define TRANSFORM_H_
 
 #include <Eigen/Geometry>
+#include <kdl/frames.hpp>
 
-#include <geometry_msgs/Transform.h>
+#include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Pose.h>
 
 namespace sodf {
@@ -12,18 +13,24 @@ namespace geometry {
 class Transform
 {
 public:
-  Transform(const Eigen::Isometry3d& tf);
-  Transform(const Eigen::Vector3d& position, const Eigen::Quaterniond& rotation);
-  Transform(double px, double py, double pz, double qx, double qy, double qz, double qw);
-  Transform(const geometry_msgs::Transform& tf);
-  Transform(const geometry_msgs::Vector3& position, const geometry_msgs::Quaternion& rotation);
-  Transform(const geometry_msgs::Pose& tf);
-  Transform(const geometry_msgs::Point& position, const geometry_msgs::Quaternion& rotation);
+  Transform(const KDL::Frame& frame, const std::string& frame_id);
+  Transform(const KDL::Vector& position, const KDL::Rotation& rotation, const std::string& frame_id);
+  Transform(const Eigen::Isometry3d& frame, const std::string& frame_id);
+  Transform(const Eigen::Vector3d& position, const Eigen::Quaterniond& rotation, const std::string& frame_id);
+  Transform(double px, double py, double pz, double qx, double qy, double qz, double qw, const std::string& frame_id);
+  Transform(const geometry_msgs::TransformStamped& frame, const std::string& frame_id);
+  Transform(const geometry_msgs::Vector3& position, const geometry_msgs::Quaternion& rotation,
+            const std::string& frame_id);
+  Transform(const geometry_msgs::Pose& frame, const std::string& frame_id);
+  Transform(const geometry_msgs::Point& position, const geometry_msgs::Quaternion& rotation,
+            const std::string& frame_id);
 
-  const Eigen::Isometry3d& tf() const;
+  const KDL::Frame& frame() const;
+  const std::string& frameId() const;
 
 private:
-  const Eigen::Isometry3d tf_;
+  const KDL::Frame frame_;
+  const std::string frame_id_;
 };
 
 }  // namespace geometry
