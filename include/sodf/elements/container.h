@@ -30,8 +30,9 @@ public:
 
   double getCurrentHeight() const;  // wrt. current volume
   double getMaxHeight() const;
+  double getHeightFromAddingVolume(double volume) const;  // height if adding the relative volume to the current volume
   double
-  getHeightFromAddingVolume(double volume) const;  // height if adding or removing the volume to the current volume
+  getHeightFromRemovingVolume(double volume) const;  // height if removing the relative volume to the current volume
 
   const geometry::Transform& bottomTF() const;
 

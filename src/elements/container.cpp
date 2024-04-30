@@ -57,6 +57,13 @@ double Container::getHeightFromAddingVolume(double volume) const
   return geometry::getHeight(shape_, new_volume, 1e-04);
 }
 
+double Container::getHeightFromRemovingVolume(double volume) const
+{
+  double new_volume = volume_ - volume;
+
+  return geometry::getHeight(shape_, new_volume, 1e-04);
+}
+
 const geometry::Transform& Container::bottomTF() const
 {
   return bottom_tf_;
