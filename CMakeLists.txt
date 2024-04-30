@@ -43,6 +43,7 @@ add_library(${PROJECT_NAME}
   src/object.cpp
 
   src/elements/container.cpp
+  src/elements/insertion.cpp
 
   src/geometry/volume.cpp
   src/geometry/transform.cpp
