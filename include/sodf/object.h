@@ -5,6 +5,8 @@
 #include <string>
 #include <iostream>
 
+#include <kdl/tree.hpp>
+
 #include <sodf/element.h>
 
 namespace sodf {
@@ -29,7 +31,11 @@ public:
     return static_cast<T*>(node->second.get());
   };
 
+  const KDL::Tree& getTree() const;
+
 private:
+  KDL::Tree tree_;  // root name is "root"
+
   std::map<std::string, Element::pointer> elements_;
 };
 

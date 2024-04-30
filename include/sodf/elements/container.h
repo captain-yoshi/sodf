@@ -36,6 +36,8 @@ public:
 
   const Eigen::Isometry3d& getBottomTF() const;
 
+  virtual bool addFramesToTree(KDL::Tree& tree) override;
+
 protected:
   double volume_ = 0;
   const double max_volume_;
