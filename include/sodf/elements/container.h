@@ -18,8 +18,7 @@ using ContainerMap = std::map<std::string, Container>;
 class Container : public Element
 {
 public:
-  Container(const std::vector<geometry::BaseVolumePtr>& shape);
-  Container(const std::vector<geometry::BaseVolumePtr>& shape, const Eigen::Isometry3d& bottom_tf);
+  Container(const std::vector<geometry::BaseVolumePtr>& shape, const geometry::Transform& bottom_tf);
 
   virtual ~Container(){};
 
@@ -34,7 +33,7 @@ public:
   double
   getHeightFromAddingVolume(double volume) const;  // height if adding or removing the volume to the current volume
 
-  const Eigen::Isometry3d& getBottomTF() const;
+  const geometry::Transform& bottomTF() const;
 
   virtual bool addFramesToTree(KDL::Tree& tree) override;
 
@@ -42,7 +41,7 @@ protected:
   double volume_ = 0;
   const double max_volume_;
 
-  const Eigen::Isometry3d bottom_tf_;  // X axis pointing towards the bottom of the container, wrt. object origin
+  const geometry::Transform bottom_tf_;  // X axis pointing towards the bottom of the container, wrt. object origin
 
   const std::vector<geometry::BaseVolumePtr> shape_;
 };

@@ -3,12 +3,7 @@
 namespace sodf {
 namespace elements {
 
-Container::Container(const std::vector<geometry::BaseVolumePtr>& shape)
-  : Container(shape, Eigen::Isometry3d::Identity())
-{
-}
-
-Container::Container(const std::vector<geometry::BaseVolumePtr>& shape, const Eigen::Isometry3d& bottom_tf)
+Container::Container(const std::vector<geometry::BaseVolumePtr>& shape, const geometry::Transform& bottom_tf)
   : max_volume_(geometry::getVolume(shape)), shape_(shape), bottom_tf_(bottom_tf), Element()
 {
 }
@@ -62,7 +57,7 @@ double Container::getHeightFromAddingVolume(double volume) const
   return geometry::getHeight(shape_, new_volume, 1e-04);
 }
 
-const Eigen::Isometry3d& Container::getBottomTF() const
+const geometry::Transform& Container::bottomTF() const
 {
   return bottom_tf_;
 }
