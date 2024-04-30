@@ -27,7 +27,7 @@ public:
 
   bool addFrameToTree(KDL::Tree& tree, const geometry::Transform& tf)
   {
-    return tree.addSegment(KDL::Segment(tf.frameId(), KDL::Joint(KDL::Joint::None), tf.frame()), tf.parentFrameId());
+    return tree.addSegment(KDL::Segment(tf.frameId(), KDL::Joint(KDL::Joint::None), tf.frame()), tf.refFrameId());
   };
 
 protected:
