@@ -18,8 +18,10 @@ catkin_package(
   LIBRARIES
     ${PROJECT_NAME}
     ${orocos_kdl_LIBRARIES}
+    quarticRootsFlocke
   INCLUDE_DIRS
     include
+    ${quarticRootsFlocke_INCLUDE_DIRS}
   CATKIN_DEPENDS
     roscpp
     geometry_msgs
@@ -28,10 +30,6 @@ catkin_package(
     EIGEN3
     orocos_kdl
 )
-
-# add quarticRootsFlocke as an internal library
-# https://github.com/ebertolazzi/quarticRootsFlocke
-add_subdirectory(ext/quarticRootsFlocke quarticRootsFlocke)
 
 include_directories(
   include
@@ -48,6 +46,16 @@ add_library(${PROJECT_NAME}
 
   src/geometry/volume.cpp
   src/geometry/transform.cpp
+)
+
+# add quarticRootsFlocke as an internal library
+# https://github.com/ebertolazzi/quarticRootsFlocke
+add_library(quarticRootsFlocke
+  ext/quarticRootsFlocke/src/PolynomialRoots-1-Quadratic.cc
+  ext/quarticRootsFlocke/src/PolynomialRoots-2-Cubic.cc
+  ext/quarticRootsFlocke/src/PolynomialRoots-3-Quartic.cc
+  ext/quarticRootsFlocke/src/PolynomialRoots-Jenkins-Traub.cc
+  ext/quarticRootsFlocke/src/PolynomialRoots-Utils.cc
 )
 
 add_subdirectory(test)
