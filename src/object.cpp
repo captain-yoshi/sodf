@@ -12,7 +12,7 @@ bool Object::addElement(const std::string& id, Element::pointer&& element)
     return false;
 
   // populate tree
-  if (!element->addFramesToTree(tree_))
+  if (!element->addFramesToTree(element_tree_))
     return false;
 
   // add to map
@@ -31,9 +31,9 @@ bool Object::removeElement(const std::string& id)
   return true;
 }
 
-const KDL::Tree& Object::getTree() const
+const KDL::Tree& Object::elementTree() const
 {
-  return tree_;
+  return element_tree_;
 }
 
 }  // namespace sodf

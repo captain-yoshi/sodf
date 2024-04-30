@@ -31,10 +31,11 @@ public:
     return static_cast<T*>(node->second.get());
   };
 
-  const KDL::Tree& getTree() const;
+  /// Element Tree
+  const KDL::Tree& elementTree() const;
 
 private:
-  KDL::Tree tree_;  // root name is "root"
+  KDL::Tree element_tree_;  // root name is "root"
 
   std::map<std::string, Element::pointer> elements_;
 };
