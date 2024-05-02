@@ -13,10 +13,8 @@ constexpr double ROTATION_EPSILON = 1e-06;
 TEST(Transform, Constructor)
 {
   KDL::Frame kdl_frame;
-  kdl_frame.p.x(-0.3);
-  kdl_frame.p.y(1.5);
-  kdl_frame.p.z(-6);
-  kdl_frame.M.RPY(M_PI_4, M_PI_2, M_PI / 3.0);
+  kdl_frame.p = KDL::Vector(-0.3, 1.5, -6);
+  kdl_frame.M = KDL::Rotation::RPY(M_PI_4, M_PI_2, M_PI / 3.0);
 
   double quat_x, quat_y, quat_z, quat_w;
   kdl_frame.M.GetQuaternion(quat_x, quat_y, quat_z, quat_w);
