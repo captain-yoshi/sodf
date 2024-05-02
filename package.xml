@@ -16,6 +16,7 @@
   <depend>orocos_kdl</depend>
   <depend>geometry_msgs</depend>
   <depend>eigen_conversions</depend>
+  <depend>kdl_conversions</depend>
 
   <test_depend>rosunit</test_depend>
   <test_depend>rostest</test_depend>

@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   geometry_msgs
   eigen_conversions
+  kdl_conversions
 )
 
 set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
@@ -26,6 +27,7 @@ catkin_package(
     roscpp
     geometry_msgs
     eigen_conversions
+    kdl_conversions
   DEPENDS
     EIGEN3
     orocos_kdl
