@@ -10,6 +10,8 @@
 #include <sodf/element.h>
 #include <sodf/geometry/mesh.h>
 
+#include <kdl/treefksolverpos_recursive.hpp>
+
 namespace sodf {
 
 void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
@@ -23,6 +25,8 @@ public:
   /// Elements
   bool addElement(const std::string& id, Element::pointer&& element);
   bool removeElement(const std::string& id);
+
+  void init();
 
   template <typename T>
   T* getElement(const std::string& id)
@@ -45,10 +49,17 @@ public:
   /// Tf
   const geometry::Transform& tf() const;
 
+  KDL::Frame displayInRoot(const std::string& from) const;
+  Eigen::Isometry3d displayInRootEigen(const std::string& from) const;
+  geometry_msgs::Pose displayInRootPoseMsg(const std::string& from) const;
+
 private:
   const geometry::Transform tf_;  // parent to this object transform
 
   KDL::Tree element_tree_;  // root name is "root"
+
+  std::shared_ptr<KDL::TreeFkSolverPos_recursive> fk_solver_;
+  std::shared_ptr<KDL::JntArray> joints_;
 
   const geometry::Mesh mesh_;
 
