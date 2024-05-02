@@ -46,6 +46,7 @@ add_library(${PROJECT_NAME}
 
   src/elements/container.cpp
   src/elements/insertion.cpp
+  src/elements/button.cpp
 
   src/geometry/volume.cpp
   src/geometry/transform.cpp
