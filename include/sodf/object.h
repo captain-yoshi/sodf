@@ -14,6 +14,12 @@
 
 namespace sodf {
 
+class Object;
+
+using ObjectPtr = std::shared_ptr<Object>;
+using ObjectID = std::string;
+using ObjectMap = std::map<std::string, ObjectPtr, std::less<void>>;
+
 void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
                         const std::string& delimiter = "/");
 
