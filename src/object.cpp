@@ -2,6 +2,13 @@
 
 namespace sodf {
 
+void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
+                        const std::string& delimiter)
+{
+  object = std::string_view(id).substr(0, id.find(delimiter));
+  element = (id.size() == object.size()) ? "" : std::string_view(id).substr(object.size() + delimiter.size(), -1);
+}
+
 Object::Object(const geometry::Transform& tf, const geometry::Mesh& mesh) : tf_(tf), mesh_(mesh)
 {
 }

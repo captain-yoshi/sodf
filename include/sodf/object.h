@@ -12,6 +12,9 @@
 
 namespace sodf {
 
+void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
+                        const std::string& delimiter = "/");
+
 class Object
 {
 public:
