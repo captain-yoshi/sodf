@@ -12,13 +12,41 @@ void splitObjectElement(const std::string& id, std::string_view& object, std::st
   element = (id.size() == object.size()) ? "" : std::string_view(id).substr(object.size() + delimiter.size(), -1);
 }
 
-Object::Object(const geometry::Transform& tf, const geometry::Mesh& mesh) : tf_(tf), mesh_(mesh)
+Object::Object(const ObjectID& id, const geometry::Transform& tf, const geometry::Mesh& mesh)
+  : id_(id), tf_(tf), mesh_(mesh)
 {
   // HOTFIX to circumvent bug in kdl
   joints_ = std::make_shared<KDL::JntArray>(1);
 
   element_tree_ = KDL::Tree("_root");
   element_tree_.addSegment(KDL::Segment("root", KDL::Joint(KDL::Joint::RotX), KDL::Frame()), "_root");
+}
+
+const ObjectID& Object::id() const
+{
+  return id_;
+}
+ObjectPtr Object::parent()
+{
+  return parent_;
+}
+
+void Object::addParent(ObjectPtr parent)
+{
+  parent_ = parent;
+}
+
+void Object::addChildren(ObjectPtr child)
+{
+  if (!child)
+    throw std::runtime_error("add children invalid pointer");
+
+  childrens_.insert(child);
+}
+
+const std::set<ObjectPtr>& Object::getChildrens() const
+{
+  return childrens_;
 }
 
 bool Object::addElement(const std::string& id, Element::pointer&& element)

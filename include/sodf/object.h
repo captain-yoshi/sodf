@@ -26,11 +26,19 @@ void splitObjectElement(const std::string& id, std::string_view& object, std::st
 class Object
 {
 public:
-  Object(const geometry::Transform& tf, const geometry::Mesh& mesh = geometry::Mesh());
+  Object(const ObjectID& id, const geometry::Transform& tf, const geometry::Mesh& mesh = geometry::Mesh());
 
   /// Elements
   bool addElement(const std::string& id, Element::pointer&& element);
   bool removeElement(const std::string& id);
+
+  /// child/parent
+  void addParent(ObjectPtr parent);  // Overwrite if exists
+  void addChildren(ObjectPtr child);
+  const std::set<ObjectPtr>& getChildrens() const;
+
+  const ObjectID& id() const;
+  ObjectPtr parent();
 
   void init();
 
@@ -60,6 +68,11 @@ public:
   geometry_msgs::Pose displayInRootPoseMsg(const std::string& from) const;
 
 private:
+  const ObjectID id_;
+
+  ObjectPtr parent_;
+  std::set<ObjectPtr> childrens_;
+
   const geometry::Transform tf_;  // parent to this object transform
 
   KDL::Tree element_tree_;  // root name is "root"
