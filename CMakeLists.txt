@@ -45,6 +45,7 @@ add_library(${PROJECT_NAME}
   src/object.cpp
 
   src/elements/container.cpp
+  src/elements/grasp.cpp
   src/elements/insertion.cpp
   src/elements/touchscreen.cpp
   src/elements/button.cpp
