@@ -43,6 +43,7 @@ include_directories(
 
 add_library(${PROJECT_NAME}
   src/object.cpp
+  src/conversion.cpp
 
   src/elements/container.cpp
   src/elements/grasp.cpp
