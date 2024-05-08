@@ -23,6 +23,9 @@ using ObjectMap = std::map<std::string, ObjectPtr, std::less<void>>;
 void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
                         const std::string& delimiter = "/");
 
+void splitObjectElement(const std::string& id, std::string& object, std::string& element,
+                        const std::string& delimiter = "/");
+
 class Object
 {
 public:

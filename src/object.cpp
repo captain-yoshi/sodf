@@ -12,6 +12,12 @@ void splitObjectElement(const std::string& id, std::string_view& object, std::st
   element = (id.size() == object.size()) ? "" : std::string_view(id).substr(object.size() + delimiter.size(), -1);
 }
 
+void splitObjectElement(const std::string& id, std::string& object, std::string& element, const std::string& delimiter)
+{
+  object = id.substr(0, id.find(delimiter));
+  element = (id.size() == object.size()) ? "" : id.substr(object.size() + delimiter.size(), -1);
+}
+
 Object::Object(const ObjectID& id, const geometry::Transform& tf, const geometry::Mesh& mesh)
   : id_(id), tf_(tf), mesh_(mesh)
 {
