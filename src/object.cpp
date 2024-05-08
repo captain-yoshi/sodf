@@ -44,7 +44,7 @@ void Object::addChildren(ObjectPtr child)
   childrens_.insert(child);
 }
 
-const std::set<ObjectPtr>& Object::getChildrens() const
+const std::set<ObjectPtr>& Object::children() const
 {
   return childrens_;
 }
