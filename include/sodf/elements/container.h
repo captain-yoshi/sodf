@@ -36,7 +36,10 @@ public:
 
   const geometry::Transform& bottomTF() const;
 
-  virtual bool addFramesToTree(KDL::Tree& tree) override;
+  virtual const geometry::Transform* getTransform() const override
+  {
+    return &bottomTF();
+  };
 
 protected:
   double volume_ = 0;

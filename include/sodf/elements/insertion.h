@@ -20,7 +20,10 @@ public:
   const geometry::Transform& tf() const;
   double preInsertionDistance();
 
-  virtual bool addFramesToTree(KDL::Tree& tree) override;
+  virtual const geometry::Transform* getTransform() const override
+  {
+    return &tf();
+  };
 
 protected:
   const geometry::Transform insertion_tf_;  // X axis pointing towards the bottom of the container, wrt. object origin

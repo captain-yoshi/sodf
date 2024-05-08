@@ -31,7 +31,10 @@ public:
   double rotationConstraint() const;
   GraspType type() const;
 
-  virtual bool addFramesToTree(KDL::Tree& tree) override;
+  virtual const geometry::Transform* getTransform() const override
+  {
+    return &centerTF();
+  };
 
 protected:
   const geometry::Transform center_tf_;  // X axis pointing towards the bottom of the container, wrt. object origin

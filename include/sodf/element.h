@@ -20,14 +20,13 @@ public:
   using pointer = std::unique_ptr<Element>;
   virtual ~Element() = default;
 
-  virtual bool addFramesToTree(KDL::Tree& tree)
+  virtual const geometry::Transform* getTransform() const
   {
-    return true;
+    return nullptr;
   };
-
-  bool addFrameToTree(KDL::Tree& tree, const geometry::Transform& tf)
+  virtual const KDL::Joint* getJoint() const
   {
-    return tree.addSegment(KDL::Segment(tf.frameId(), KDL::Joint(KDL::Joint::None), tf.frame()), tf.refFrameId());
+    return nullptr;
   };
 
 protected:

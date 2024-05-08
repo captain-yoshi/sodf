@@ -18,9 +18,5 @@ double Button::pressForce() const
   return press_force_;
 }
 
-bool Button::addFramesToTree(KDL::Tree& tree)
-{
-  return Element::addFrameToTree(tree, center_tf_);
-}
 }  // namespace elements
 }  // namespace sodf

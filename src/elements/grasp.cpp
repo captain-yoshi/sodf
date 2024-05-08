@@ -31,10 +31,5 @@ GraspType Grasp::type() const
   return type_;
 }
 
-bool Grasp::addFramesToTree(KDL::Tree& tree)
-{
-  return addFrameToTree(tree, center_tf_);
-}
-
 }  // namespace elements
 }  // namespace sodf

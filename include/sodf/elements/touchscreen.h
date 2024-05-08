@@ -17,7 +17,10 @@ public:
   const geometry::Transform& centerTF() const;
   double pressForce() const;
 
-  virtual bool addFramesToTree(KDL::Tree& tree) override;
+  virtual const geometry::Transform* getTransform() const override
+  {
+    return &centerTF();
+  };
 
 protected:
   const geometry::Transform center_tf_;  // +X points towards the center of the screen

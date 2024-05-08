@@ -18,6 +18,15 @@ void splitObjectElement(const std::string& id, std::string& object, std::string&
   element = (id.size() == object.size()) ? "" : id.substr(object.size() + delimiter.size(), -1);
 }
 
+namespace {
+
+void addToElementTree(KDL::Tree& tree, const geometry::Transform& tf, const KDL::Joint& joint)
+{
+  tree.addSegment(KDL::Segment(tf.frameId(), joint, tf.frame()), tf.refFrameId());
+}
+
+}  // namespace
+
 Object::Object(const ObjectID& id, const geometry::Transform& tf, const geometry::Mesh& mesh)
   : id_(id), tf_(tf), mesh_(mesh)
 {
@@ -64,9 +73,24 @@ bool Object::addElement(const std::string& id, Element::pointer&& element)
   if (node != elements_.end())
     return false;
 
-  // populate tree
-  if (!element->addFramesToTree(element_tree_))
-    return false;
+  // Add element frame+joint as a segment to the tree
+  const auto element_tf = element->getTransform();
+  const auto element_joint = element->getJoint();
+
+  if (element_tf)
+  {
+    if (element_joint)
+    {
+      addToElementTree(element_tree_, *element_tf, *element_joint);
+      joints_->resize(joints_->rows() + 1);
+
+      // map element id to joint index
+      joint_index_map_.emplace(element_tf->frameId(), joints_->rows() - 1);
+    }
+    else
+      // Fixed joint
+      addToElementTree(element_tree_, *element_tf, KDL::Joint(KDL::Joint::None));
+  }
 
   // add to map
   elements_.emplace(id, std::move(element));
@@ -122,6 +146,20 @@ geometry_msgs::Pose Object::displayInRootPoseMsg(const std::string& from) const
   tf::poseKDLToMsg(displayInRoot(from), pose);
 
   return pose;
+}
+
+bool Object::updateJointPosition(const std::string& element_id, double position)
+{
+  auto node = joint_index_map_.find(element_id);
+  if (node != joint_index_map_.end())
+    return false;
+
+  if (node->second >= joints_->rows())
+    return false;
+
+  joints_->data[node->second] = position;
+
+  return true;
 }
 
 const KDL::Tree& Object::elementTree() const

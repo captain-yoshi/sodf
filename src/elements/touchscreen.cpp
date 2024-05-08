@@ -10,11 +10,7 @@ Touchscreen::Touchscreen(const geometry::Transform& center_tf, double size_y, do
 
 const geometry::Transform& Touchscreen::centerTF() const
 {
-}
-
-bool Touchscreen::addFramesToTree(KDL::Tree& tree)
-{
-  return Element::addFrameToTree(tree, center_tf_);
+  return center_tf_;
 }
 
 }  // namespace elements

@@ -8,11 +8,6 @@ Insertion::Insertion(const geometry::Transform& insertion_tf, double pre_inserti
 {
 }
 
-bool Insertion::addFramesToTree(KDL::Tree& tree)
-{
-  return addFrameToTree(tree, insertion_tf_);
-}
-
 const geometry::Transform& Insertion::tf() const
 {
   return insertion_tf_;

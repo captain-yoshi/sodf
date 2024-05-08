@@ -70,11 +70,15 @@ public:
   Eigen::Isometry3d displayInRootEigen(const std::string& from) const;
   geometry_msgs::Pose displayInRootPoseMsg(const std::string& from) const;
 
+  bool updateJointPosition(const std::string& element_id, double position);
+
 private:
   const ObjectID id_;
 
   ObjectPtr parent_;
   std::set<ObjectPtr> childrens_;
+
+  std::map<std::string, std::size_t> joint_index_map_;
 
   const geometry::Transform tf_;  // parent to this object transform
 

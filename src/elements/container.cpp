@@ -69,10 +69,5 @@ const geometry::Transform& Container::bottomTF() const
   return bottom_tf_;
 }
 
-bool Container::addFramesToTree(KDL::Tree& tree)
-{
-  return addFrameToTree(tree, bottom_tf_);
-}
-
 }  // namespace elements
 }  // namespace sodf
