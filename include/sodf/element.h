@@ -11,6 +11,7 @@ namespace sodf {
 
 class Element;
 
+using ElementID = std::string;
 using ElementPtr = std::shared_ptr<Element>;
 using ElementUniquePtr = std::unique_ptr<Element>;
 
