@@ -80,17 +80,29 @@ bool Object::addElement(const ElementID& id, Element::pointer&& element)
 
   if (element_tf)
   {
-    if (element_joint)
+    if (!element_joint || element_joint->getType() == element_joint->None)
     {
-      addToElementTree(element_tree_, *element_tf, *element_joint);
-      joints_->resize(joints_->rows() + 1);
-
-      // map element id to joint index
-      joint_index_map_.emplace(element_tf->frameId(), joints_->rows() - 1);
+      // Fixed joint
+      addToElementTree(*element_tree_, *element_tf, KDL::Joint(KDL::Joint::None));
     }
     else
-      // Fixed joint
-      addToElementTree(element_tree_, *element_tf, KDL::Joint(KDL::Joint::None));
+    {
+      // Make joint located at the tip instead of the root frame.
+      std::string tip_name = "_" + id;
+      auto node = elements_.find(tip_name);
+      if (node != elements_.end())
+        return false;
+
+      element_tree_->addSegment(KDL::Segment(tip_name, KDL::Joint(KDL::Joint::None), element_tf->frame()),
+                                element_tf->refFrameId());
+      elements_.emplace(tip_name, std::move(nullptr));
+
+      element_tree_->addSegment(KDL::Segment(id, *element_joint, KDL::Frame()), tip_name);
+      joints_->resize(joints_->data.size() + 1);
+
+      // map element id to joint index
+      joint_index_map_.emplace(element_tf->frameId(), joints_->data.size() - 1);
+    }
   }
 
   // add meshes
