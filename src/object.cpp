@@ -179,9 +179,7 @@ bool Object::updateJointPosition(const std::string& element_id, double position)
   return true;
 }
 
-const KDL::Tree& Object::elementTree() const
 {
-  return element_tree_;
 }
 
 const std::vector<ElementID>& Object::meshes() const

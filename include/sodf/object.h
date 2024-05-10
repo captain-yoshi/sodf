@@ -56,9 +56,6 @@ public:
     return dynamic_cast<T*>(node->second.get());
   };
 
-  /// Element Tree
-  const KDL::Tree& elementTree() const;
-
   /// Mesh
   const std::vector<ElementID>& meshes() const;
 
