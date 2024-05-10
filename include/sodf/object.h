@@ -82,7 +82,7 @@ private:
 
   const geometry::Transform tf_;  // parent to this object transform
 
-  KDL::Tree element_tree_;  // root name is "root"
+  std::shared_ptr<KDL::Tree> element_tree_;  // root name is "root"
 
   std::shared_ptr<KDL::TreeFkSolverPos_recursive> fk_solver_;
   std::shared_ptr<KDL::JntArray> joints_;

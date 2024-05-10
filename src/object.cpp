@@ -33,8 +33,8 @@ Object::Object(const ObjectID& id, const geometry::Transform& tf, const geometry
   // HOTFIX to circumvent bug in kdl
   joints_ = std::make_shared<KDL::JntArray>(1);
 
-  element_tree_ = KDL::Tree("_root");
-  element_tree_.addSegment(KDL::Segment("root", KDL::Joint(KDL::Joint::RotX), KDL::Frame()), "_root");
+  element_tree_ = std::make_shared<KDL::Tree>("_root");
+  element_tree_->addSegment(KDL::Segment("root", KDL::Joint(KDL::Joint::RotX), KDL::Frame()), "_root");
 }
 
 const ObjectID& Object::id() const
@@ -110,7 +110,7 @@ bool Object::removeElement(const std::string& id)
 
 void Object::init()
 {
-  fk_solver_.reset(new KDL::TreeFkSolverPos_recursive(element_tree_));
+  fk_solver_.reset(new KDL::TreeFkSolverPos_recursive(*element_tree_));
 }
 
 KDL::Frame Object::displayInRoot(const std::string& from) const
