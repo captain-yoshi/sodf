@@ -5,7 +5,12 @@ namespace elements {
 
 Grasp::Grasp(const geometry::Transform& center_tf, double gap_size, double height, double rotation_constraint,
              GraspType type)
-  : center_tf_(center_tf), gap_size_(gap_size), height_(height), rotation_constraint_(rotation_constraint), type_(type)
+  : center_tf_(center_tf)
+  , gap_size_(gap_size)
+  , height_(height)
+  , rotation_constraint_(rotation_constraint)
+  , type_(type)
+  , Element()
 {
 }
 

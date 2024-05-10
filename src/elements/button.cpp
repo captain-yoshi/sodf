@@ -5,7 +5,7 @@ namespace sodf {
 namespace elements {
 
 Button::Button(const geometry::Transform& center_tf, double press_force)
-  : center_tf_(center_tf), press_force_(press_force)
+  : center_tf_(center_tf), press_force_(press_force), Element()
 {
 }
 
