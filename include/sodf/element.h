@@ -30,6 +30,11 @@ public:
     return nullptr;
   };
 
+  virtual bool isMesh() const
+  {
+    return false;
+  };
+
 protected:
   Element(){};
 };
