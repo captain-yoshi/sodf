@@ -19,7 +19,7 @@ public:
 
   virtual const geometry::Transform* getTransform() const override
   {
-    return &centerTF();
+    return &center_tf_;
   };
 
 protected:

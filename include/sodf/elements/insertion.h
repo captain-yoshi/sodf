@@ -22,7 +22,7 @@ public:
 
   virtual const geometry::Transform* getTransform() const override
   {
-    return &tf();
+    return &insertion_tf_;
   };
 
 protected:

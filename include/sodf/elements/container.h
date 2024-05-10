@@ -38,7 +38,7 @@ public:
 
   virtual const geometry::Transform* getTransform() const override
   {
-    return &bottomTF();
+    return &bottom_tf_;
   };
 
 protected:
