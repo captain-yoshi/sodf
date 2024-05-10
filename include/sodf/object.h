@@ -31,7 +31,7 @@ public:
   Object(const ObjectID& id, const geometry::Transform& tf);
 
   /// Elements
-  bool addElement(const std::string& id, Element::pointer&& element);
+  bool addElement(const ElementID& id, Element::pointer&& element);
   bool removeElement(const std::string& id);
 
   /// child/parent

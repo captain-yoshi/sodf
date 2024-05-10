@@ -65,7 +65,7 @@ const std::set<ObjectPtr>& Object::children() const
   return childrens_;
 }
 
-bool Object::addElement(const std::string& id, Element::pointer&& element)
+bool Object::addElement(const ElementID& id, Element::pointer&& element)
 {
   if (!element)
     return false;
