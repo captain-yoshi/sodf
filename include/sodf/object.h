@@ -54,7 +54,7 @@ public:
     if (node == elements_.end())
       return nullptr;
 
-    return static_cast<T*>(node->second.get());
+    return dynamic_cast<T*>(node->second.get());
   };
 
   /// Element Tree
