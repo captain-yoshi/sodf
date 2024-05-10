@@ -3,6 +3,7 @@
 #include <eigen_conversions/eigen_kdl.h>
 #include <kdl_conversions/kdl_msg.h>
 
+#include <sodf/elements/mesh.h>
 namespace sodf {
 
 void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
@@ -27,8 +28,8 @@ void addToElementTree(KDL::Tree& tree, const geometry::Transform& tf, const KDL:
 
 }  // namespace
 
-Object::Object(const ObjectID& id, const geometry::Transform& tf, const geometry::Mesh& mesh)
-  : id_(id), tf_(tf), mesh_(mesh)
+Object::Object(const ObjectID& id, const geometry::Transform& tf) : id_(id), tf_(tf)
+
 {
   // HOTFIX to circumvent bug in kdl
   joints_ = std::make_shared<KDL::JntArray>(1);
@@ -91,6 +92,10 @@ bool Object::addElement(const std::string& id, Element::pointer&& element)
       // Fixed joint
       addToElementTree(element_tree_, *element_tf, KDL::Joint(KDL::Joint::None));
   }
+
+  // add meshes
+  if (element->isMesh())
+    meshes_.push_back(id);
 
   // add to map
   elements_.emplace(id, std::move(element));
@@ -167,9 +172,9 @@ const KDL::Tree& Object::elementTree() const
   return element_tree_;
 }
 
-const geometry::Mesh& Object::mesh() const
+const std::vector<ElementID>& Object::meshes() const
 {
-  return mesh_;
+  return meshes_;
 }
 
 const geometry::Transform& Object::tf() const

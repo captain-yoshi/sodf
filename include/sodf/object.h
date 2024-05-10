@@ -8,7 +8,6 @@
 #include <kdl/tree.hpp>
 
 #include <sodf/element.h>
-#include <sodf/geometry/mesh.h>
 
 #include <kdl/treefksolverpos_recursive.hpp>
 
@@ -29,7 +28,7 @@ void splitObjectElement(const std::string& id, std::string& object, std::string&
 class Object
 {
 public:
-  Object(const ObjectID& id, const geometry::Transform& tf, const geometry::Mesh& mesh = geometry::Mesh());
+  Object(const ObjectID& id, const geometry::Transform& tf);
 
   /// Elements
   bool addElement(const std::string& id, Element::pointer&& element);
@@ -61,7 +60,7 @@ public:
   const KDL::Tree& elementTree() const;
 
   /// Mesh
-  const geometry::Mesh& mesh() const;
+  const std::vector<ElementID>& meshes() const;
 
   /// Tf
   const geometry::Transform& tf() const;
@@ -87,7 +86,7 @@ private:
   std::shared_ptr<KDL::TreeFkSolverPos_recursive> fk_solver_;
   std::shared_ptr<KDL::JntArray> joints_;
 
-  const geometry::Mesh mesh_;
+  std::vector<ElementID> meshes_;
 
   std::map<std::string, Element::pointer> elements_;
 };
