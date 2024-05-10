@@ -4,6 +4,8 @@
 #include <kdl_conversions/kdl_msg.h>
 
 #include <sodf/elements/mesh.h>
+#include <sodf/elements/joint.h>
+
 namespace sodf {
 
 void splitObjectElement(const std::string& id, std::string_view& object, std::string_view& element,
@@ -179,7 +181,23 @@ bool Object::updateJointPosition(const std::string& element_id, double position)
   return true;
 }
 
+bool Object::updateJointPosition(const std::string& element_id, const std::string& position)
 {
+  auto joint_node = joint_index_map_.find(element_id);
+  if (joint_node == joint_index_map_.end())
+    return false;
+
+  auto joint = getElement<elements::PassiveJoint>(element_id);
+  if (!joint)
+    return false;
+
+  const auto& j_map = joint->jointPositionMap();
+
+  auto pair = j_map.find(position);
+  if (pair == j_map.end())
+    return false;
+
+  return updateJointPosition(element_id, pair->second);
 }
 
 const std::vector<ElementID>& Object::meshes() const

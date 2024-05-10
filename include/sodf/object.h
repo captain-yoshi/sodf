@@ -67,6 +67,7 @@ public:
   geometry_msgs::Pose displayInRootPoseMsg(const std::string& from) const;
 
   bool updateJointPosition(const std::string& element_id, double position);
+  bool updateJointPosition(const std::string& element_id, const std::string& position);
 
 private:
   const ObjectID id_;
