@@ -168,10 +168,10 @@ geometry_msgs::Pose Object::displayInRootPoseMsg(const std::string& from) const
 bool Object::updateJointPosition(const std::string& element_id, double position)
 {
   auto node = joint_index_map_.find(element_id);
-  if (node != joint_index_map_.end())
+  if (node == joint_index_map_.end())
     return false;
 
-  if (node->second >= joints_->rows())
+  if (node->second >= joints_->data.size())
     return false;
 
   joints_->data[node->second] = position;
