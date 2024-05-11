@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(orocos_kdl)
 find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED COMPONENTS graph)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -31,6 +32,7 @@ catkin_package(
   DEPENDS
     EIGEN3
     orocos_kdl
+    Boost
 )
 
 include_directories(
@@ -54,6 +56,8 @@ add_library(${PROJECT_NAME}
 
   src/geometry/volume.cpp
   src/geometry/transform.cpp
+
+  src/graph/directed_graph.cpp
 )
 
 # add quarticRootsFlocke as an internal library

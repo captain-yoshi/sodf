@@ -11,6 +11,7 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
+  <depend>boost</depend>
   <depend>roscpp</depend>
   <depend>eigen</depend>
   <depend>orocos_kdl</depend>
