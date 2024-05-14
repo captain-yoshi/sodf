@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
+set(better_enums_INCLUDE_DIRS ext/better-enums)
 
 catkin_package(
   LIBRARIES
@@ -24,6 +25,7 @@ catkin_package(
   INCLUDE_DIRS
     include
     ${quarticRootsFlocke_INCLUDE_DIRS}
+    ${better_enums_INCLUDE_DIRS}
   CATKIN_DEPENDS
     roscpp
     geometry_msgs
@@ -41,6 +43,7 @@ include_directories(
   ${quarticRootsFlocke_INCLUDE_DIRS}
   ${orocos_kdl_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
+  ${better_enums_INCLUDE_DIRS}
 )
 
 add_library(${PROJECT_NAME}
@@ -69,6 +72,10 @@ add_library(quarticRootsFlocke
   ext/quarticRootsFlocke/src/PolynomialRoots-Jenkins-Traub.cc
   ext/quarticRootsFlocke/src/PolynomialRoots-Utils.cc
 )
+
+# add better-enums as an internal library
+# https://github.com/aantron/better-enums/commit/520d8ee39037c9c94aa6e708a4fd6c0fa313ae80
+add_library(better_enums INTERFACE)
 
 add_subdirectory(test)
 
