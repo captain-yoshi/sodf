@@ -42,9 +42,9 @@ private:
 }  // namespace
 
 DirectedGraph::DirectedGraph(std::vector<Edge>&& edges, std::vector<int>&& weights)
-  : edges(std::move(edges)), weights(std::move(weights))
+  : edges_(std::move(edges)), weights_(std::move(weights))
 {
-  g = G(this->edges.begin(), this->edges.end(), this->weights.begin(), 0);
+  g = G(edges_.begin(), edges_.end(), weights_.begin(), 0);
   weightmap = boost::get(boost::edge_weight, g);
   p = std::vector<V>(num_vertices(g));
   colors = std::make_unique<std::vector<boost::default_color_type>>(num_vertices(g), boost::default_color_type{});

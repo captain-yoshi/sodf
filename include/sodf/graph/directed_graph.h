@@ -25,8 +25,8 @@ public:
 
 protected:
 private:
-  std::vector<Edge> edges;
-  std::vector<int> weights;
+  std::vector<Edge> edges_;
+  std::vector<int> weights_;
 
   G g;
 
