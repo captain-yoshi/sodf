@@ -61,6 +61,8 @@ add_library(${PROJECT_NAME}
   src/geometry/transform.cpp
 
   src/graph/directed_graph.cpp
+
+  src/behavior/state.cpp
 )
 
 # add quarticRootsFlocke as an internal library
