@@ -19,6 +19,15 @@ using Action = int;
 /* using StateTransitions = std::map<State, ElementID>; */
 using ActionTransitions = std::map<Action, State>;
 
+struct ActionSequence
+{
+  std::vector<Action> actions;
+  State final_state;
+};
+
+using ActionFromStringCallback = std::function<behavior::Action(const std::string&)>;
+using StateFromStringCallback = std::function<behavior::Action(const std::string&)>;
+
 class StateNode
 {
 public:
@@ -43,14 +52,18 @@ using StateNodeMap = std::map<State, StateNode>;
 class StateManager
 {
 public:
-  StateManager(StateNodeMap&& node_map);
+  StateManager(StateNodeMap&& node_map, ActionFromStringCallback action_from_string_cb,
+               StateFromStringCallback state_from_string_cb);
 
-  std::vector<Action> computeActions(State begin, State end, const std::vector<Action>& end_actions, State& final);
+  ActionSequence computeActions(State start, State end, const std::vector<Action>& end_actions);
 
 private:
   std::unique_ptr<graph::DirectedGraph> digraph_;
 
   StateNodeMap node_map_;
+
+  ActionFromStringCallback action_from_string_cb_;
+  StateFromStringCallback state_from_string_cb_;
 };
 
 }  // namespace behavior

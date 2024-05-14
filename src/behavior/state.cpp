@@ -44,8 +44,12 @@ const ActionTransitions& StateNode::getActionTransitions() const
 {
   return action_transitions_;
 }
+StateManager::StateManager(StateNodeMap&& node_map, ActionFromStringCallback action_from_string_cb,
+                           StateFromStringCallback state_from_string_cb)
 
-StateManager::StateManager(StateNodeMap&& node_map) : node_map_(std::move(node_map))
+  : node_map_(std::move(node_map))
+  , action_from_string_cb_(action_from_string_cb)
+  , state_from_string_cb_(state_from_string_cb)
 
 {
   // Create graph edges
@@ -65,8 +69,7 @@ StateManager::StateManager(StateNodeMap&& node_map) : node_map_(std::move(node_m
   digraph_ = std::make_unique<graph::DirectedGraph>(std::move(edges), std::move(weights));
 }
 
-std::vector<Action> StateManager::computeActions(State start, State end, const std::vector<Action>& end_actions,
-                                                 State& final)
+ActionSequence StateManager::computeActions(State start, State end, const std::vector<Action>& end_actions)
 {
   // find shortest state path
   std::deque<int> path;
@@ -74,14 +77,14 @@ std::vector<Action> StateManager::computeActions(State start, State end, const s
     throw std::runtime_error("Could not find shortest path");
 
   // store sequence of elements wrt. the path
-  std::vector<State> actions;
+  ActionSequence action_seq;
   for (std::size_t i = 0; i < path.size(); ++i)
   {
     const auto& state = path[i];
 
     // path actions are on odd indexes
     if (i % 2)
-      actions.emplace_back(state);
+      action_seq.actions.emplace_back(state);
   }
 
   // store sequence of elements wrt. end_actions
@@ -99,11 +102,11 @@ std::vector<Action> StateManager::computeActions(State start, State end, const s
       throw std::runtime_error("Could not find action '" + std::to_string(action) + "' in state '" +
                                std::to_string(current_state) + "'");
 
-    actions.emplace_back(action);
+    action_seq.actions.emplace_back(action);
     current_state = it_transitions->second;
   }
-  final = current_state;
-  return actions;
+  action_seq.final_state = current_state;
+  return action_seq;
 }
 
 }  // namespace behavior
