@@ -99,7 +99,10 @@ bool DirectedGraph::findShortestPath(int start, int end, std::deque<int>& path)
 
     std::cout << "Path from #" << start_vertex << " to #" << end_vertex << ": ";
     // std::copy(path.begin(), path.end(), std::ostream_iterator<V>(std::cout, ", "));
-    std::cout << end_vertex << "\n";
+
+    for (const auto& p : path)
+      std::cout << p << ", ";
+    std::cout << std::endl;
 
     return true;
   }
