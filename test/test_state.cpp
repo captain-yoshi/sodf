@@ -49,6 +49,20 @@ BETTER_ENUM(HMIActions,
             hold_time,         //
             lid_time);         //
 
+Action actionFromStringCallback(const std::string& action_string)
+{
+  auto action = HMIActions::_from_string(action_string.c_str());
+
+  return action._to_integral();
+}
+
+State stateFromStringCallback(const std::string& state_string)
+{
+  auto state = HMIStates::_from_string(state_string.c_str());
+
+  return state._to_integral();
+}
+
 TEST(StateManager, computeActions)
 {
   StateNodeMap node_map;
@@ -110,46 +124,85 @@ TEST(StateManager, computeActions)
     node_map.emplace(node.state(), std::move(node));
   }
 
-  StateManager sm(std::move(node_map));
-  State final_state;
+  StateManager sm(std::move(node_map), actionFromStringCallback, stateFromStringCallback);
 
-  std::vector<Action> actions =
+  auto seq =
       sm.computeActions(HMIStates::home,                                //
                         HMIStates::incubate_bloc_temperature_keyboard,  //
                         std::vector<Action>{ HMIActions::zero, HMIActions::zero, HMIActions::seven, HMIActions::ok,
                                              HMIActions::hold_time, HMIActions::one, HMIActions::two, HMIActions::tree
 
-                        },
-                        final_state);
+                        });
 
-  EXPECT_EQ(10, actions.size());
+  EXPECT_EQ(10, seq.actions.size());
 
-  EXPECT_EQ(9, actions[0]);
-  EXPECT_EQ(26, actions[1]);
-  EXPECT_EQ(14, actions[2]);
-  EXPECT_EQ(14, actions[3]);
-  EXPECT_EQ(21, actions[4]);
-  EXPECT_EQ(13, actions[5]);
-  EXPECT_EQ(27, actions[6]);
-  EXPECT_EQ(15, actions[7]);
-  EXPECT_EQ(16, actions[8]);
-  EXPECT_EQ(17, actions[9]);
+  EXPECT_EQ(9, seq.actions[0]);
+  EXPECT_EQ(26, seq.actions[1]);
+  EXPECT_EQ(14, seq.actions[2]);
+  EXPECT_EQ(14, seq.actions[3]);
+  EXPECT_EQ(21, seq.actions[4]);
+  EXPECT_EQ(13, seq.actions[5]);
+  EXPECT_EQ(27, seq.actions[6]);
+  EXPECT_EQ(15, seq.actions[7]);
+  EXPECT_EQ(16, seq.actions[8]);
+  EXPECT_EQ(17, seq.actions[9]);
 
-  EXPECT_EQ(4, final_state);
+  EXPECT_EQ(4, seq.final_state);
 
-  EXPECT_STREQ("incubate", HMIActions::_from_integral(actions[0])._to_string());
-  EXPECT_STREQ("bloc_temperature", HMIActions::_from_integral(actions[1])._to_string());
-  EXPECT_STREQ("zero", HMIActions::_from_integral(actions[2])._to_string());
-  EXPECT_STREQ("zero", HMIActions::_from_integral(actions[3])._to_string());
-  EXPECT_STREQ("seven", HMIActions::_from_integral(actions[4])._to_string());
-  EXPECT_STREQ("ok", HMIActions::_from_integral(actions[5])._to_string());
-  EXPECT_STREQ("hold_time", HMIActions::_from_integral(actions[6])._to_string());
-  EXPECT_STREQ("one", HMIActions::_from_integral(actions[7])._to_string());
-  EXPECT_STREQ("two", HMIActions::_from_integral(actions[8])._to_string());
-  EXPECT_STREQ("tree", HMIActions::_from_integral(actions[9])._to_string());
+  EXPECT_STREQ("incubate", HMIActions::_from_integral(seq.actions[0])._to_string());
+  EXPECT_STREQ("bloc_temperature", HMIActions::_from_integral(seq.actions[1])._to_string());
+  EXPECT_STREQ("zero", HMIActions::_from_integral(seq.actions[2])._to_string());
+  EXPECT_STREQ("zero", HMIActions::_from_integral(seq.actions[3])._to_string());
+  EXPECT_STREQ("seven", HMIActions::_from_integral(seq.actions[4])._to_string());
+  EXPECT_STREQ("ok", HMIActions::_from_integral(seq.actions[5])._to_string());
+  EXPECT_STREQ("hold_time", HMIActions::_from_integral(seq.actions[6])._to_string());
+  EXPECT_STREQ("one", HMIActions::_from_integral(seq.actions[7])._to_string());
+  EXPECT_STREQ("two", HMIActions::_from_integral(seq.actions[8])._to_string());
+  EXPECT_STREQ("tree", HMIActions::_from_integral(seq.actions[9])._to_string());
 
-  EXPECT_STREQ("incubate_hold_time_keyboard", HMIStates::_from_integral(final_state)._to_string());
+  EXPECT_STREQ("incubate_hold_time_keyboard", HMIStates::_from_integral(seq.final_state)._to_string());
 
+  seq = sm.computeActions(HMIStates::_from_integral(HMIStates::home)._to_string(),                                //
+                          HMIStates::_from_integral(HMIStates::incubate_bloc_temperature_keyboard)._to_string(),  //
+                          std::vector<std::string>{
+                              HMIActions::_from_integral(HMIActions::zero)._to_string(),       //
+                              HMIActions::_from_integral(HMIActions::zero)._to_string(),       //
+                              HMIActions::_from_integral(HMIActions::seven)._to_string(),      //
+                              HMIActions::_from_integral(HMIActions::ok)._to_string(),         //
+                              HMIActions::_from_integral(HMIActions::hold_time)._to_string(),  //
+                              HMIActions::_from_integral(HMIActions::one)._to_string(),        //
+                              HMIActions::_from_integral(HMIActions::two)._to_string(),        //
+                              HMIActions::_from_integral(HMIActions::tree)._to_string()        //
+
+                          });
+
+  EXPECT_EQ(10, seq.actions.size());
+
+  EXPECT_EQ(9, seq.actions[0]);
+  EXPECT_EQ(26, seq.actions[1]);
+  EXPECT_EQ(14, seq.actions[2]);
+  EXPECT_EQ(14, seq.actions[3]);
+  EXPECT_EQ(21, seq.actions[4]);
+  EXPECT_EQ(13, seq.actions[5]);
+  EXPECT_EQ(27, seq.actions[6]);
+  EXPECT_EQ(15, seq.actions[7]);
+  EXPECT_EQ(16, seq.actions[8]);
+  EXPECT_EQ(17, seq.actions[9]);
+
+  EXPECT_EQ(4, seq.final_state);
+
+  EXPECT_STREQ("incubate", HMIActions::_from_integral(seq.actions[0])._to_string());
+  EXPECT_STREQ("bloc_temperature", HMIActions::_from_integral(seq.actions[1])._to_string());
+  EXPECT_STREQ("zero", HMIActions::_from_integral(seq.actions[2])._to_string());
+  EXPECT_STREQ("zero", HMIActions::_from_integral(seq.actions[3])._to_string());
+  EXPECT_STREQ("seven", HMIActions::_from_integral(seq.actions[4])._to_string());
+  EXPECT_STREQ("ok", HMIActions::_from_integral(seq.actions[5])._to_string());
+  EXPECT_STREQ("hold_time", HMIActions::_from_integral(seq.actions[6])._to_string());
+  EXPECT_STREQ("one", HMIActions::_from_integral(seq.actions[7])._to_string());
+  EXPECT_STREQ("two", HMIActions::_from_integral(seq.actions[8])._to_string());
+  EXPECT_STREQ("tree", HMIActions::_from_integral(seq.actions[9])._to_string());
+
+  EXPECT_STREQ("incubate_hold_time_keyboard", HMIStates::_from_integral(seq.final_state)._to_string());
   /*
   std::cout << "====== ACTIONS =======" << std::endl;
   for (const auto& action : actions)
