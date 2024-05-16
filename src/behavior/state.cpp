@@ -85,6 +85,21 @@ ActionSequence StateManager::computeActions(const std::string& start, const std:
   return computeActions(_start, _end, _end_actions);
 }
 
+ActionSequence StateManager::computeActions(State start, const std::string& end,
+                                            const std::vector<std::string>& end_actions)
+{
+  if (!action_from_string_cb_ || !state_from_string_cb_)
+    throw std::runtime_error("Empty callback(s), cannot convert from string");
+
+  State _end = state_from_string_cb_(end);
+
+  std::vector<Action> _end_actions;
+  for (const auto& end_action : end_actions)
+    _end_actions.push_back(action_from_string_cb_(end_action));
+
+  return computeActions(start, _end, _end_actions);
+}
+
 ActionSequence StateManager::computeActions(State start, State end, const std::vector<Action>& end_actions)
 {
   // find shortest state path

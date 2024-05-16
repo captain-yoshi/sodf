@@ -53,6 +53,7 @@ public:
                StateFromStringCallback state_from_string_cb);
 
   ActionSequence computeActions(State start, State end, const std::vector<Action>& end_actions);
+  ActionSequence computeActions(State start, const std::string& end, const std::vector<std::string>& end_actions);
   ActionSequence computeActions(const std::string& start, const std::string& end,
                                 const std::vector<std::string>& end_actions);
 
