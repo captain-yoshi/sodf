@@ -23,9 +23,11 @@ void splitObjectElement(const std::string& id, std::string& object, std::string&
 
 namespace {
 
-void addToElementTree(KDL::Tree& tree, const geometry::Transform& tf, const KDL::Joint& joint)
+void addToElementTree(KDL::Tree& tree, const std::string& segment_name, const KDL::Joint& joint,
+                      const KDL::Frame& tip_frame, const std::string& ref_segment_name)
 {
-  tree.addSegment(KDL::Segment(tf.frameId(), joint, tf.frame()), tf.refFrameId());
+  if (!tree.addSegment(KDL::Segment(segment_name, joint, tip_frame), ref_segment_name))
+    throw std::runtime_error("Reference segment '" + ref_segment_name + "' does not exists in the element tree.");
 }
 
 }  // namespace
@@ -33,11 +35,12 @@ void addToElementTree(KDL::Tree& tree, const geometry::Transform& tf, const KDL:
 Object::Object(const ObjectID& id, const geometry::Transform& tf) : id_(id), tf_(tf)
 
 {
-  // HOTFIX to circumvent bug in kdl
-  joints_ = std::make_shared<KDL::JntArray>(1);
-
   element_tree_ = std::make_shared<KDL::Tree>("_root");
-  element_tree_->addSegment(KDL::Segment("root", KDL::Joint(KDL::Joint::RotX), KDL::Frame()), "_root");
+
+  // HOTFIX to circumvent bug in kdl, when there are no joints
+  // Joint MUST be different then Joint::None
+  joints_ = std::make_shared<KDL::JntArray>(1);
+  addToElementTree(*element_tree_, "root", KDL::Joint(KDL::Joint::RotX), KDL::Frame(), "_root");
 }
 
 const ObjectID& Object::id() const
@@ -85,7 +88,8 @@ bool Object::addElement(const ElementID& id, Element::pointer&& element)
     if (!element_joint || element_joint->getType() == element_joint->None)
     {
       // Fixed joint
-      addToElementTree(*element_tree_, *element_tf, KDL::Joint(KDL::Joint::None));
+      addToElementTree(*element_tree_, element_tf->frameId(), KDL::Joint(KDL::Joint::None), element_tf->frame(),
+                       element_tf->refFrameId());
     }
     else
     {
@@ -95,11 +99,12 @@ bool Object::addElement(const ElementID& id, Element::pointer&& element)
       if (node != elements_.end())
         return false;
 
-      element_tree_->addSegment(KDL::Segment(tip_name, KDL::Joint(KDL::Joint::None), element_tf->frame()),
-                                element_tf->refFrameId());
+      addToElementTree(*element_tree_, tip_name, KDL::Joint(KDL::Joint::None), element_tf->frame(),
+                       element_tf->refFrameId());
+
       elements_.emplace(tip_name, std::move(nullptr));
 
-      element_tree_->addSegment(KDL::Segment(id, *element_joint, KDL::Frame()), tip_name);
+      addToElementTree(*element_tree_, id, *element_joint, KDL::Frame(), tip_name);
       joints_->resize(joints_->data.size() + 1);
 
       // map element id to joint index
