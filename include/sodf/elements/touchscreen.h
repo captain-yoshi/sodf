@@ -10,26 +10,35 @@
 namespace sodf {
 namespace elements {
 
-using ActionElementMap = std::map<behavior::Action, ElementID>;
+using ActionToElementIDCallback = std::function<std::string(behavior::Action)>;
 
-using ActionsToElementIDCallback = std::function<std::string(behavior::Action)>;
+struct ElementSequence
+{
+  std::vector<ElementID> elements;
+  behavior::State final_state;
+};
 
 class Touchscreen : public Element
 {
 public:
-  Touchscreen(const geometry::Transform& center_tf, double size_y, double size_z, int current_state,
-              behavior::StateManager&& state_manager, ActionsToElementIDCallback callback);
+  Touchscreen(const geometry::Transform& center_tf, double size_y, double size_z, behavior::State current_state,
+              behavior::StateManager&& state_manager, ActionToElementIDCallback callback);
 
   virtual ~Touchscreen(){};
 
   const geometry::Transform& centerTF() const;
   double pressForce() const;
 
-  int currentState() const;
-  void setCurrentState(int state);
+  behavior::State currentState() const;
+  void setCurrentState(behavior::State state);
 
-  std::vector<ElementID> computeActions(behavior::State start, behavior::State end,
-                                        const std::vector<behavior::Action>& end_actions, behavior::State& final_state);
+  behavior::ActionSequence computeActions(behavior::State start, behavior::State end,
+                                          const std::vector<behavior::Action>& end_actions);
+
+  ElementSequence computeActions(const std::string& start, const std::string& end,
+                                 const std::vector<std::string>& end_actions);
+
+  ElementSequence computeActions(const std::string& end, const std::vector<std::string>& end_actions);
 
   virtual const geometry::Transform* getTransform() const override
   {
@@ -43,9 +52,9 @@ protected:
   const double size_y_;
   const double size_z_;
 
-  int current_state_;
+  behavior::State current_state_;
   behavior::StateManager state_manager_;
-  ActionsToElementIDCallback callback_;
+  ActionToElementIDCallback callback_;
 };
 
 }  // namespace elements
