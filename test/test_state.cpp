@@ -34,7 +34,7 @@ BETTER_ENUM(HMIActions,
             zero,      //
             one,       //
             two,       //
-            tree,      //
+            three,     //
             four,      //
             five,      //
             six,       //
@@ -92,7 +92,7 @@ TEST(StateManager, computeActions)
     node.addActionTransition(HMIActions::zero, HMIStates::incubate_bloc_temperature_keyboard);
     node.addActionTransition(HMIActions::one, HMIStates::incubate_bloc_temperature_keyboard);
     node.addActionTransition(HMIActions::two, HMIStates::incubate_bloc_temperature_keyboard);
-    node.addActionTransition(HMIActions::tree, HMIStates::incubate_bloc_temperature_keyboard);
+    node.addActionTransition(HMIActions::three, HMIStates::incubate_bloc_temperature_keyboard);
     node.addActionTransition(HMIActions::four, HMIStates::incubate_bloc_temperature_keyboard);
     node.addActionTransition(HMIActions::five, HMIStates::incubate_bloc_temperature_keyboard);
     node.addActionTransition(HMIActions::six, HMIStates::incubate_bloc_temperature_keyboard);
@@ -111,7 +111,7 @@ TEST(StateManager, computeActions)
     node.addActionTransition(HMIActions::zero, HMIStates::incubate_hold_time_keyboard);
     node.addActionTransition(HMIActions::one, HMIStates::incubate_hold_time_keyboard);
     node.addActionTransition(HMIActions::two, HMIStates::incubate_hold_time_keyboard);
-    node.addActionTransition(HMIActions::tree, HMIStates::incubate_hold_time_keyboard);
+    node.addActionTransition(HMIActions::three, HMIStates::incubate_hold_time_keyboard);
     node.addActionTransition(HMIActions::four, HMIStates::incubate_hold_time_keyboard);
     node.addActionTransition(HMIActions::five, HMIStates::incubate_hold_time_keyboard);
     node.addActionTransition(HMIActions::six, HMIStates::incubate_hold_time_keyboard);
@@ -130,7 +130,7 @@ TEST(StateManager, computeActions)
       sm.computeActions(HMIStates::home,                                //
                         HMIStates::incubate_bloc_temperature_keyboard,  //
                         std::vector<Action>{ HMIActions::zero, HMIActions::zero, HMIActions::seven, HMIActions::ok,
-                                             HMIActions::hold_time, HMIActions::one, HMIActions::two, HMIActions::tree
+                                             HMIActions::hold_time, HMIActions::one, HMIActions::two, HMIActions::three
 
                         });
 
@@ -158,7 +158,7 @@ TEST(StateManager, computeActions)
   EXPECT_STREQ("hold_time", HMIActions::_from_integral(seq.actions[6])._to_string());
   EXPECT_STREQ("one", HMIActions::_from_integral(seq.actions[7])._to_string());
   EXPECT_STREQ("two", HMIActions::_from_integral(seq.actions[8])._to_string());
-  EXPECT_STREQ("tree", HMIActions::_from_integral(seq.actions[9])._to_string());
+  EXPECT_STREQ("three", HMIActions::_from_integral(seq.actions[9])._to_string());
 
   EXPECT_STREQ("incubate_hold_time_keyboard", HMIStates::_from_integral(seq.final_state)._to_string());
 
@@ -172,7 +172,7 @@ TEST(StateManager, computeActions)
                               HMIActions::_from_integral(HMIActions::hold_time)._to_string(),  //
                               HMIActions::_from_integral(HMIActions::one)._to_string(),        //
                               HMIActions::_from_integral(HMIActions::two)._to_string(),        //
-                              HMIActions::_from_integral(HMIActions::tree)._to_string()        //
+                              HMIActions::_from_integral(HMIActions::three)._to_string()       //
 
                           });
 
@@ -200,7 +200,7 @@ TEST(StateManager, computeActions)
   EXPECT_STREQ("hold_time", HMIActions::_from_integral(seq.actions[6])._to_string());
   EXPECT_STREQ("one", HMIActions::_from_integral(seq.actions[7])._to_string());
   EXPECT_STREQ("two", HMIActions::_from_integral(seq.actions[8])._to_string());
-  EXPECT_STREQ("tree", HMIActions::_from_integral(seq.actions[9])._to_string());
+  EXPECT_STREQ("three", HMIActions::_from_integral(seq.actions[9])._to_string());
 
   EXPECT_STREQ("incubate_hold_time_keyboard", HMIStates::_from_integral(seq.final_state)._to_string());
   /*
