@@ -14,9 +14,6 @@ namespace behavior {
 using State = int;
 using Action = int;
 
-/* using StateTransitions = std::map<State, ElementID>; */
-/* using ActionTransitions = std::map<Action, std::pair<ElementID, State>>; */
-/* using StateTransitions = std::map<State, ElementID>; */
 using ActionTransitions = std::map<Action, State>;
 
 struct ActionSequence
