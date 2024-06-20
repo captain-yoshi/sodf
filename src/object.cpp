@@ -210,6 +210,48 @@ const std::vector<ElementID>& Object::meshes() const
   return meshes_;
 }
 
+geometry_msgs::InertiaStamped Object::inertia() const
+{
+  geometry_msgs::InertiaStamped inertia;
+  inertia.header.frame_id = id();
+  inertia.inertia.m = 0.0;
+
+  KDL::Vector com;
+
+  for (const auto& mesh_name : meshes())
+  {
+    auto element = getElement<elements::Mesh>(mesh_name);
+    if (!element)
+      throw std::runtime_error("Cannot find Mesh element " + mesh_name + " within the object " + id());
+
+    const auto& mesh_inertia = element->inertia();
+
+    auto tf_root_mesh = displayInRoot(mesh_name);
+    KDL::Frame tf_mesh_com;
+    tf_mesh_com.p = KDL::Vector(mesh_inertia.inertia.com.x, mesh_inertia.inertia.com.y, mesh_inertia.inertia.com.z);
+
+    auto tf_root_com = tf_root_mesh * tf_mesh_com;
+
+    // compute total mass
+    inertia.inertia.m += mesh_inertia.inertia.m;
+
+    // compute CoM numerator mi*di + ...
+    com += (mesh_inertia.inertia.m * KDL::Vector(tf_root_com.p.x(), tf_root_com.p.y(), tf_root_com.p.z()));
+  }
+
+  if (inertia.inertia.m == 0.0)
+    throw std::runtime_error("Object " + id() + " mesh/es has no mass, cannot compute inertia");
+
+  // CoM num / total mass
+  com = com / inertia.inertia.m;
+
+  inertia.inertia.com.x = com.x();
+  inertia.inertia.com.y = com.y();
+  inertia.inertia.com.z = com.z();
+
+  return inertia;
+}
+
 const geometry::Transform& Object::tf() const
 {
   return tf_;

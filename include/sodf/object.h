@@ -10,6 +10,7 @@
 #include <sodf/element.h>
 
 #include <kdl/treefksolverpos_recursive.hpp>
+#include <geometry_msgs/InertiaStamped.h>
 
 namespace sodf {
 
@@ -70,6 +71,12 @@ public:
 
   /// Mesh
   const std::vector<ElementID>& meshes() const;
+
+  /** Compute the inertia of all the meshes wrt. the root frame
+   *
+   * The frame_id is set to the id of this object.
+   */
+  geometry_msgs::InertiaStamped inertia() const;
 
   /// Tf
   const geometry::Transform& tf() const;
