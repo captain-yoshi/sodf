@@ -228,15 +228,15 @@ geometry_msgs::InertiaStamped Object::inertia() const
 
     auto tf_root_mesh = displayInRoot(mesh_name);
     KDL::Frame tf_mesh_com;
-    tf_mesh_com.p = KDL::Vector(mesh_inertia.inertia.com.x, mesh_inertia.inertia.com.y, mesh_inertia.inertia.com.z);
+    tf_mesh_com.p = KDL::Vector(mesh_inertia.com.x, mesh_inertia.com.y, mesh_inertia.com.z);
 
     auto tf_root_com = tf_root_mesh * tf_mesh_com;
 
     // compute total mass
-    inertia.inertia.m += mesh_inertia.inertia.m;
+    inertia.inertia.m += mesh_inertia.m;
 
     // compute CoM numerator mi*di + ...
-    com += (mesh_inertia.inertia.m * KDL::Vector(tf_root_com.p.x(), tf_root_com.p.y(), tf_root_com.p.z()));
+    com += (mesh_inertia.m * KDL::Vector(tf_root_com.p.x(), tf_root_com.p.y(), tf_root_com.p.z()));
   }
 
   if (inertia.inertia.m == 0.0)
