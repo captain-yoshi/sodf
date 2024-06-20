@@ -56,6 +56,18 @@ public:
     return dynamic_cast<T*>(node->second.get());
   };
 
+  template <typename T>
+  const T* getElement(const std::string& id) const
+  {
+    static_assert(std::is_base_of<Element, T>::value, "T should inherit from sodf::Element");
+
+    const auto node = elements_.find(id);
+    if (node == elements_.end())
+      return nullptr;
+
+    return dynamic_cast<const T*>(node->second.get());
+  };
+
   /// Mesh
   const std::vector<ElementID>& meshes() const;
 
