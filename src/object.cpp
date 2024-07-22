@@ -150,7 +150,7 @@ KDL::Frame Object::displayInRoot(const std::string& from) const
   auto rc = fk_solver_->JntToCart(*joints_, frame, from);
 
   if (rc < 0)
-    throw std::runtime_error("forward kinematic solver internal error:" + from);
+    throw std::runtime_error("forward kinematic solver internal error for object " + id() + " with frame " + from);
 
   return frame;
 }
