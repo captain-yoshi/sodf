@@ -110,6 +110,18 @@ private:
   std::map<std::string, Element::pointer> elements_;
 };
 
+static void addChildParentRelationship(sodf::ObjectPtr& child, sodf::ObjectPtr& parent)
+{
+  child->addParent(parent);
+  parent->addChildren(child);
+}
+
+static void removeChildParentRelationship(sodf::ObjectPtr& child, sodf::ObjectPtr& parent)
+{
+  child->removeParent();
+  parent->removeChildren(child);
+}
+
 }  // namespace sodf
 
 #endif  // OBJECT_H_
