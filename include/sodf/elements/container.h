@@ -36,6 +36,11 @@ public:
 
   const geometry::Transform& bottomTF() const;
 
+  const std::vector<geometry::BaseVolumePtr> getShape() const
+  {
+    return shape_;
+  }
+
   virtual const geometry::Transform* getTransform() const override
   {
     return &bottom_tf_;
