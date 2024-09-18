@@ -38,6 +38,8 @@ public:
   /// child/parent
   void addParent(ObjectPtr parent);  // Overwrite if exists
   void addChildren(ObjectPtr child);
+  void removeParent();
+  void removeChildren(ObjectPtr child);
   const std::set<ObjectPtr>& children() const;
 
   const ObjectID& id() const;

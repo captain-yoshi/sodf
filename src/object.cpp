@@ -70,6 +70,23 @@ const std::set<ObjectPtr>& Object::children() const
   return childrens_;
 }
 
+void Object::removeParent()
+{
+  parent_ = nullptr;
+}
+
+void Object::removeChildren(ObjectPtr child)
+{
+  if (!child)
+    throw std::runtime_error("remove children invalid pointer");
+
+  auto it = childrens_.find(child);
+  if (it == childrens_.end())
+    throw std::runtime_error("child " + child->id() + "is not a children of this object");
+
+  childrens_.erase(it);
+}
+
 bool Object::addElement(const ElementID& id, Element::pointer&& element)
 {
   if (!element)
