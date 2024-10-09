@@ -34,9 +34,9 @@ public:
   const std::string& refFrameId() const;
 
 private:
-  const KDL::Frame frame_;
-  const std::string frame_id_;      // this frame actual id
-  const std::string ref_frame_id_;  // parent/reference frame id
+  KDL::Frame frame_;
+  std::string frame_id_;      // this frame actual id
+  std::string ref_frame_id_;  // parent/reference frame id
 };
 
 }  // namespace geometry

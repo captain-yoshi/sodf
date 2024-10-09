@@ -88,6 +88,11 @@ public:
   Eigen::Isometry3d displayInRootEigen(const std::string& from) const;
   geometry_msgs::Pose displayInRootPoseMsg(const std::string& from) const;
 
+  void setTransform(const geometry::Transform& tf)
+  {
+    tf_ = tf;
+  }
+
   bool updateJointPosition(const std::string& element_id, double position);
   bool updateJointPosition(const std::string& element_id, const std::string& position);
 
@@ -101,7 +106,7 @@ private:
 
   std::map<std::string, std::size_t> joint_index_map_;
 
-  const geometry::Transform tf_;  // parent to this object transform
+  geometry::Transform tf_;  // parent to this object transform
 
   std::shared_ptr<KDL::Tree> element_tree_;  // root name is "root"
 
