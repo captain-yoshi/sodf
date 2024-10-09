@@ -77,6 +77,11 @@ public:
     return dynamic_cast<const T*>(node->second.get());
   };
 
+  const std::map<std::string, Element::pointer>& getElements()
+  {
+    return elements_;
+  }
+
   /// Mesh
   const std::vector<ElementID>& meshes() const;
 
