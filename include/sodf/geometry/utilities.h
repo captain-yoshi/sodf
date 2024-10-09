@@ -129,13 +129,13 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
     wTa_xaxis.translate(Eigen::Vector3d(1, 0, 0));
     Eigen::Isometry3d aTxaxis = wTa.inverse() * wTa_xaxis;
 
-    double axis_angle = computeAngle(aTxaxis.translation(), aTb.translation());
+    axis_angle = computeAngle(aTxaxis.translation(), aTb.translation());
     std::cout << "axis angle = " << axis_angle << std::endl;
 
-    auto s = computeShortestAxisOfRotation(aTxaxis.translation(), aTb.translation());
+    s = computeShortestAxisOfRotation(aTxaxis.translation(), aTb.translation());
     s.normalize();
 
-    auto rmat = computeRotationMatrixFromAxisAngle(axis_angle, s);
+    rmat = computeRotationMatrixFromAxisAngle(axis_angle, s);
 
     Eigen::Isometry3d rotate_axis = Eigen::Isometry3d::Identity();
     rotate_axis.linear() = rmat;
