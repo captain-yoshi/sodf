@@ -26,6 +26,11 @@ void splitObjectElement(const std::string& id, std::string_view& object, std::st
 void splitObjectElement(const std::string& id, std::string& object, std::string& element,
                         const std::string& delimiter = "/");
 
+Eigen::Isometry3d getRootToElementFrameEigen(const ObjectMap& object_map, const ObjectID& object_id,
+                                             const ElementID& element_id);
+geometry_msgs::Pose getRootToElementFramePoseMsg(const ObjectMap& object_map, const ObjectID& object_id,
+                                                 const ElementID& element_id);
+
 class Object
 {
 public:

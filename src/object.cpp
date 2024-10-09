@@ -21,6 +21,28 @@ void splitObjectElement(const std::string& id, std::string& object, std::string&
   element = (id.size() == object.size()) ? "" : id.substr(object.size() + delimiter.size(), -1);
 }
 
+Eigen::Isometry3d getRootToElementFrameEigen(const ObjectMap& object_map, const ObjectID& object_id,
+                                             const ElementID& element_id)
+{
+  // find object
+  auto object = object_map.find(object_id);
+  if (object == object_map.end())
+    throw std::runtime_error("Cannot find object: " + object_id);
+
+  return object->second->displayInRootEigen(element_id);
+}
+
+geometry_msgs::Pose getRootToElementFramePoseMsg(const ObjectMap& object_map, const ObjectID& object_id,
+                                                 const ElementID& element_id)
+{
+  // find object
+  auto object = object_map.find(object_id);
+  if (object == object_map.end())
+    throw std::runtime_error("Cannot find object: " + object_id);
+
+  return object->second->displayInRootPoseMsg(element_id);
+}
+
 namespace {
 
 void addToElementTree(KDL::Tree& tree, const std::string& segment_name, const KDL::Joint& joint,
