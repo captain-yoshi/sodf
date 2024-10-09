@@ -29,6 +29,7 @@ void splitObjectElement(const std::string& id, std::string& object, std::string&
 class Object
 {
 public:
+  Object(const ObjectID& id);
   Object(const ObjectID& id, const geometry::Transform& tf);
 
   /// Elements
@@ -91,6 +92,8 @@ public:
   bool updateJointPosition(const std::string& element_id, const std::string& position);
 
 private:
+  void initializeTree();
+
   const ObjectID id_;
 
   ObjectPtr parent_;

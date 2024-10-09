@@ -32,8 +32,7 @@ void addToElementTree(KDL::Tree& tree, const std::string& segment_name, const KD
 
 }  // namespace
 
-Object::Object(const ObjectID& id, const geometry::Transform& tf) : id_(id), tf_(tf)
-
+void Object::initializeTree()
 {
   element_tree_ = std::make_shared<KDL::Tree>("_root");
 
@@ -41,6 +40,16 @@ Object::Object(const ObjectID& id, const geometry::Transform& tf) : id_(id), tf_
   // Joint MUST be different then Joint::None
   joints_ = std::make_shared<KDL::JntArray>(1);
   addToElementTree(*element_tree_, "root", KDL::Joint(KDL::Joint::RotX), KDL::Frame(), "_root");
+}
+
+Object::Object(const ObjectID& id) : id_(id), tf_(sodf::geometry::Transform(Eigen::Isometry3d::Identity(), "", ""))
+{
+  initializeTree();
+}
+
+Object::Object(const ObjectID& id, const geometry::Transform& tf) : id_(id), tf_(tf)
+{
+  initializeTree();
 }
 
 const ObjectID& Object::id() const
