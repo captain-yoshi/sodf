@@ -27,23 +27,27 @@ Eigen::Matrix3d computeRotationMatrixFromAxisAngle(double theta, const Eigen::Ve
   Eigen::Matrix3d rot;
 
   const double cos_theta = std::cos(theta);
-  const double sin_theta = std::cos(theta);
+  const double sin_theta = std::sin(theta);
 
   const double& sx = axis(0);
   const double& sy = axis(1);
   const double& sz = axis(2);
 
-  rot(0, 0) = cos_theta + std::pow(sx, 2) * (1 - cos_theta);
+  const double sx2 = std::pow(sx, 2);
+  const double sy2 = std::pow(sy, 2);
+  const double sz2 = std::pow(sz, 2);
+
+  rot(0, 0) = sx2 * (1 - cos_theta) + cos_theta;
   rot(0, 1) = sx * sy * (1 - cos_theta) - sz * sin_theta;
-  rot(0, 2) = sx * sz * (1 - cos_theta + sy * sin_theta);
+  rot(0, 2) = sx * sz * (1 - cos_theta) + sy * sin_theta;
 
-  rot(1, 0) = sy * sx * (1 - cos_theta) + sz * sin_theta;
-  rot(1, 1) = cos_theta + std::pow(sy, 2) * (1 - cos_theta);
-  rot(1, 2) = sy * sz * (1 - cos_theta) - sz * sin_theta;
+  rot(1, 0) = sx * sy * (1 - cos_theta) + sz * sin_theta;
+  rot(1, 1) = sy2 * (1 - cos_theta) + cos_theta;
+  rot(1, 2) = sy * sz * (1 - cos_theta) - sx * sin_theta;
 
-  rot(2, 0) = sz * sx * (1 - cos_theta) - sy * sin_theta;
-  rot(2, 1) = sz * sy * (1 - cos_theta) + sx * sin_theta;
-  rot(2, 2) = cos_theta + std::pow(sz, 2) * (1 - cos_theta);
+  rot(2, 0) = sx * sz * (1 - cos_theta) - sy * sin_theta;
+  rot(2, 1) = sy * sz * (1 - cos_theta) + sx * sin_theta;
+  rot(2, 2) = sz2 * (1 - cos_theta) + cos_theta;
 
   return rot;
 }
