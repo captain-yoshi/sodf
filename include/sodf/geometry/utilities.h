@@ -157,5 +157,23 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
   return wTx;
 }
 
+/* @brief Rotate an axis so that it passes through a point in space
+ *
+ * @param axis unit vector
+ * @param point vector in space wrt. the axis frame
+ *
+ * @return rotation matrix that aligns the given axis with the point in space
+ */
+const Eigen::Matrix3d alignAxisToPoint(const Eigen::Vector3d& axis, const Eigen::Vector3d& point)
+{
+  double axis_angle = computeAngle(axis, point);
+  auto s = computeShortestAxisOfRotation(axis, point);
+  s.normalize();
+
+  Eigen::Matrix3d rmat = computeRotationMatrixFromAxisAngle(axis_angle, s);
+
+  return rmat;
+}
+
 }  // namespace geometry
 }  // namespace sodf
