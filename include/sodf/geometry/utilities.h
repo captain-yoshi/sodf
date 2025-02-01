@@ -55,7 +55,7 @@ Eigen::Matrix3d computeRotationMatrixFromAxisAngle(double theta, const Eigen::Ve
 // https://math.stackexchange.com/a/4034978
 Eigen::Vector3d computeShortestAxisOfRotation(const Eigen::Vector3d& v, const Eigen::Vector3d& w)
 {
-  return (v.cross(w) / (v.cross(w)).norm()).normalized();
+  return v.cross(w);
 }
 
 double computeDistance(const Eigen::Vector3d& v, const Eigen::Vector3d& w)
@@ -111,7 +111,10 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
 
   double axis_angle = computeAngle(cTd.translation(), aTb.translation());
   auto s = computeShortestAxisOfRotation(cTd.translation(), aTb.translation());
-  s.normalize();
+  if (s.x() == 0.0 && s.y() == 0.0 && s.z() == 0.0)
+    std::cout << "The vectors are parallel (or nearly parallel). No unique axis of rotation exists." << std::endl;
+  else
+    s.normalize();
 
   auto rmat = computeRotationMatrixFromAxisAngle(axis_angle, s);
 
@@ -137,7 +140,10 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
     std::cout << "axis angle = " << axis_angle << std::endl;
 
     s = computeShortestAxisOfRotation(aTxaxis.translation(), aTb.translation());
-    s.normalize();
+    if (s.x() == 0.0 && s.y() == 0.0 && s.z() == 0.0)
+      std::cout << "The vectors are parallel (or nearly parallel). No unique axis of rotation exists." << std::endl;
+    else
+      s.normalize();
 
     rmat = computeRotationMatrixFromAxisAngle(axis_angle, s);
 
@@ -168,7 +174,10 @@ const Eigen::Matrix3d alignAxisToPoint(const Eigen::Vector3d& axis, const Eigen:
 {
   double axis_angle = computeAngle(axis, point);
   auto s = computeShortestAxisOfRotation(axis, point);
-  s.normalize();
+  if (s.x() == 0.0 && s.y() == 0.0 && s.z() == 0.0)
+    std::cout << "The vectors are parallel (or nearly parallel). No unique axis of rotation exists." << std::endl;
+  else
+    s.normalize();
 
   Eigen::Matrix3d rmat = computeRotationMatrixFromAxisAngle(axis_angle, s);
 
