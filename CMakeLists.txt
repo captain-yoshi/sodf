@@ -50,23 +50,11 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME}
-  src/object.cpp
+  src/behavior/state.cpp
   src/conversion.cpp
-
-  src/elements/container.cpp
-  src/elements/grasp.cpp
-  src/elements/insertion.cpp
-  src/elements/joint.cpp
-  src/elements/touchscreen.cpp
-  src/elements/button.cpp
-
   src/geometry/alignment.cpp
   src/geometry/volume.cpp
-  src/geometry/transform.cpp
-
   src/graph/directed_graph.cpp
-
-  src/behavior/state.cpp
 )
 
 # add quarticRootsFlocke as an internal library

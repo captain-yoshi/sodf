@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-#include <sodf/element.h>
+
 #include <sodf/graph/directed_graph.h>
 
 namespace sodf {

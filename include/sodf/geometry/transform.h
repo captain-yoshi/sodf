@@ -2,41 +2,15 @@
 #define TRANSFORM_H_
 
 #include <Eigen/Geometry>
-#include <kdl/frames.hpp>
-
-#include <geometry_msgs/TransformStamped.h>
-#include <geometry_msgs/Pose.h>
 
 namespace sodf {
 namespace geometry {
 
-class Transform
+struct Transform
 {
-public:
-  Transform(const KDL::Frame& frame, const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const KDL::Vector& position, const KDL::Rotation& rotation, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(const Eigen::Isometry3d& frame, const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const Eigen::Vector3d& position, const Eigen::Quaterniond& rotation, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(double px, double py, double pz, double qx, double qy, double qz, double qw, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::TransformStamped& frame, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::Vector3& position, const geometry_msgs::Quaternion& rotation,
-            const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::Pose& frame, const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::Point& position, const geometry_msgs::Quaternion& rotation,
-            const std::string& frame_id, const std::string& ref_frame_id = "root");
-
-  const KDL::Frame& frame() const;
-  const std::string& frameId() const;
-  const std::string& refFrameId() const;
-
-private:
-  KDL::Frame frame_;
-  std::string frame_id_;      // this frame actual id
-  std::string ref_frame_id_;  // parent/reference frame id
+  std::string parent;
+  std::string child;
+  Eigen::Isometry3d frame = Eigen::Isometry3d::Identity();
 };
 
 }  // namespace geometry
