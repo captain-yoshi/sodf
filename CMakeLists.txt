@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
 set(better_enums_INCLUDE_DIRS ext/better-enums)
+set(ginseng_INCLUDE_DIRS ext/ginseng)
 
 catkin_package(
   LIBRARIES
@@ -26,6 +27,7 @@ catkin_package(
     include
     ${quarticRootsFlocke_INCLUDE_DIRS}
     ${better_enums_INCLUDE_DIRS}
+    ${ginseng_INCLUDE_DIRS}
   CATKIN_DEPENDS
     roscpp
     geometry_msgs
@@ -44,6 +46,7 @@ include_directories(
   ${orocos_kdl_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${better_enums_INCLUDE_DIRS}
+  ${ginseng_INCLUDE_DIRS}
 )
 
 add_library(${PROJECT_NAME}
@@ -79,6 +82,10 @@ add_library(quarticRootsFlocke
 # add better-enums as an internal library
 # https://github.com/aantron/better-enums/commit/520d8ee39037c9c94aa6e708a4fd6c0fa313ae80
 add_library(better_enums INTERFACE)
+
+# add ginseng as an internal library
+# https://github.com/apples/ginseng/commit/8839ef98d0e31c64aec8f3445445367d690b742c
+add_library(ginseng INTERFACE)
 
 add_subdirectory(test)
 
