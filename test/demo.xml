@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- V1 -->
+  <Object id="pcr1" clone="pcr" include="./pcr.xml">
+
+    <Constraint>
+      <Transform  name="base" parent="tabletop" x="0" y="0" z="0" qx="0" qy="0" qz="0" qw="1"/>
+    </Constraint>
+
+    <Containers op="update-all">
+      <Container volume="50.0"/>
+    </Containers>
+  </Object>
+
+
+  <Object id="pcr2" clone="pcr1" >
+    <Constraint op="update">
+      <Transform  name="container/A1" parent="root" x="0" y="0" z="0" qx="0" qy="0" qz="0" qw="1"/>
+    </Constraint>
+    <Containers op="clear" />
+  </Object>
+
+  <Object id="pcr3" clone="pcr2" />
+
+
+</root>
