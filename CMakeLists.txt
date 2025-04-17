@@ -50,6 +50,8 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME}
+  ext/tinyxml2/tinyxml2.cpp
+
   src/behavior/state.cpp
   src/conversion.cpp
   src/geometry/alignment.cpp

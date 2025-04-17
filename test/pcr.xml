@@ -15,7 +15,12 @@
         <Shape name="TruncatedCone" base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
         <Shape name="Cylinder" radius="0.00275" height="0.0040"/>
       </Container>
+
+      <Container id="container/A2" clone="container/A1"/>
+
     </Containers>
+
+
 
 
     <!-- Transforms -->
@@ -26,6 +31,6 @@
     </Transforms>
 
 
-    
+
   </Object>
 </root>
