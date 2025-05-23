@@ -14,6 +14,9 @@ find_package(catkin REQUIRED COMPONENTS
   kdl_conversions
 )
 
+set(SODF_LIBRARY ${PROJECT_NAME})
+
+
 set(quarticRootsFlocke_INCLUDE_DIRS ext/quarticRootsFlocke/src)
 set(better_enums_INCLUDE_DIRS ext/better-enums)
 set(ginseng_INCLUDE_DIRS ext/ginseng)
