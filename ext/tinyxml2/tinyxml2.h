@@ -96,11 +96,11 @@ distribution.
 /* Versioning, past 1.0.14:
 	http://semver.org/
 */
-static const int TIXML2_MAJOR_VERSION = 11;
+static const int TIXML2_MAJOR_VERSION = 10;
 static const int TIXML2_MINOR_VERSION = 0;
 static const int TIXML2_PATCH_VERSION = 0;
 
-#define TINYXML2_MAJOR_VERSION 11
+#define TINYXML2_MAJOR_VERSION 10
 #define TINYXML2_MINOR_VERSION 0
 #define TINYXML2_PATCH_VERSION 0
 
@@ -199,7 +199,7 @@ private:
 	Has a small initial memory pool, so that low or no usage will not
 	cause a call to new/delete
 */
-template <class T, size_t INITIAL_SIZE>
+template <class T, int INITIAL_SIZE>
 class DynArray
 {
 public:
@@ -227,8 +227,9 @@ public:
         ++_size;
     }
 
-    T* PushArr( size_t count ) {
-        TIXMLASSERT( _size <= SIZE_MAX - count );
+    T* PushArr( int count ) {
+        TIXMLASSERT( count >= 0 );
+        TIXMLASSERT( _size <= INT_MAX - count );
         EnsureCapacity( _size+count );
         T* ret = &_mem[_size];
         _size += count;
@@ -241,7 +242,7 @@ public:
         return _mem[_size];
     }
 
-    void PopArr( size_t count ) {
+    void PopArr( int count ) {
         TIXMLASSERT( _size >= count );
         _size -= count;
     }
@@ -250,13 +251,13 @@ public:
         return _size == 0;
     }
 
-    T& operator[](size_t i) {
-        TIXMLASSERT( i < _size );
+    T& operator[](int i)				{
+        TIXMLASSERT( i>= 0 && i < _size );
         return _mem[i];
     }
 
-    const T& operator[](size_t i) const {
-        TIXMLASSERT( i < _size );
+    const T& operator[](int i) const	{
+        TIXMLASSERT( i>= 0 && i < _size );
         return _mem[i];
     }
 
@@ -265,18 +266,18 @@ public:
         return _mem[ _size - 1];
     }
 
-    size_t Size() const {
+    int Size() const					{
         TIXMLASSERT( _size >= 0 );
         return _size;
     }
 
-    size_t Capacity() const {
+    int Capacity() const				{
         TIXMLASSERT( _allocated >= INITIAL_SIZE );
         return _allocated;
     }
 
-	void SwapRemove(size_t i) {
-		TIXMLASSERT(i < _size);
+	void SwapRemove(int i) {
+		TIXMLASSERT(i >= 0 && i < _size);
 		TIXMLASSERT(_size > 0);
 		_mem[i] = _mem[_size - 1];
 		--_size;
@@ -296,14 +297,14 @@ private:
     DynArray( const DynArray& ); // not supported
     void operator=( const DynArray& ); // not supported
 
-    void EnsureCapacity( size_t cap ) {
+    void EnsureCapacity( int cap ) {
         TIXMLASSERT( cap > 0 );
         if ( cap > _allocated ) {
-            TIXMLASSERT( cap <= SIZE_MAX / 2 / sizeof(T));
-            const size_t newAllocated = cap * 2;
-            T* newMem = new T[newAllocated];
+            TIXMLASSERT( cap <= INT_MAX / 2 );
+            const int newAllocated = cap * 2;
+            T* newMem = new T[static_cast<unsigned int>(newAllocated)];
             TIXMLASSERT( newAllocated >= _size );
-            memcpy( newMem, _mem, sizeof(T) * _size );	// warning: not using constructors, only works for PODs
+            memcpy( newMem, _mem, sizeof(T)*static_cast<size_t>(_size) );	// warning: not using constructors, only works for PODs
             if ( _mem != _pool ) {
                 delete [] _mem;
             }
@@ -313,9 +314,9 @@ private:
     }
 
     T*  _mem;
-    T   _pool[INITIAL_SIZE];
-    size_t _allocated;		// objects allocated
-    size_t _size;			// number objects in use
+    T   _pool[static_cast<size_t>(INITIAL_SIZE)];
+    int _allocated;		// objects allocated
+    int _size;			// number objects in use
 };
 
 
@@ -329,7 +330,7 @@ public:
     MemPool() {}
     virtual ~MemPool() {}
 
-    virtual size_t ItemSize() const = 0;
+    virtual int ItemSize() const = 0;
     virtual void* Alloc() = 0;
     virtual void Free( void* ) = 0;
     virtual void SetTracked() = 0;
@@ -339,7 +340,7 @@ public:
 /*
 	Template child class to create pools of the correct type.
 */
-template< size_t ITEM_SIZE >
+template< int ITEM_SIZE >
 class MemPoolT : public MemPool
 {
 public:
@@ -361,10 +362,10 @@ public:
         _nUntracked = 0;
     }
 
-    virtual size_t ItemSize() const override {
+    virtual int ItemSize() const override{
         return ITEM_SIZE;
     }
-    size_t CurrentAllocs() const {
+    int CurrentAllocs() const		{
         return _currentAllocs;
     }
 
@@ -375,7 +376,7 @@ public:
             _blockPtrs.Push( block );
 
             Item* blockItems = block->items;
-            for( size_t i = 0; i < ITEMS_PER_BLOCK - 1; ++i ) {
+            for( int i = 0; i < ITEMS_PER_BLOCK - 1; ++i ) {
                 blockItems[i].next = &(blockItems[i + 1]);
             }
             blockItems[ITEMS_PER_BLOCK - 1].next = 0;
@@ -416,7 +417,7 @@ public:
         --_nUntracked;
     }
 
-    size_t Untracked() const {
+    int Untracked() const {
         return _nUntracked;
     }
 
@@ -447,10 +448,10 @@ private:
     DynArray< Block*, 10 > _blockPtrs;
     Item* _root;
 
-    size_t _currentAllocs;
-    size_t _nAllocs;
-    size_t _maxAllocs;
-    size_t _nUntracked;
+    int _currentAllocs;
+    int _nAllocs;
+    int _maxAllocs;
+    int _nUntracked;
 };
 
 
@@ -891,7 +892,7 @@ public:
 
 		If the 'target' is null, then the nodes will
 		be allocated in the current document. If 'target'
-        is specified, the memory will be allocated in the
+        is specified, the memory will be allocated is the
         specified XMLDocument.
 
 		NOTE: This is probably not the correct tool to
@@ -1980,11 +1981,11 @@ private:
 	void PushDepth();
 	void PopDepth();
 
-    template<class NodeType, size_t PoolElementSize>
+    template<class NodeType, int PoolElementSize>
     NodeType* CreateUnlinkedNode( MemPoolT<PoolElementSize>& pool );
 };
 
-template<class NodeType, size_t PoolElementSize>
+template<class NodeType, int PoolElementSize>
 inline NodeType* XMLDocument::CreateUnlinkedNode( MemPoolT<PoolElementSize>& pool )
 {
     TIXMLASSERT( sizeof( NodeType ) == PoolElementSize );
@@ -2314,7 +2315,7 @@ public:
     	of the XML file in memory. (Note the size returned
     	includes the terminating null.)
     */
-    size_t CStrSize() const {
+    int CStrSize() const {
         return _buffer.Size();
     }
     /**
@@ -2374,7 +2375,7 @@ private:
 };
 
 
-} // namespace tinyxml2
+}	// tinyxml2
 
 #if defined(_MSC_VER)
 #   pragma warning(pop)

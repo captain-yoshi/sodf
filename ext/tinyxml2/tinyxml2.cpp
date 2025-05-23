@@ -24,7 +24,7 @@ distribution.
 #include "tinyxml2.h"
 
 #include <new>		// yes, this one new style header, is in the Android SDK.
-#if defined(ANDROID_NDK) || defined(__BORLANDC__) || defined(__QNXNTO__) || defined(__CC_ARM)
+#if defined(ANDROID_NDK) || defined(__BORLANDC__) || defined(__QNXNTO__)
 #   include <stddef.h>
 #   include <stdarg.h>
 #else
@@ -106,9 +106,14 @@ distribution.
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__CYGWIN__)
 	#define TIXML_FSEEK fseeko
 	#define TIXML_FTELL ftello
-#elif defined(__ANDROID__) && __ANDROID_API__ > 24
-	#define TIXML_FSEEK fseeko64
-	#define TIXML_FTELL ftello64
+#elif defined(__ANDROID__) 
+    #if __ANDROID_API__ > 24
+        #define TIXML_FSEEK fseeko64
+        #define TIXML_FTELL ftello64
+    #else
+        #define TIXML_FSEEK fseeko
+        #define TIXML_FTELL ftello
+    #endif
 #else
 	#define TIXML_FSEEK fseek
 	#define TIXML_FTELL ftell
@@ -234,13 +239,13 @@ char* StrPair::ParseName( char* p )
     if ( !p || !(*p) ) {
         return 0;
     }
-    if ( !XMLUtil::IsNameStartChar( static_cast<unsigned char>(*p) ) ) {
+    if ( !XMLUtil::IsNameStartChar( (unsigned char) *p ) ) {
         return 0;
     }
 
     char* const start = p;
     ++p;
-    while ( *p && XMLUtil::IsNameChar( static_cast<unsigned char>(*p) ) ) {
+    while ( *p && XMLUtil::IsNameChar( (unsigned char) *p ) ) {
         ++p;
     }
 
@@ -467,93 +472,101 @@ void XMLUtil::ConvertUTF32ToUTF8( unsigned long input, char* output, int* length
 }
 
 
-const char* XMLUtil::GetCharacterRef(const char* p, char* value, int* length)
+const char* XMLUtil::GetCharacterRef( const char* p, char* value, int* length )
 {
-    // Assume an entity, and pull it out.
+    // Presume an entity, and pull it out.
     *length = 0;
 
-    static const uint32_t MAX_CODE_POINT = 0x10FFFF;
-
-    if (*(p + 1) == '#' && *(p + 2)) {
-        uint32_t ucs = 0;
+    if ( *(p+1) == '#' && *(p+2) ) {
+        unsigned long ucs = 0;
+        TIXMLASSERT( sizeof( ucs ) >= 4 );
         ptrdiff_t delta = 0;
-        uint32_t mult = 1;
+        unsigned mult = 1;
         static const char SEMICOLON = ';';
 
-        bool hex = false;
-        uint32_t radix = 10;
-        const char* q = 0;
-        char terminator = '#';
-
-        if (*(p + 2) == 'x') {
+        if ( *(p+2) == 'x' ) {
             // Hexadecimal.
-            hex = true;
-            radix = 16;
-            terminator = 'x';
+            const char* q = p+3;
+            if ( !(*q) ) {
+                return 0;
+            }
 
-            q = p + 3;
+            q = strchr( q, SEMICOLON );
+
+            if ( !q ) {
+                return 0;
+            }
+            TIXMLASSERT( *q == SEMICOLON );
+
+            delta = q-p;
+            --q;
+
+            while ( *q != 'x' ) {
+                unsigned int digit = 0;
+
+                if ( *q >= '0' && *q <= '9' ) {
+                    digit = *q - '0';
+                }
+                else if ( *q >= 'a' && *q <= 'f' ) {
+                    digit = *q - 'a' + 10;
+                }
+                else if ( *q >= 'A' && *q <= 'F' ) {
+                    digit = *q - 'A' + 10;
+                }
+                else {
+                    return 0;
+                }
+                TIXMLASSERT( digit < 16 );
+                TIXMLASSERT( digit == 0 || mult <= UINT_MAX / digit );
+                const unsigned int digitScaled = mult * digit;
+                TIXMLASSERT( ucs <= ULONG_MAX - digitScaled );
+                ucs += digitScaled;
+                TIXMLASSERT( mult <= UINT_MAX / 16 );
+                mult *= 16;
+                --q;
+            }
         }
         else {
             // Decimal.
-            q = p + 2;
-        }
-        if (!(*q)) {
-            return 0;
-        }
-
-        q = strchr(q, SEMICOLON);
-        if (!q) {
-            return 0;
-        }
-        TIXMLASSERT(*q == SEMICOLON);
-
-        delta = q - p;
-        --q;
-
-        while (*q != terminator) {
-            uint32_t digit = 0;
-
-            if (*q >= '0' && *q <= '9') {
-                digit = *q - '0';
-            }
-            else if (hex && (*q >= 'a' && *q <= 'f')) {
-                digit = *q - 'a' + 10;
-            }
-            else if (hex && (*q >= 'A' && *q <= 'F')) {
-                digit = *q - 'A' + 10;
-            }
-            else {
+            const char* q = p+2;
+            if ( !(*q) ) {
                 return 0;
             }
-            TIXMLASSERT(digit < radix);
 
-            const unsigned int digitScaled = mult * digit;
-            ucs += digitScaled;
-            mult *= radix;       
-            
-            // Security check: could a value exist that is out of range?
-            // Easily; limit to the MAX_CODE_POINT, which also allows for a
-            // bunch of leading zeroes.
-            if (mult > MAX_CODE_POINT) {
-                mult = MAX_CODE_POINT;
+            q = strchr( q, SEMICOLON );
+
+            if ( !q ) {
+                return 0;
             }
+            TIXMLASSERT( *q == SEMICOLON );
+
+            delta = q-p;
             --q;
-        }
-        // Out of range:
-        if (ucs > MAX_CODE_POINT) {
-            return 0;
+
+            while ( *q != '#' ) {
+                if ( *q >= '0' && *q <= '9' ) {
+                    const unsigned int digit = *q - '0';
+                    TIXMLASSERT( digit < 10 );
+                    TIXMLASSERT( digit == 0 || mult <= UINT_MAX / digit );
+                    const unsigned int digitScaled = mult * digit;
+                    TIXMLASSERT( ucs <= ULONG_MAX - digitScaled );
+                    ucs += digitScaled;
+                }
+                else {
+                    return 0;
+                }
+                TIXMLASSERT( mult <= UINT_MAX / 10 );
+                mult *= 10;
+                --q;
+            }
         }
         // convert the UCS to UTF-8
-        ConvertUTF32ToUTF8(ucs, value, length);
-		if (length == 0) {
-            // If length is 0, there was an error. (Security? Bad input?)
-            // Fail safely.
-			return 0;
-		}
+        ConvertUTF32ToUTF8( ucs, value, length );
         return p + delta + 1;
     }
-    return p + 1;
+    return p+1;
 }
+
 
 void XMLUtil::ToStr( int v, char* buffer, int bufferSize )
 {
@@ -597,7 +610,7 @@ void XMLUtil::ToStr( int64_t v, char* buffer, int bufferSize )
 void XMLUtil::ToStr( uint64_t v, char* buffer, int bufferSize )
 {
     // horrible syntax trick to make the compiler happy about %llu
-    TIXML_SNPRINTF(buffer, bufferSize, "%llu", static_cast<unsigned long long>(v));
+    TIXML_SNPRINTF(buffer, bufferSize, "%llu", (long long)v);
 }
 
 bool XMLUtil::ToInt(const char* str, int* value)
@@ -692,7 +705,7 @@ bool XMLUtil::ToInt64(const char* str, int64_t* value)
 bool XMLUtil::ToUnsigned64(const char* str, uint64_t* value) {
     unsigned long long v = 0;	// horrible syntax trick to make the compiler happy about %llu
     if(TIXML_SSCANF(str, IsPrefixHex(str) ? "%llx" : "%llu", &v) == 1) {
-        *value = static_cast<uint64_t>(v);
+        *value = (uint64_t)v;
         return true;
     }
     return false;
@@ -1969,7 +1982,7 @@ char* XMLElement::ParseAttributes( char* p, int* curLineNumPtr )
         }
 
         // attribute.
-        if (XMLUtil::IsNameStartChar( static_cast<unsigned char>(*p) ) ) {
+        if (XMLUtil::IsNameStartChar( (unsigned char) *p ) ) {
             XMLAttribute* attrib = CreateAttribute();
             TIXMLASSERT( attrib );
             attrib->_parseLineNum = _document->_parseCurLineNum;
@@ -2213,7 +2226,7 @@ void XMLDocument::MarkInUse(const XMLNode* const node)
 	TIXMLASSERT(node);
 	TIXMLASSERT(node->_parent == 0);
 
-	for (size_t i = 0; i < _unlinked.Size(); ++i) {
+	for (int i = 0; i < _unlinked.Size(); ++i) {
 		if (node == _unlinked[i]) {
 			_unlinked.SwapRemove(i);
 			break;
@@ -2496,7 +2509,7 @@ void XMLDocument::ClearError() {
 
 void XMLDocument::SetError( XMLError error, int lineNum, const char* format, ... )
 {
-    TIXMLASSERT(error >= 0 && error < XML_ERROR_COUNT);
+    TIXMLASSERT( error >= 0 && error < XML_ERROR_COUNT );
     _errorID = error;
     _errorLineNum = lineNum;
 	_errorStr.Reset();
@@ -2505,8 +2518,7 @@ void XMLDocument::SetError( XMLError error, int lineNum, const char* format, ...
     char* buffer = new char[BUFFER_SIZE];
 
     TIXMLASSERT(sizeof(error) <= sizeof(int));
-    TIXML_SNPRINTF(buffer, BUFFER_SIZE, "Error=%s ErrorID=%d (0x%x) Line number=%d",
-        ErrorIDToName(error), static_cast<int>(error), static_cast<unsigned int>(error), lineNum);
+    TIXML_SNPRINTF(buffer, BUFFER_SIZE, "Error=%s ErrorID=%d (0x%x) Line number=%d", ErrorIDToName(error), int(error), int(error), lineNum);
 
 	if (format) {
 		size_t len = strlen(buffer);
