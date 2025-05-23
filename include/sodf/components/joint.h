@@ -1,24 +1,49 @@
 #ifndef SODF_COMPONENTS_JOINT_H_
 #define SODF_COMPONENTS_JOINT_H_
 
-#include <kdl/joint.hpp>
-
 #include <Eigen/Geometry>
+#include <sodf/ecs.h>
 
 namespace sodf {
 namespace components {
 
-struct Joint
+enum class JointType
 {
-  KDL::Joint joint;
-  std::string parent;
-  double joint_position = 0.0;
-  Eigen::Isometry3d frame = Eigen::Isometry3d::Identity();
+  FIXED,
+  REVOLUTE,
+  PRISMATIC
 };
 
-struct JointCollection
+enum class JointActuation
 {
-  std::vector<std::pair<std::string, Joint>> joint_map;
+  FIXED,    // when JointType = FIXED
+  ACTIVE,   // actively commanded
+  PASSIVE,  // free to move (e.g. floating)
+  SPRING    // has a restoring force but no actuator
+};
+
+struct Joint
+{
+  JointType type = JointType::FIXED;
+  JointActuation actuation = JointActuation::FIXED;
+
+  double position = 0.0;  // angle (rad) or displacement (m)
+  Eigen::Vector3d axis = Eigen::Vector3d::UnitZ();
+};
+
+struct JointComponent
+{
+  FlatMap<std::string, Joint> joint_map;  //
+
+  // Joint* get(const std::string& name)
+  // {
+  //   for (auto& [n, joint] : joints)
+  //   {
+  //     if (n == name)
+  //       return &joint;
+  //   }
+  //   return nullptr;
+  // }
 };
 
 }  // namespace components

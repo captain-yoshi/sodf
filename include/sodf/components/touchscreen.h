@@ -1,63 +1,35 @@
-#ifndef TOUCHSCREEN_H_
-#define TOUCHSCREEN_H_
+#ifndef SODF_COMPONENTS_TOUCHSCREEN_H_
+#define SODF_COMPONENTS_TOUCHSCREEN_H_
 
-#include <functional>
-
-#include <sodf/behavior/state.h>
-#include <sodf/geometry/transform.h>
-#include <sodf/element.h>
+#include <Eigen/Geometry>
+#include <sodf/ecs.h>
 
 namespace sodf {
-namespace elements {
+namespace components {
 
-using ActionToElementIDCallback = std::function<std::string(behavior::Action)>;
-
-struct ElementSequence
+struct Touchscreen
 {
-  std::vector<ElementID> elements;
-  behavior::State final_state;
+  double width = 0.05;                           // screen width [m]
+  double height = 0.05;                          //  screen height [m]
+  Eigen::Vector3d surface_normal = { 0, 0, 1 };  // Surface normal towards screen (e.g., Z+)
+  double min_pressure = 0.0;                     // Minimum pressure to register a valid touch
+  double max_pressure = 5.0;                     // Optional: for analog pressure support
+
+  double touch_radius = 0.01;  // Expected touch radius (e.g. finger or stylus tip)
+  bool multi_touch = false;    // Whether this zone supports multitouch
+  bool allow_drag = true;      // Whether this zone supports sliding gestures
+
+  std::string model;    // e.g., "TS-5R-100"
+  std::string version;  // e.g., "v2.1.4"
+  std::string driver;   // e.g., "fts_i2c"
 };
 
-class Touchscreen : public Element
+struct TouchscreenComponent
 {
-public:
-  Touchscreen(const geometry::Transform& center_tf, double size_y, double size_z, behavior::State current_state,
-              behavior::StateManager&& state_manager, ActionToElementIDCallback callback);
-
-  virtual ~Touchscreen(){};
-
-  const geometry::Transform& centerTF() const;
-  double pressForce() const;
-
-  behavior::State currentState() const;
-  void setCurrentState(behavior::State state);
-
-  behavior::ActionSequence computeActions(behavior::State start, behavior::State end,
-                                          const std::vector<behavior::Action>& end_actions);
-
-  ElementSequence computeActions(const std::string& start, const std::string& end,
-                                 const std::vector<std::string>& end_actions);
-
-  ElementSequence computeActions(const std::string& end, const std::vector<std::string>& end_actions);
-
-  virtual const geometry::Transform* getTransform() const override
-  {
-    return &center_tf_;
-  };
-
-protected:
-  const geometry::Transform center_tf_;  // +X points towards the center of the screen
-                                         // +Y parallel to bottom/top screen and points towards the left screen
-                                         // +Z parallel to left/right screen and points towards the top screen
-  const double size_y_;
-  const double size_z_;
-
-  behavior::State current_state_;
-  behavior::StateManager state_manager_;
-  ActionToElementIDCallback callback_;
+  FlatMap<std::string, Touchscreen> touchscreen_map;
 };
 
-}  // namespace elements
+}  // namespace components
 }  // namespace sodf
 
-#endif  // TOUCHSCREEN_H_
+#endif  // SODF_COMPONENTS_TOUCHSCREEN_H_
