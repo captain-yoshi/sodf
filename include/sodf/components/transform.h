@@ -8,6 +8,10 @@
 namespace sodf {
 namespace components {
 
+struct RootFrameTag
+{
+};  // or WorldFrameTag, etc.
+
 struct TransformFrame
 {
   std::string parent;                                        // frame ID of parent
@@ -33,6 +37,7 @@ struct TransformComponent
     transform_map.emplace_back("root", std::move(origin));
   }
 
+  std::optional<EntityID> parent_ent_id;
   FlatMap<std::string, TransformFrame> transform_map;
 };
 

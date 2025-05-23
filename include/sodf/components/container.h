@@ -2,11 +2,11 @@
 #define SODF_COMPONENTS_CONTAINER_H_
 
 #include <vector>
+#include <sodf/ecs.h>
 
 #include <Eigen/Geometry>
 
-#include <sodf/geometry/volume.h>
-#include <sodf/geometry/transform.h>
+#include <sodf/geometry/shape.h>
 
 namespace sodf {
 namespace components {
@@ -14,14 +14,18 @@ namespace components {
 struct Container
 {
   double volume = 0.0;  // SI m^3
+  std::string content_type;
+  std::string material_type;
 
-  // collection of 3d volumes wrt the frame along the -X axis
-  std::vector<geometry::BaseVolumePtr> shape;
+  Eigen::Vector3d axis;  // Unit vector toward container bottom (gravity direction, e.g., -X)
+
+  // Shapes are stacked upward from the bottom along the container -axis
+  std::vector<geometry::BaseShapePtr> shapes;
 };
 
-struct ContainerCollection
+struct ContainerComponent
 {
-  std::vector<std::pair<std::string, Container> > container_map;
+  FlatMap<std::string, Container> container_map;
 };
 
 }  // namespace components

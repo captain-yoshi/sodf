@@ -19,7 +19,8 @@ enum class JointActuation
   FIXED,    // when JointType = FIXED
   ACTIVE,   // actively commanded
   PASSIVE,  // free to move (e.g. floating)
-  SPRING    // has a restoring force but no actuator
+  SPRING,   // has a restoring force but no actuator
+  VIRTUAL,  // e.g. height of a liquid
 };
 
 struct Joint

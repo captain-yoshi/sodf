@@ -1,7 +1,8 @@
 #ifndef SODF_COMPONENTS_LINK_H_
 #define SODF_COMPONENTS_LINK_H_
 
-#include <sodf/geometry/transform.h>
+#include <Eigen/Geometry>
+#include <sodf/ecs.h>
 
 namespace sodf {
 namespace components {

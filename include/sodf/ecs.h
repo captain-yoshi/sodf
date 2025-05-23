@@ -13,48 +13,31 @@ using FlatMap = std::vector<std::pair<K, V>>;
 
 using EntityID = ginseng::database::ent_id;
 
-// /// Wrapper for Ginseng’s ent_id
-// class EntityID
-// {
-// public:
-//   // Default constructor: invalid entity
-//   EntityID() = default;
+using ObjectEntityMap = std::unordered_map<std::string, EntityID>;
 
-//   // Construct from ginseng::ent_id
-//   explicit EntityID(ginseng::ent_id id) : id_(id)
-//   {
-//   }
+// For mutable access
+template <typename Key, typename Value>
+Value* find_in_flat_map(std::vector<std::pair<Key, Value>>& flat_map, const Key& key)
+{
+  for (auto& [k, v] : flat_map)
+  {
+    if (k == key)
+      return &v;
+  }
+  return nullptr;
+}
 
-//   // Accessors
-//   ginseng::ent_id::index_type index() const
-//   {
-//     return id_.get_index();
-//   }
-
-//   const ginseng::ent_id& raw() const
-//   {
-//     return id_;
-//   }
-
-//   // Comparison operators
-//   bool operator==(const EntityID& other) const
-//   {
-//     return id_ == other.id_;
-//   }
-//   bool operator!=(const EntityID& other) const
-//   {
-//     return !(*this == other);
-//   }
-
-//   // Stream output
-//   friend std::ostream& operator<<(std::ostream& os, const EntityID& e)
-//   {
-//     return os << "EntityID(index=" << e.id_.get_index() << ")";
-//   }
-
-// private:
-//   ginseng::ent_id id_;
-// };
+// For const access
+template <typename Key, typename Value>
+const Value* find_in_flat_map(const std::vector<std::pair<Key, Value>>& flat_map, const Key& key)
+{
+  for (const auto& [k, v] : flat_map)
+  {
+    if (k == key)
+      return &v;
+  }
+  return nullptr;
+}
 
 }  // namespace sodf
 

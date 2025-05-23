@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+
+  <!-- import all objects as is -->
+  <include path="scene.xml" ns=""/>
+
+  <!-- import only the objects with the import tag -->
+  <!-- <include path="thermocycler_t100.xml" > -->
+  <!--   <import id="biorad_thermal_cycler_t100" as="pcr1"/> -->
+  <!-- </include> -->
+
+
+  <Object id="pcr2" clone="pcr1" />
+
+  <!-- <Object id="pcr3" clone="pcr2" /> -->
+
+</root>

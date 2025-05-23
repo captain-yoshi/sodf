@@ -2,6 +2,8 @@
 #include <set>
 #include <sodf/xml_parser.h>
 
+#include <sodf/components/button.h>
+#include <sodf/components/container.h>
 #include <sodf/components/object.h>
 #include <sodf/components/transform.h>
 #include <sodf/components/link.h>
@@ -14,6 +16,339 @@ using namespace tinyxml2;
 using namespace sodf::components;
 
 namespace sodf {
+
+// Helper function for unit conversion:
+inline double convertVolumeToSI(double volume, const std::string& units)
+{
+  if (units == "uL")
+    return volume * 1e-9;
+  if (units == "mL")
+    return volume * 1e-6;
+  if (units == "L")
+    return volume * 1e-3;
+  return volume;  // assume already in m^3
+}
+
+// Helper: safely parse required XML double attribute
+inline double parseRequiredDouble(const tinyxml2::XMLElement* elem, const char* attr_name)
+{
+  double val = 0.0;
+  if (elem->QueryDoubleAttribute(attr_name, &val) != tinyxml2::XML_SUCCESS)
+    throw std::runtime_error(std::string("Missing or invalid attribute '") + attr_name + "' in <Shape> at line " +
+                             std::to_string(elem->GetLineNum()));
+  return val;
+}
+
+// Helper: Parse ButtonType from string
+components::ButtonType parseButtonType(const char* type_str)
+{
+  if (!type_str)
+    throw std::runtime_error("Button missing 'type' attribute.");
+  std::string type(type_str);
+  if (type == "push")
+    return ButtonType::PUSH;
+  if (type == "rotary")
+    return ButtonType::ROTARY;
+  if (type == "analog")
+    return ButtonType::ANALOG;
+  if (type == "virtual")
+    return ButtonType::VIRTUAL;
+  throw std::runtime_error("Unknown button type: " + type);
+}
+
+/// Add only Object tag childrens, e.g. no Transform tag.
+#define SODF_COMPONENT_LIST(X)                                                                                         \
+  X(Origin, parseOriginElement)                                                                                        \
+  X(Link, parseLinkElement)                                                                                            \
+  X(Joint, parseJointElement)                                                                                          \
+  X(FitConstraint, parseFitConstraintElement)                                                                          \
+  X(Product, parseProductElement)                                                                                      \
+  X(Touchscreen, parseTouchscreenElement)                                                                              \
+  X(FSM, parseFSMElement)                                                                                              \
+  X(Button, parseButtonElement)                                                                                        \
+  X(Container, parseContainerElement)
+
+enum class SceneComponentType
+{
+#define X(name, func) name,
+  SODF_COMPONENT_LIST(X)
+#undef X
+      COUNT
+};
+
+inline SceneComponentType sceneComponentTypeFromString(const std::string& name)
+{
+#define X(tag, func)                                                                                                   \
+  if (name == #tag)                                                                                                    \
+    return SceneComponentType::tag;
+  SODF_COMPONENT_LIST(X)
+#undef X
+  throw std::runtime_error("Unknown SceneComponentType string: " + name);
+}
+
+using ParseFunc = std::function<void(const tinyxml2::XMLElement*, ginseng::database&, sodf::EntityID)>;
+
+static const std::vector<ParseFunc> parseFuncs = {
+#define X(name, func) func,
+  SODF_COMPONENT_LIST(X)
+#undef X
+};
+
+// Stores all object elements with fully-qualified id
+// using ObjectIndex = std::unordered_map<std::string, const tinyxml2::XMLElement*>;
+struct ObjectSource
+{
+  const tinyxml2::XMLElement* xml;
+  std::string filename;
+};
+
+using ObjectIndex = std::unordered_map<std::string, ObjectSource>;
+// using ObjectIndex = std::unordered_map<std::string, std::vector<ObjectSource>>;
+// using ObjectIndex = std::unordered_map<std::string, std::vector<const tinyxml2::XMLElement*>>;
+
+struct SceneComponent
+{
+  SceneComponentType type;          // e.g., "Link", "Button"
+  std::string id;                   // e.g., "link/base"
+  const tinyxml2::XMLElement* xml;  // Pointer to XML element
+};
+
+struct SceneObject
+{
+  std::string id;
+  std::vector<SceneComponent> components;
+  std::set<std::string> remove_ids;
+};
+using SceneMap = std::unordered_map<std::string, SceneObject>;
+
+inline std::string canonical_ns(const std::string& parent_ns, const std::string& local_ns)
+{
+  if (parent_ns.empty())
+    return local_ns;
+  if (local_ns.empty())
+    return parent_ns;
+  return parent_ns + "::" + local_ns;
+}
+
+inline std::string canonicalize_ref(const std::string& current_ns, const std::string& ref)
+{
+  if (ref.empty())
+    return current_ns;
+  // If absolute/global (starts with "::"), strip it and treat as global
+  if (ref.rfind("::", 0) == 0)
+    return ref.substr(2);
+  // If already fully qualified with current_ns
+  if (!current_ns.empty() && ref.compare(0, current_ns.size() + 2, current_ns + "::") == 0)
+    return ref;
+  // Otherwise, prepend current namespace
+  if (!current_ns.empty())
+    return current_ns + "::" + ref;
+  return ref;
+}
+
+inline std::string extract_namespace(const std::string& qualified_id)
+{
+  auto pos = qualified_id.rfind("::");
+  if (pos == std::string::npos)
+    return "";
+  return qualified_id.substr(0, pos);
+}
+
+void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, const std::string& parent_ns,
+                      const std::string& base_dir, const std::string& filename);
+
+void processInclude(const XMLElement* include_elem, ObjectIndex& object_index, const std::string& base_dir,
+                    const std::string& parent_ns)
+{
+  std::string path = include_elem->Attribute("path");
+  std::string ns = include_elem->Attribute("ns") ? include_elem->Attribute("ns") : "";
+  // std::string full_ns = parent_ns.empty() ? ns : (parent_ns.empty() ? ns : parent_ns + "::" + ns);
+  std::string full_ns = canonical_ns(parent_ns, ns);
+  std::string inc_filename = base_dir + "/" + path;
+
+  auto* inc_doc = new tinyxml2::XMLDocument();
+  if (inc_doc->LoadFile((base_dir + "/" + path).c_str()) != tinyxml2::XML_SUCCESS)
+    throw std::runtime_error("Failed to include: " + path);
+
+  buildObjectIndex(inc_doc, object_index, full_ns, base_dir, inc_filename);  // pass the full_ns down!
+}
+
+void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, const std::string& ns,
+                      const std::string& base_dir, const std::string& filename)
+{
+  const auto* root = doc->FirstChildElement("root");
+  if (!root)
+    return;
+
+  // Handle <include> recursively
+  for (const auto* incl = root->FirstChildElement("include"); incl; incl = incl->NextSiblingElement("include"))
+  {
+    processInclude(incl, object_index, base_dir, ns);
+  }
+
+  // Only one <Object> per qualified id is allowed!
+  for (const auto* obj_elem = root->FirstChildElement("Object"); obj_elem;
+       obj_elem = obj_elem->NextSiblingElement("Object"))
+  {
+    std::string id = obj_elem->Attribute("id") ? obj_elem->Attribute("id") : "";
+    if (id.empty())
+      continue;
+
+    std::string qualified_id = ns.empty() ? id : (ns + "::" + id);
+
+    if (object_index.count(qualified_id))
+    {
+      const ObjectSource& previous = object_index[qualified_id];
+      throw std::runtime_error("Duplicate <Object> for id '" + qualified_id + "' in file '" + filename + "' at line " +
+                               std::to_string(obj_elem->GetLineNum()) + ". Previous definition was at line " +
+                               std::to_string(previous.xml->GetLineNum()) + " in file '" + previous.filename + "'.");
+    }
+    object_index[qualified_id] = ObjectSource{ obj_elem, filename };
+  }
+}
+
+SceneObject composeObject(const tinyxml2::XMLElement* elem, const ObjectIndex& object_index,
+                          const std::string& current_ns)
+{
+  SceneObject obj;
+  obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+
+  bool has_clone = elem->Attribute("clone");
+
+  // --- CLONE (deep-merge) ---
+  if (has_clone)
+  {
+    std::string clone_id = elem->Attribute("clone");
+    std::string canonical_clone = canonicalize_ref(current_ns, clone_id);
+    auto found = object_index.find(canonical_clone);
+    if (found == object_index.end())
+      throw std::runtime_error("Clone source not found: " + canonical_clone + " (line " +
+                               std::to_string(elem->GetLineNum()) + ")");
+
+    std::string cloned_ns = extract_namespace(canonical_clone);
+    obj = composeObject(found->second.xml, object_index, cloned_ns);  // Recursively clone
+    obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+  }
+
+  for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
+  {
+    std::string tag = child->Name();
+    // If inside clone, only patch operations are allowed
+    if (has_clone)
+    {
+      if (tag == "add" || tag == "update" || tag == "upsert" || tag == "remove")
+      {
+        // === Patch operations ===
+        for (const auto* comp = child->FirstChildElement(); comp; comp = comp->NextSiblingElement())
+        {
+          std::string comp_type_str = comp->Name();
+          SceneComponentType comp_type = sceneComponentTypeFromString(comp_type_str);
+          std::string comp_id = comp->Attribute("id") ? comp->Attribute("id") : "";
+
+          auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
+          auto it = std::find_if(obj.components.begin(), obj.components.end(), match_pred);
+
+          if (tag == "add")
+          {
+            if (it != obj.components.end())
+            {
+              throw std::runtime_error("Cannot <add> already existing component <" + comp_type_str + " id=\"" +
+                                       comp_id + "\"> to <Object id=\"" + obj.id + "\"> at line " +
+                                       std::to_string(comp->GetLineNum()) + ".");
+            }
+            obj.components.push_back({ comp_type, comp_id, comp });
+          }
+          else if (tag == "update")
+          {
+            if (it == obj.components.end())
+            {
+              throw std::runtime_error("Cannot <update> non-existent component <" + comp_type_str + " id=\"" + comp_id +
+                                       "\"> in <Object id=\"" + obj.id + "\"> at line " +
+                                       std::to_string(comp->GetLineNum()) + ".");
+            }
+            // Remove and replace
+            obj.components.erase(it);
+            obj.components.push_back({ comp_type, comp_id, comp });
+          }
+          else if (tag == "upsert")
+          {
+            // Remove if exists, then add
+            obj.components.erase(std::remove_if(obj.components.begin(), obj.components.end(), match_pred),
+                                 obj.components.end());
+            obj.components.push_back({ comp_type, comp_id, comp });
+          }
+          else if (tag == "remove")
+          {
+            if (it == obj.components.end())
+            {
+              throw std::runtime_error("Cannot <remove> non-existent component <" + comp_type_str + " id=\"" + comp_id +
+                                       "\"> from <Object id=\"" + obj.id + "\"> at line " +
+                                       std::to_string(comp->GetLineNum()) + ".");
+            }
+            obj.components.erase(it);
+          }
+        }
+      }
+      else
+      {
+        throw std::runtime_error(
+            "Invalid child element <" + tag + "> inside <Object id=\"" + obj.id + "\" clone=\"...\"> at line " +
+            std::to_string(child->GetLineNum()) +
+            ". Only <add>, <update>, <upsert>, or <remove> tags are allowed as children of a cloned object.");
+      }
+    }
+    else
+    {
+      // Only direct component children allowed when not cloning
+      if (tag == "add" || tag == "update" || tag == "upsert" || tag == "remove")
+      {
+        throw std::runtime_error("Invalid child element <" + tag + "> inside non-clone <Object id=\"" + obj.id +
+                                 "\"> at line " + std::to_string(child->GetLineNum()) +
+                                 ". Only direct component tags (e.g., <Origin>, <Link>) are allowed when not cloning.");
+      }
+      // Direct children act as upsert (default overlay)
+      std::string comp_type_str = tag;
+      SceneComponentType comp_type = sceneComponentTypeFromString(comp_type_str);
+      std::string comp_id = child->Attribute("id") ? child->Attribute("id") : "";
+
+      auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
+      obj.components.erase(std::remove_if(obj.components.begin(), obj.components.end(), match_pred),
+                           obj.components.end());
+      obj.components.push_back({ comp_type, comp_id, child });
+    }
+  }
+  return obj;
+}
+
+void parseSceneObjects(const tinyxml2::XMLDocument* doc, const ObjectIndex& object_index, SceneMap& scene)
+{
+  const auto* root = doc->FirstChildElement("root");
+  if (!root)
+    return;
+
+  // Only create entities for objects defined in the MAIN SCENE file!
+  for (const auto* obj_elem = root->FirstChildElement("Object"); obj_elem;
+       obj_elem = obj_elem->NextSiblingElement("Object"))
+  {
+    std::string id = obj_elem->Attribute("id") ? obj_elem->Attribute("id") : "";
+    if (id.empty())
+      continue;
+
+    // Find the full overlay chain for this id
+    std::string qualified_id = id;  // If you support namespaces, do lookup here.
+    auto it = object_index.find(qualified_id);
+    if (it == object_index.end())
+      throw std::runtime_error("Object '" + id + "' not found in index (line " +
+                               std::to_string(obj_elem->GetLineNum()) + ")");
+
+    // *** Extract current namespace for this object ***
+    std::string current_ns = extract_namespace(it->first);
+
+    // Compose the full object state
+    SceneObject obj = composeObject(it->second.xml, object_index, current_ns);
+    scene[obj.id] = std::move(obj);
+  }
+}
 
 // Constructor to initialize filename
 XMLParser::XMLParser()
@@ -38,103 +373,68 @@ bool XMLParser::loadXML(const std::string& filename)
   return true;
 }
 
-void XMLParser::parseComponents(ginseng::database& db)
+bool XMLParser::loadEntities(const std::string& rel_filepath, const std::string& abs_basepath, ginseng::database& db)
 {
-  const auto* root = doc->FirstChildElement("root");
-  if (!root)
-    return;
+  if (!loadXML(abs_basepath + "/" + rel_filepath))
+    return false;
 
-  std::set<std::string> global_ids;
+  ObjectIndex object_index;
+  buildObjectIndex(doc.get(), object_index, "", abs_basepath, abs_basepath + "/" + rel_filepath);
 
-  for (const auto* object_elem = root->FirstChildElement("Object"); object_elem;
-       object_elem = object_elem->NextSiblingElement("Object"))
+  SceneMap scene_map;
+  parseSceneObjects(doc.get(), object_index, scene_map);
+
+  for (const auto& scene : scene_map)
   {
     auto eid = db.create_entity();
+    // add id to object
+    ObjectComponent obj_comp{ .id = scene.second.id };
+    db.add_component(eid, std::move(obj_comp));
 
-    // Check for global uniqueness accross all entities (Object id)
-    const char* obj_id = object_elem->Attribute("id");
-    if (!obj_id)
-      throw std::runtime_error("Object element missing 'id' attribute at line " +
-                               std::to_string(object_elem->GetLineNum()));
-
-    if (!global_ids.insert(obj_id).second)
+    for (const auto& comp : scene.second.components)
     {
-      throw std::runtime_error("Duplicate Object id '" + std::string(obj_id) + "' at line " +
-                               std::to_string(object_elem->GetLineNum()));
+      // SceneComponentType type = typeFromString(comp.type);
+      size_t index = static_cast<size_t>(comp.type);
+
+      if (index >= parseFuncs.size())
+        throw std::runtime_error("No parse function for component id: " + comp.id);
+
+      parseFuncs[index](comp.xml, db, eid);
+
+      // can reside in every component types
+      parseTransformElement(comp.xml, db, eid);
+      parseActionMapElement(comp.xml, db, eid);
     }
-
-    // Check for local uniqueness accross one entity
-    std::set<std::string> local_ids;
-    for (const tinyxml2::XMLElement* el = object_elem->FirstChildElement(); el; el = el->NextSiblingElement())
-    {
-      const char* local_id = el->Attribute("id");
-      if (local_id)
-      {
-        if (!local_ids.insert(local_id).second)
-        {
-          throw std::runtime_error("Duplicate component id '" + std::string(local_id) + "' within entity at line " +
-                                   std::to_string(el->GetLineNum()));
-        }
-      }
-    }
-
-    parseObjectElement(object_elem, db, eid);
-
-    TransformComponent transform;
-    parseOriginElement(object_elem, transform, db, eid);
-    parseTransformElement(object_elem, std::move(transform), db, eid);
-
-    parseLinkElement(object_elem, db, eid);
-    parseJointElement(object_elem, db, eid);
-    parseTouchscreenElement(object_elem, db, eid);
-    parseFSMElement(object_elem, db, eid);
-    parseActionMapElement(object_elem, db, eid);
-  }
-}
-
-void parseObjectElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
-{
-  ObjectComponent obj{};
-  // obj.id = obj_elem->Attribute("id");
-  const char* id = obj_elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Object element missing 'id' attribute at line " + std::to_string(obj_elem->GetLineNum()));
-
-  obj.id = std::string(id);
-
-  const auto* product = obj_elem->FirstChildElement("Product");
-  if (product)
-  {
-    if (auto* name = product->FirstChildElement("Name"))
-      obj.name = name->GetText();
-    if (auto* model = product->FirstChildElement("Model"))
-      obj.model = model->GetText();
-    if (auto* sn = product->FirstChildElement("SerialNumber"))
-      obj.serial_number = sn->GetText();
-    if (auto* vendor = product->FirstChildElement("Vendor"))
-      obj.vendor = vendor->GetText();
   }
 
-  db.add_component(eid, std::move(obj));
+  return true;
 }
 
-void parseOriginElement(const tinyxml2::XMLElement* obj_elem, TransformComponent& transform, ginseng::database& db,
-                        EntityID eid)
+void parseProductElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  // Find <Origin>
-  const auto* origin_elem = obj_elem->FirstChildElement("Origin");
-  if (!origin_elem)
-    return;
+  // Note: the object id has already been populated prior this stage
+  auto* component = getOrCreateComponent<ObjectComponent>(db, eid);
 
+  if (auto* name = elem->FirstChildElement("Name"))
+    component->name = name->GetText();
+  if (auto* model = elem->FirstChildElement("Model"))
+    component->model = model->GetText();
+  if (auto* sn = elem->FirstChildElement("SerialNumber"))
+    component->serial_number = sn->GetText();
+  if (auto* vendor = elem->FirstChildElement("Vendor"))
+    component->vendor = vendor->GetText();
+}
+
+void parseOriginElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
   // Get id attribute or use "root"
-  const char* id = origin_elem->Attribute("id");
+  const char* id = elem->Attribute("id");
   if (!id)
-    throw std::runtime_error("Origin element missing 'id' attribute at line " +
-                             std::to_string(origin_elem->GetLineNum()));
+    throw std::runtime_error("Origin element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
   std::string origin_id = id;
 
   // Case 1: <Transform> as child
-  if (const auto* tf_elem = origin_elem->FirstChildElement("Transform"))
+  if (const auto* tf_elem = elem->FirstChildElement("Transform"))
   {
     TransformFrame frame;
     parseTransform(tf_elem, frame);  // does not compute/resolve
@@ -145,14 +445,17 @@ void parseOriginElement(const tinyxml2::XMLElement* obj_elem, TransformComponent
                                "Found: '" +
                                frame.parent + "' at line " + std::to_string(tf_elem->GetLineNum()));
 
+    // store to component
+    auto* component = getOrCreateComponent<TransformComponent>(db, eid);
+
     // Overwrite or insert as first entry
-    if (transform.transform_map.empty())
-      transform.transform_map.emplace_back(origin_id, std::move(frame));
+    if (component->transform_map.empty())
+      component->transform_map.emplace_back(origin_id, std::move(frame));
     else
-      transform.transform_map[0] = std::make_pair(origin_id, std::move(frame));
+      component->transform_map[0] = std::make_pair(origin_id, std::move(frame));
   }
   // Case 2: <AlignGeometricPair> (store for deferred system)
-  else if (const auto* align_elem = origin_elem->FirstChildElement("AlignGeometricPair"))
+  else if (const auto* align_elem = elem->FirstChildElement("AlignGeometricPair"))
   {
     AlignGeometricPairComponent align;
     align.target_id = align_elem->Attribute("with");
@@ -201,7 +504,7 @@ void parseOriginElement(const tinyxml2::XMLElement* obj_elem, TransformComponent
     db.add_component(eid, std::move(align));
   }
   // Case 3: <AlignFrames> (store for deferred system)
-  else if (const auto* align_elem = origin_elem->FirstChildElement("AlignFrames"))
+  else if (const auto* align_elem = elem->FirstChildElement("AlignFrames"))
   {
     components::AlignFramesComponent align;
     align.target_id = align_elem->Attribute("with");
@@ -217,345 +520,517 @@ void parseOriginElement(const tinyxml2::XMLElement* obj_elem, TransformComponent
   // Note: Do NOT add TransformComponent to the db here (let parseTransformElement do it)
 }
 
-void parseTransformElement(const tinyxml2::XMLElement* obj_elem, TransformComponent&& transform, ginseng::database& db,
-                           EntityID eid)
+void parseTransformElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  // Parse all nested tags that contain <Transform>
-  for (const tinyxml2::XMLElement* el = obj_elem->FirstChildElement(); el; el = el->NextSiblingElement())
+  // Skip if this element is <Origin>
+  if (std::strcmp(elem->Name(), "Origin") == 0)
+    return;
+
+  if (const auto* transform_elem = elem->FirstChildElement("Transform"))
   {
-    // Skip if this element is <Origin>
-    if (std::strcmp(el->Name(), "Origin") == 0)
-      continue;
+    const char* id = elem->Attribute("id");
+    if (!id)
+      throw std::runtime_error("Transform parent element missing 'id' attribute at line " +
+                               std::to_string(elem->GetLineNum()));
 
-    if (const auto* transform_elem = el->FirstChildElement("Transform"))
+    std::string id_str(id);
+
+    // Check for duplicates manually if component exists
+    if (auto* transform_component = db.get_component<components::TransformComponent*>(eid))
     {
-      const char* id = el->Attribute("id");
-      if (!id)
-        throw std::runtime_error("Transform parent element missing 'id' attribute at line " +
-                                 std::to_string(el->GetLineNum()));
-
-      std::string id_str(id);
-
-      // Check for duplicates manually
-      auto it = std::find_if(transform.transform_map.begin(), transform.transform_map.end(),
+      auto it = std::find_if(transform_component->transform_map.begin(), transform_component->transform_map.end(),
                              [&](const auto& p) { return p.first == id_str; });
 
-      if (it != transform.transform_map.end())
+      if (it != transform_component->transform_map.end())
       {
-        throw std::runtime_error("Duplicate transform id '" + id_str + "' at line " + std::to_string(el->GetLineNum()));
+        throw std::runtime_error("Duplicate transform id '" + id_str + "' at line " +
+                                 std::to_string(elem->GetLineNum()));
       }
-
-      TransformFrame frame;
-      parseTransform(transform_elem, frame);
-      transform.transform_map.emplace_back(id_str, std::move(frame));
-    }
-  }
-  db.add_component(eid, std::move(transform));
-}
-
-void parseLinkElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
-{
-  components::LinkComponent link_component;
-
-  for (const tinyxml2::XMLElement* link_elem = obj_elem->FirstChildElement("Link"); link_elem;
-       link_elem = link_elem->NextSiblingElement("Link"))
-  {
-    components::Link link;
-
-    const char* id = link_elem->Attribute("id");
-    if (!id)
-      throw std::runtime_error("Link element missing 'id' attribute at line " + std::to_string(link_elem->GetLineNum()));
-
-    if (const auto* visual = link_elem->FirstChildElement("Visual"))
-    {
-      if (const auto* mesh = visual->FirstChildElement("Mesh"))
-        link.visual.mesh_path = mesh->Attribute("path");
-      if (const auto* scale = visual->FirstChildElement("Scale"))
-        parsePosition(scale, link.visual.scale);
     }
 
-    if (const auto* collision = link_elem->FirstChildElement("Collision"))
+    TransformFrame frame;
+    parseTransform(transform_elem, frame);
+
+    // store to component
+    if (std::strcmp(elem->Name(), "Container") == 0)
     {
-      if (const auto* mesh = collision->FirstChildElement("Mesh"))
-        link.collision.mesh_path = mesh->Attribute("path");
-      if (const auto* scale = collision->FirstChildElement("Scale"))
-        parsePosition(scale, link.collision.scale);
-    }
+      // Add bottom transform
+      std::string bottom_id = id_str + "/bottom";
+      auto* transform_component = getOrCreateComponent<TransformComponent>(db, eid);
+      transform_component->transform_map.emplace_back(bottom_id, frame);
 
-    if (const auto* mass = link_elem->FirstChildElement("Mass"))
-      link.dynamics.mass = mass->DoubleAttribute("value");
+      auto* container_component = db.get_component<ContainerComponent*>(eid);
+      if (!container_component)
+        throw std::runtime_error("No ContainerComponent found for Container '" + id_str + "'");
 
-    if (const auto* com = link_elem->FirstChildElement("CenterOfMass"))
-      parsePosition(com, link.dynamics.center_of_mass);
+      auto container = find_in_flat_map(container_component->container_map, id_str);
+      if (!container)
+        throw std::runtime_error("No Container entry found for '" + id_str + "' in ContainerComponent");
 
-    if (const auto* I = link_elem->FirstChildElement("InertiaTensor"))
-    {
-      link.dynamics.inertia_tensor << I->DoubleAttribute("ixx"), I->DoubleAttribute("ixy"), I->DoubleAttribute("ixz"),
-          I->DoubleAttribute("ixy"), I->DoubleAttribute("iyy"), I->DoubleAttribute("iyz"), I->DoubleAttribute("ixz"),
-          I->DoubleAttribute("iyz"), I->DoubleAttribute("izz");
-    }
+      // Add surface transform
+      {
+        std::string surface_id = id_str + "/surface";
+        double current_height = getHeight(container->shapes, container->volume, 10e-04);
 
-    link_component.link_map.emplace_back(id, std::move(link));
-  }
-  db.add_component(eid, std::move(link_component));
-}
-
-void parseJointElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
-{
-  components::JointComponent joint_component;
-
-  for (const tinyxml2::XMLElement* joint_elem = obj_elem->FirstChildElement("Joint"); joint_elem;
-       joint_elem = joint_elem->NextSiblingElement("Joint"))
-  {
-    components::Joint joint;
-
-    const char* id = joint_elem->Attribute("id");
-    if (!id)
-      throw std::runtime_error("Joint element missing 'id' attribute at line " +
-                               std::to_string(joint_elem->GetLineNum()));
-
-    if (const auto* type = joint_elem->FirstChildElement("Type"))
-    {
-      std::string t = type->Attribute("value");
-      if (t == "REVOLUTE")
-        joint.type = components::JointType::REVOLUTE;
-      else if (t == "PRISMATIC")
+        // Add virtual joint
+        auto joint = components::Joint{};
         joint.type = components::JointType::PRISMATIC;
-      else
-        joint.type = components::JointType::FIXED;
-    }
+        joint.actuation = components::JointActuation::VIRTUAL;
+        joint.position = -current_height;
+        joint.axis = container->axis;
 
-    if (const auto* actuation = joint_elem->FirstChildElement("Actuation"))
-    {
-      std::string a = actuation->Attribute("value");
-      if (a == "PASSIVE")
-        joint.actuation = components::JointActuation::PASSIVE;
-      else if (a == "ACTIVE")
-        joint.actuation = components::JointActuation::ACTIVE;
-      else if (a == "SPRING")
-        joint.actuation = components::JointActuation::SPRING;
-      else
-        joint.actuation = components::JointActuation::FIXED;
-    }
+        auto* joint_component = getOrCreateComponent<components::JointComponent>(db, eid);
+        joint_component->joint_map.emplace_back("joint/" + bottom_id, std::move(joint));
 
-    if (const auto* position = joint_elem->FirstChildElement("Position"))
-      joint.position = position->DoubleAttribute("value");
+        // Add virtual joint transform
+        TransformFrame joint_frame;
+        joint_frame.is_static = false;  // virtual prismatic joint to simulate liquid height
+        joint_frame.parent = bottom_id;
 
-    if (const auto* axis = joint_elem->FirstChildElement("Axis"))
-      parseUnitVector(axis, joint.axis);
+        transform_component->transform_map.emplace_back("joint/" + bottom_id, std::move(joint_frame));
 
-    // if (const auto* named = joint_elem->FirstChildElement("NamedPositions"))
-    // {
-    //   for (const auto* pos = named->FirstChildElement("Position"); pos; pos = pos->NextSiblingElement("Position"))
-    //   {
-    //     const char* name = pos->Attribute("name");
-    //     if (!name)
-    //       throw std::runtime_error("Named position missing 'name' attribute at line " +
-    //                                std::to_string(pos->GetLineNum()));
-    //     double value = pos->DoubleAttribute("value");
-    //     joint.named_positions.emplace(name, value);
-    //   }
-    // }
+        // Add surface transform
+        TransformFrame surface_frame;
+        surface_frame.is_static = true;  // virtual prismatic joint to simulate liquid height
+        surface_frame.parent = "joint/" + bottom_id;
 
-    joint_component.joint_map.emplace_back(id, std::move(joint));
-  }
-
-  db.add_component(eid, std::move(joint_component));
-}
-
-void parseFitConstraintElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
-{
-  components::FitConstraintComponent fit_component;
-
-  for (const tinyxml2::XMLElement* fit_elem = obj_elem->FirstChildElement("FitConstraint"); fit_elem;
-       fit_elem = fit_elem->NextSiblingElement("FitConstraint"))
-  {
-    components::FitConstraint fit;
-
-    const char* id = fit_elem->Attribute("id");
-    if (!id)
-      throw std::runtime_error("FitConstraint element missing 'id' attribute at line " +
-                               std::to_string(fit_elem->GetLineNum()));
-
-    if (const auto* axis = fit_elem->FirstChildElement("Axis"))
-      parseUnitVector(axis, fit.axis);
-
-    if (const auto* sym = fit_elem->FirstChildElement("RotationalSymmetry"))
-      fit.rotational_symmetry = sym->UnsignedAttribute("value");
-
-    if (const auto* dist = fit_elem->FirstChildElement("ApproachDistance"))
-      fit.approach_distance = dist->DoubleAttribute("value");
-
-    fit_component.fitting_map.emplace_back(id, std::move(fit));
-  }
-
-  db.add_component(eid, std::move(fit_component));
-}
-
-void parseTouchscreenElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
-{
-  components::TouchscreenComponent ts_component;
-
-  for (const tinyxml2::XMLElement* ts_elem = obj_elem->FirstChildElement("Touchscreen"); ts_elem;
-       ts_elem = ts_elem->NextSiblingElement("Touchscreen"))
-  {
-    components::Touchscreen ts;
-
-    const char* id = ts_elem->Attribute("id");
-    if (!id)
-      throw std::runtime_error("Touchscreen element missing 'id' attribute at line " +
-                               std::to_string(ts_elem->GetLineNum()));
-
-    if (const auto* size = ts_elem->FirstChildElement("Size"))
-    {
-      ts.width = size->DoubleAttribute("width");
-      ts.height = size->DoubleAttribute("height");
-    }
-
-    if (const auto* normal = ts_elem->FirstChildElement("SurfaceNormal"))
-      parseUnitVector(normal, ts.surface_normal);
-
-    if (const auto* pressure = ts_elem->FirstChildElement("Pressure"))
-    {
-      ts.min_pressure = pressure->DoubleAttribute("min");
-      ts.max_pressure = pressure->DoubleAttribute("max");
-    }
-
-    if (const auto* touch = ts_elem->FirstChildElement("Touch"))
-    {
-      ts.touch_radius = touch->DoubleAttribute("radius");
-      ts.multi_touch = touch->BoolAttribute("multi_touch");
-      ts.allow_drag = touch->BoolAttribute("allow_drag");
-    }
-
-    if (const auto* meta = ts_elem->FirstChildElement("Metadata"))
-    {
-      if (auto* model = meta->FirstChildElement("Model"))
-        ts.model = model->GetText();
-      if (auto* version = meta->FirstChildElement("Version"))
-        ts.version = version->GetText();
-      if (auto* driver = meta->FirstChildElement("Driver"))
-        ts.driver = driver->GetText();
-    }
-
-    ts_component.touchscreen_map.emplace_back(id, std::move(ts));
-  }
-
-  db.add_component(eid, std::move(ts_component));
-}
-
-void parseFSMElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
-{
-  components::FSMComponent fsm_component;
-
-  for (const tinyxml2::XMLElement* fsm_elem = obj_elem->FirstChildElement("FSM"); fsm_elem;
-       fsm_elem = fsm_elem->NextSiblingElement("FSM"))
-  {
-    const char* id = fsm_elem->Attribute("id");
-    if (!id)
-      throw std::runtime_error("FSM element missing 'id' attribute at line " + std::to_string(fsm_elem->GetLineNum()));
-
-    components::FSM fsm;
-
-    const auto* start = fsm_elem->FirstChildElement("StartState");
-    if (!start || !start->Attribute("name"))
-      throw std::runtime_error("FSM missing or malformed <StartState> at line " +
-                               std::to_string(fsm_elem->GetLineNum()));
-
-    std::string start_state = start->Attribute("name");
-
-    // Parse states
-    if (const auto* states_elem = fsm_elem->FirstChildElement("States"))
-    {
-      for (const auto* state_elem = states_elem->FirstChildElement("State"); state_elem;
-           state_elem = state_elem->NextSiblingElement("State"))
-      {
-        std::string name = state_elem->Attribute("name");
-        fsm.state_labels.add(name);
+        transform_component->transform_map.emplace_back(surface_id, std::move(surface_frame));
       }
-    }
 
-    if (!fsm.state_labels.has_label(start_state))
-      throw std::runtime_error("FSM start state '" + start_state + "' is not listed in <States>.");
-
-    fsm.start_state = fsm.state_labels.to_id(start_state);
-    fsm.current_state = fsm.start_state;
-
-    // Parse actions
-    if (const auto* actions_elem = fsm_elem->FirstChildElement("Actions"))
-    {
-      for (const auto* action_elem = actions_elem->FirstChildElement("Action"); action_elem;
-           action_elem = action_elem->NextSiblingElement("Action"))
+      // Add top transform
       {
-        std::string name = action_elem->Attribute("name");
-        fsm.action_labels.add(name);
-      }
-    }
-
-    // Parse transitions
-    if (const auto* transitions_elem = fsm_elem->FirstChildElement("Transitions"))
-    {
-      fsm.transitions = buildTransitionTableFromXML(transitions_elem, fsm.state_labels, fsm.action_labels);
-
-      std::cout << "fsm transitions size = " << fsm.transitions.size() << std::endl;
-      for (int s = 0; s < fsm.transitions.size(); ++s)
-      {
-        for (int a = 0; a < fsm.transitions[s].size(); ++a)
+        double max_height = 0.0;
+        for (const auto& shape : container->shapes)
         {
-          if (fsm.transitions[s][a] >= 0)
-            std::cout << "Transition: " << fsm.state_labels.to_string(s) << " + " << fsm.action_labels.to_string(a)
-                      << " -> " << fsm.state_labels.to_string(fsm.transitions[s][a]) << "\n";
+          if (shape)
+            max_height += shape->height();  // sum all shape heights (assuming stacking along axis)
         }
+        // The axis points towards the gravity direction
+        Eigen::Vector3d top_offset = -container->axis.normalized() * max_height;
+        TransformFrame top_frame = frame;
+
+        top_frame.local.translation().x() += top_offset.x();
+        top_frame.local.translation().y() += top_offset.y();
+        top_frame.local.translation().z() += top_offset.z();
+
+        std::string top_id = id_str + "/top";
+        transform_component->transform_map.emplace_back(top_id, std::move(top_frame));
       }
     }
-    fsm_component.fsm_map.emplace_back(id, std::move(fsm));
+    else
+    {
+      auto* component = getOrCreateComponent<TransformComponent>(db, eid);
+      component->transform_map.emplace_back(id_str, std::move(frame));
+    }
   }
-
-  db.add_component(eid, std::move(fsm_component));
 }
 
-void parseActionMapElement(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid)
+void parseLinkElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  components::ActionMapComponent action_map_component;
+  Link link;
 
-  for (const tinyxml2::XMLElement* component_elem = obj_elem->FirstChildElement(); component_elem;
-       component_elem = component_elem->NextSiblingElement())
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Link element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  if (const auto* visual = elem->FirstChildElement("Visual"))
   {
-    const char* component_id = component_elem->Attribute("id");
-    if (!component_id)
-      continue;
+    if (const auto* mesh = visual->FirstChildElement("Mesh"))
+      link.visual.mesh_path = mesh->Attribute("path");
+    if (const auto* scale = visual->FirstChildElement("Scale"))
+      parsePosition(scale, link.visual.scale);
+  }
 
-    for (const tinyxml2::XMLElement* action_map_elem = component_elem->FirstChildElement("ActionMap"); action_map_elem;
-         action_map_elem = action_map_elem->NextSiblingElement("ActionMap"))
+  if (const auto* collision = elem->FirstChildElement("Collision"))
+  {
+    if (const auto* mesh = collision->FirstChildElement("Mesh"))
+      link.collision.mesh_path = mesh->Attribute("path");
+    if (const auto* scale = collision->FirstChildElement("Scale"))
+      parsePosition(scale, link.collision.scale);
+  }
+
+  if (const auto* mass = elem->FirstChildElement("Mass"))
+    link.dynamics.mass = mass->DoubleAttribute("value");
+
+  if (const auto* com = elem->FirstChildElement("CenterOfMass"))
+    parsePosition(com, link.dynamics.center_of_mass);
+
+  if (const auto* I = elem->FirstChildElement("InertiaTensor"))
+  {
+    link.dynamics.inertia_tensor << I->DoubleAttribute("ixx"), I->DoubleAttribute("ixy"), I->DoubleAttribute("ixz"),
+        I->DoubleAttribute("ixy"), I->DoubleAttribute("iyy"), I->DoubleAttribute("iyz"), I->DoubleAttribute("ixz"),
+        I->DoubleAttribute("iyz"), I->DoubleAttribute("izz");
+  }
+
+  // store to component
+  auto* component = getOrCreateComponent<LinkComponent>(db, eid);
+  component->link_map.emplace_back(id, std::move(link));
+}
+
+void parseJointElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  components::Joint joint;
+
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Joint element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  if (const auto* type = elem->FirstChildElement("Type"))
+  {
+    std::string t = type->Attribute("value");
+    if (t == "REVOLUTE")
+      joint.type = components::JointType::REVOLUTE;
+    else if (t == "PRISMATIC")
+      joint.type = components::JointType::PRISMATIC;
+    else
+      joint.type = components::JointType::FIXED;
+  }
+
+  if (const auto* actuation = elem->FirstChildElement("Actuation"))
+  {
+    std::string a = actuation->Attribute("value");
+    if (a == "PASSIVE")
+      joint.actuation = components::JointActuation::PASSIVE;
+    else if (a == "ACTIVE")
+      joint.actuation = components::JointActuation::ACTIVE;
+    else if (a == "SPRING")
+      joint.actuation = components::JointActuation::SPRING;
+    else if (a == "VIRTUAL")
+      joint.actuation = components::JointActuation::VIRTUAL;
+    else
+      joint.actuation = components::JointActuation::FIXED;
+  }
+
+  if (const auto* position = elem->FirstChildElement("Position"))
+    joint.position = position->DoubleAttribute("value");
+
+  if (const auto* axis = elem->FirstChildElement("Axis"))
+    parseUnitVector(axis, joint.axis);
+
+  // if (const auto* named = elem->FirstChildElement("NamedPositions"))
+  // {
+  //   for (const auto* pos = named->FirstChildElement("Position"); pos; pos = pos->NextSiblingElement("Position"))
+  //   {
+  //     const char* name = pos->Attribute("name");
+  //     if (!name)
+  //       throw std::runtime_error("Named position missing 'name' attribute at line " +
+  //                                std::to_string(pos->GetLineNum()));
+  //     double value = pos->DoubleAttribute("value");
+  //     joint.named_positions.emplace(name, value);
+  //   }
+  // }
+
+  // store to component
+  auto* component = getOrCreateComponent<JointComponent>(db, eid);
+  component->joint_map.emplace_back(id, std::move(joint));
+}
+
+void parseFitConstraintElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  components::FitConstraint fit;
+
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("FitConstraint element missing 'id' attribute at line " +
+                             std::to_string(elem->GetLineNum()));
+
+  if (const auto* axis = elem->FirstChildElement("Axis"))
+    parseUnitVector(axis, fit.axis);
+
+  if (const auto* sym = elem->FirstChildElement("RotationalSymmetry"))
+    fit.rotational_symmetry = sym->UnsignedAttribute("value");
+
+  if (const auto* dist = elem->FirstChildElement("ApproachDistance"))
+    fit.approach_distance = dist->DoubleAttribute("value");
+
+  // store to component
+  auto* component = getOrCreateComponent<FitConstraintComponent>(db, eid);
+  component->fitting_map.emplace_back(id, std::move(fit));
+}
+
+void parseTouchscreenElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  components::Touchscreen ts;
+
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Touchscreen element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  if (const auto* size = elem->FirstChildElement("Size"))
+  {
+    ts.width = size->DoubleAttribute("width");
+    ts.height = size->DoubleAttribute("height");
+  }
+
+  if (const auto* normal = elem->FirstChildElement("SurfaceNormal"))
+    parseUnitVector(normal, ts.surface_normal);
+
+  if (const auto* pressure = elem->FirstChildElement("Pressure"))
+  {
+    ts.min_pressure = pressure->DoubleAttribute("min");
+    ts.max_pressure = pressure->DoubleAttribute("max");
+  }
+
+  if (const auto* touch = elem->FirstChildElement("Touch"))
+  {
+    ts.touch_radius = touch->DoubleAttribute("radius");
+    ts.multi_touch = touch->BoolAttribute("multi_touch");
+    ts.allow_drag = touch->BoolAttribute("allow_drag");
+  }
+
+  if (const auto* meta = elem->FirstChildElement("Metadata"))
+  {
+    if (auto* model = meta->FirstChildElement("Model"))
+      ts.model = model->GetText();
+    if (auto* version = meta->FirstChildElement("Version"))
+      ts.version = version->GetText();
+    if (auto* driver = meta->FirstChildElement("Driver"))
+      ts.driver = driver->GetText();
+  }
+
+  // store to component
+  auto* component = getOrCreateComponent<TouchscreenComponent>(db, eid);
+  component->touchscreen_map.emplace_back(id, std::move(ts));
+}
+
+void parseFSMElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("FSM element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  components::FSM fsm;
+
+  const auto* start = elem->FirstChildElement("StartState");
+  if (!start || !start->Attribute("name"))
+    throw std::runtime_error("FSM missing or malformed <StartState> at line " + std::to_string(elem->GetLineNum()));
+
+  std::string start_state = start->Attribute("name");
+
+  // Parse states
+  if (const auto* states_elem = elem->FirstChildElement("States"))
+  {
+    for (const auto* state_elem = states_elem->FirstChildElement("State"); state_elem;
+         state_elem = state_elem->NextSiblingElement("State"))
     {
-      const char* fsm_id = action_map_elem->Attribute("fsm");
-      if (!fsm_id)
-        throw std::runtime_error("ActionMap missing 'fsm' attribute at line " +
-                                 std::to_string(action_map_elem->GetLineNum()));
-
-      components::ActionMap action_map;
-      action_map.action_id = component_id;
-
-      for (const tinyxml2::XMLElement* map_elem = action_map_elem->FirstChildElement("Map"); map_elem;
-           map_elem = map_elem->NextSiblingElement("Map"))
-      {
-        const char* trigger = map_elem->Attribute("trigger");
-        const char* action = map_elem->Attribute("action");
-        if (!trigger || !action)
-          throw std::runtime_error("Map missing 'trigger' or 'action' attribute at line " +
-                                   std::to_string(map_elem->GetLineNum()));
-
-        components::ActionMapEntry entry;
-        entry.trigger = trigger;
-        entry.action = action;
-        action_map.mappings.push_back(std::move(entry));
-      }
-
-      action_map_component.action_map.emplace_back(fsm_id, std::move(action_map));
+      std::string name = state_elem->Attribute("name");
+      fsm.state_labels.add(name);
     }
   }
 
-  db.add_component(eid, std::move(action_map_component));
+  if (!fsm.state_labels.has_label(start_state))
+    throw std::runtime_error("FSM start state '" + start_state + "' is not listed in <States>.");
+
+  fsm.start_state = fsm.state_labels.to_id(start_state);
+  fsm.current_state = fsm.start_state;
+
+  // Parse actions
+  if (const auto* actions_elem = elem->FirstChildElement("Actions"))
+  {
+    for (const auto* action_elem = actions_elem->FirstChildElement("Action"); action_elem;
+         action_elem = action_elem->NextSiblingElement("Action"))
+    {
+      std::string name = action_elem->Attribute("name");
+      fsm.action_labels.add(name);
+    }
+  }
+
+  // Parse transitions
+  if (const auto* transitions_elem = elem->FirstChildElement("Transitions"))
+  {
+    fsm.transitions = buildTransitionTableFromXML(transitions_elem, fsm.state_labels, fsm.action_labels);
+
+    std::cout << "fsm transitions size = " << fsm.transitions.size() << std::endl;
+    for (int s = 0; s < fsm.transitions.size(); ++s)
+    {
+      for (int a = 0; a < fsm.transitions[s].size(); ++a)
+      {
+        // if (fsm.transitions[s][a] >= 0)
+        //   std::cout << "Transition: " << fsm.state_labels.to_string(s) << " + " << fsm.action_labels.to_string(a)
+        //             << " -> " << fsm.state_labels.to_string(fsm.transitions[s][a]) << "\n";
+      }
+    }
+  }
+
+  // store to component
+  auto* component = getOrCreateComponent<FSMComponent>(db, eid);
+  component->fsm_map.emplace_back(id, std::move(fsm));
+}
+
+void parseActionMapElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  const char* component_id = elem->Attribute("id");
+  if (!component_id)
+    return;
+
+  components::ActionMap action_map;
+
+  for (const tinyxml2::XMLElement* action_map_elem = elem->FirstChildElement("ActionMap"); action_map_elem;
+       action_map_elem = action_map_elem->NextSiblingElement("ActionMap"))
+  {
+    const char* fsm_id = action_map_elem->Attribute("fsm");
+    if (!fsm_id)
+      throw std::runtime_error("ActionMap missing 'fsm' attribute at line " +
+                               std::to_string(action_map_elem->GetLineNum()));
+
+    action_map.action_id = component_id;
+
+    for (const tinyxml2::XMLElement* map_elem = action_map_elem->FirstChildElement("Map"); map_elem;
+         map_elem = map_elem->NextSiblingElement("Map"))
+    {
+      const char* trigger = map_elem->Attribute("trigger");
+      const char* action = map_elem->Attribute("action");
+      if (!trigger || !action)
+        throw std::runtime_error("Map missing 'trigger' or 'action' attribute at line " +
+                                 std::to_string(map_elem->GetLineNum()));
+
+      components::ActionMapEntry entry;
+      entry.trigger = trigger;
+      entry.action = action;
+      action_map.mappings.push_back(std::move(entry));
+    }
+
+    // store to component
+    auto* component = getOrCreateComponent<ActionMapComponent>(db, eid);
+    component->action_map.emplace_back(fsm_id, std::move(action_map));
+  }
+}
+void parseContainerElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  Container container;
+
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Container element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  // Axis (default to -X)
+  if (const auto* axis = elem->FirstChildElement("Axis"))
+    container.axis = Eigen::Vector3d(axis->DoubleAttribute("x", -1.0), axis->DoubleAttribute("y", 0.0),
+                                     axis->DoubleAttribute("z", 0.0))
+                         .normalized();
+  else
+    container.axis = Eigen::Vector3d(-1.0, 0.0, 0.0);
+
+  // Material
+  if (const auto* mat = elem->FirstChildElement("Material"))
+    if (const char* type = mat->Attribute("type"))
+      container.material_type = type;
+
+  // Content (first one only)
+  if (const auto* cont = elem->FirstChildElement("Content"))
+  {
+    if (const char* type = cont->Attribute("type"))
+      container.content_type = type;
+    double volume = cont->DoubleAttribute("volume", 0.0);
+    const char* units = cont->Attribute("units");
+    container.volume = convertVolumeToSI(volume, units ? units : "m^3");
+  }
+
+  // Body & Shapes
+  if (const auto* body = elem->FirstChildElement("Body"))
+    for (const auto* shape = body->FirstChildElement("Shape"); shape; shape = shape->NextSiblingElement("Shape"))
+      if (auto shape_ptr = parseShapeElement(shape))
+        container.shapes.push_back(shape_ptr);
+
+  // store to component
+  auto* component = getOrCreateComponent<ContainerComponent>(db, eid);
+  component->container_map.emplace_back(id, std::move(container));
+}
+
+void parseButtonElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID parent_eid)
+{
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Button element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  ButtonEntry entry{ ButtonType::VIRTUAL, VirtualButton{} };
+  entry.type = parseButtonType(elem->Attribute("type"));
+
+  // Parse fields shared by PushButton/VirtualButton
+  double activation_force = 0.0;
+  if (const auto* act = elem->FirstChildElement("ActivationForce"))
+    activation_force = act->DoubleAttribute("value", 0.0);
+
+  Eigen::Vector3d direction_axis = Eigen::Vector3d(0, 0, 1);  // default Z
+  if (const auto* dir = elem->FirstChildElement("DirectionAxis"))
+    parseUnitVector(dir, direction_axis);
+
+  double min_hold_duration = 0.0;
+  if (const auto* hold = elem->FirstChildElement("MinHoldDuration"))
+    min_hold_duration = hold->DoubleAttribute("value", 0.0);
+
+  // Parse Button by type
+  switch (entry.type)
+  {
+    case ButtonType::PUSH:
+    {
+      PushButton btn;
+      btn.activation_force = activation_force;
+      btn.direction_axis = direction_axis;
+      btn.min_hold_duration = min_hold_duration;
+      entry.data = btn;
+      break;
+    }
+    case ButtonType::VIRTUAL:
+    {
+      VirtualButton btn;
+      btn.activation_force = activation_force;
+      btn.direction_axis = direction_axis;
+      btn.min_hold_duration = min_hold_duration;
+      entry.data = btn;
+      break;
+    }
+    case ButtonType::ROTARY:
+    {
+      RotaryButton btn;
+
+      // Diameter/Depth (from <Bounds>)
+      if (const auto* bounds = elem->FirstChildElement("Bounds"))
+      {
+        btn.diameter = bounds->DoubleAttribute("width", 0.0);
+        btn.depth = bounds->DoubleAttribute("height", 0.0);
+      }
+
+      // Rotation axis
+      if (const auto* dir = elem->FirstChildElement("DirectionAxis"))
+        parseUnitVector(dir, btn.rotation_axis);
+
+      // Angles & detent (optionally)
+      btn.min_angle = elem->FirstChildElement("MinAngle") ?
+                          elem->FirstChildElement("MinAngle")->DoubleAttribute("value", 0.0) :
+                          0.0;
+      btn.max_angle = elem->FirstChildElement("MaxAngle") ?
+                          elem->FirstChildElement("MaxAngle")->DoubleAttribute("value", 0.0) :
+                          0.0;
+      btn.detent_spacing = elem->FirstChildElement("DetentSpacing") ?
+                               elem->FirstChildElement("DetentSpacing")->DoubleAttribute("value", 0.0) :
+                               0.0;
+
+      entry.data = btn;
+      break;
+    }
+    case ButtonType::ANALOG:
+    {
+      AnalogButton btn;
+
+      btn.direction_axis = direction_axis;
+      btn.min_pressure = elem->FirstChildElement("MinPressure") ?
+                             elem->FirstChildElement("MinPressure")->DoubleAttribute("value", 0.0) :
+                             0.0;
+      btn.max_pressure = elem->FirstChildElement("MaxPressure") ?
+                             elem->FirstChildElement("MaxPressure")->DoubleAttribute("value", 0.0) :
+                             0.0;
+
+      entry.data = btn;
+      break;
+    }
+    default:
+      throw std::runtime_error("Unhandled button type in parseButtonElement.");
+  }
+
+  // Store in ButtonComponent
+  auto* component = getOrCreateComponent<ButtonComponent>(db, parent_eid);
+  component->button_map.emplace_back(id, std::move(entry));
 }
 
 void parsePosition(const tinyxml2::XMLElement* element, Eigen::Vector3d& pos)
@@ -659,204 +1134,49 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
   return transitions;
 }
 
-// // Clone a container by copying from an existing one
-// void XMLParser::cloneContainer(Container& target, const std::string& sourceId,
-//                                const ContainerCollection& containerCollection)
-// {
-//   for (const auto& containerPair : containerCollection.container_map)
-//   {
-//     if (containerPair.first == sourceId)
-//     {
-//       target = containerPair.second;
-//       target.volume = containerPair.second.volume;  // Retain original volume
-//       return;
-//     }
-//   }
-//   std::cerr << "Error: Clone source '" << sourceId << "' not found." << std::endl;
-// }
+geometry::BaseShapePtr parseShapeElement(const tinyxml2::XMLElement* elem)
+{
+  if (!elem)
+    throw std::runtime_error("Null element passed to parseShapeElement.");
 
-// // Parse a Shape element and return a BaseVolumePtr object
-// BaseVolumePtr XMLParser::parseShape(XMLElement* shapeElement)
-// {
-//   std::string shapeName = shapeElement->Attribute("name");
+  const char* shape_type = elem->Attribute("name");
+  if (!shape_type)
+    throw std::runtime_error(std::string("Shape element missing 'name' attribute at line ") +
+                             std::to_string(elem->GetLineNum()));
 
-//   if (shapeName == "SphericalCap")
-//   {
-//     double cap_radius, height;
-//     shapeElement->QueryDoubleAttribute("cap_radius", &cap_radius);
-//     shapeElement->QueryDoubleAttribute("height", &height);
-//     return std::make_shared<SphericalCapVolume>(cap_radius, height);
-//   }
-//   else if (shapeName == "TruncatedCone")
-//   {
-//     double base_radius, top_radius, height;
-//     shapeElement->QueryDoubleAttribute("base_radius", &base_radius);
-//     shapeElement->QueryDoubleAttribute("top_radius", &top_radius);
-//     shapeElement->QueryDoubleAttribute("height", &height);
-//     return std::make_shared<TruncatedConeVolume>(base_radius, top_radius, height);
-//   }
-//   else if (shapeName == "Cylinder")
-//   {
-//     double radius, height;
-//     shapeElement->QueryDoubleAttribute("radius", &radius);
-//     shapeElement->QueryDoubleAttribute("height", &height);
-//     return std::make_shared<CylinderVolume>(radius, height);
-//   }
+  std::string type(shape_type);
 
-//   return nullptr;
-// }
-
-// // Handle container operations: remove, overwrite, or update
-// void XMLParser::handleContainerOperation(const std::string& id, const std::string& operation,
-//                                          XMLElement* containerElement, ContainerCollection& containerCollection)
-// {
-//   if (operation == "remove")
-//   {
-//     auto it = std::remove_if(containerCollection.container_map.begin(), containerCollection.container_map.end(),
-//                              [&id](const std::pair<std::string, Container>& pair) { return pair.first == id; });
-//     if (it != containerCollection.container_map.end())
-//     {
-//       containerCollection.container_map.erase(it, containerCollection.container_map.end());
-//       std::cout << "Container '" << id << "' removed successfully.\n";
-//     }
-//     else
-//     {
-//       std::cerr << "Error: Container '" << id << "' not found for removal.\n";
-//     }
-//   }
-//   else if (operation == "overwrite")
-//   {
-//     Container container;
-//     containerElement->QueryDoubleAttribute("volume", &container.volume);
-
-//     for (XMLElement* shapeElement = containerElement->FirstChildElement("Shape"); shapeElement != nullptr;
-//          shapeElement = shapeElement->NextSiblingElement("Shape"))
-//     {
-//       container.shape.push_back(parseShape(shapeElement));
-//     }
-
-//     containerCollection.container_map.push_back(std::make_pair(id, container));
-//   }
-//   else if (operation == "update")
-//   {
-//     for (auto& containerPair : containerCollection.container_map)
-//     {
-//       if (containerPair.first == id)
-//       {
-//         updateContainer(containerPair.second, containerElement);
-//         return;
-//       }
-//     }
-//     std::cerr << "Error: Cannot update. Container '" << id << "' not found.\n";
-//   }
-//   else
-//   {
-//     std::cerr << "Warning: Unknown operation '" << operation << "' for container '" << id << "'.\n";
-//   }
-// }
-
-// // Update container attributes or add/overwrite shapes
-// void XMLParser::updateContainer(Container& target, XMLElement* containerElement)
-// {
-//   containerElement->QueryDoubleAttribute("volume", &target.volume);
-
-//   for (XMLElement* shapeElement = containerElement->FirstChildElement("Shape"); shapeElement != nullptr;
-//        shapeElement = shapeElement->NextSiblingElement("Shape"))
-//   {
-//     BaseVolumePtr newShape = parseShape(shapeElement);
-//     bool shapeExists = false;
-
-//     // Check if shape already exists, update if found
-//     for (auto& shape : target.shape)
-//     {
-//       if (shape->getHeight(1.0) == newShape->getHeight(1.0))
-//       {                    // Compare using height as identifier
-//         shape = newShape;  // Overwrite existing shape
-//         shapeExists = true;
-//         break;
-//       }
-//     }
-
-//     // Add new shape if not found
-//     if (!shapeExists)
-//     {
-//       target.shape.push_back(newShape);
-//     }
-//   }
-// }
-
-// // Parse <Containers> section
-// void XMLParser::parseContainers(ContainerCollection& containerCollection)
-// {
-//   XMLElement* root = doc.RootElement();
-//   XMLElement* object = root->FirstChildElement("Object");
-//   XMLElement* containersElement = object->FirstChildElement("Containers");
-
-//   for (XMLElement* containerElement = containersElement->FirstChildElement("Container"); containerElement != nullptr;
-//        containerElement = containerElement->NextSiblingElement("Container"))
-//   {
-//     std::string id = containerElement->Attribute("id");
-
-//     // Check for operation attribute
-//     const char* operationAttr = containerElement->Attribute("operation");
-//     if (operationAttr)
-//     {
-//       std::string operation = operationAttr;
-//       handleContainerOperation(id, operation, containerElement, containerCollection);
-//       continue;  // Skip further parsing if operation is handled
-//     }
-
-//     // Handle cloned container
-//     Container container;
-//     const char* clone = containerElement->Attribute("clone");
-//     if (clone)
-//     {
-//       cloneContainer(container, clone, containerCollection);
-//     }
-//     else
-//     {
-//       containerElement->QueryDoubleAttribute("volume", &container.volume);
-
-//       // Parse all <Shape> elements inside the container
-//       for (XMLElement* shapeElement = containerElement->FirstChildElement("Shape"); shapeElement != nullptr;
-//            shapeElement = shapeElement->NextSiblingElement("Shape"))
-//       {
-//         container.shape.push_back(parseShape(shapeElement));
-//       }
-//     }
-
-//     containerCollection.container_map.push_back(std::make_pair(id, container));
-//   }
-// }
-
-// // Parse <Transforms> section
-// void XMLParser::parseTransforms(Transforms& transforms)
-// {
-//   XMLElement* root = doc.RootElement();
-//   XMLElement* object = root->FirstChildElement("Object");
-//   XMLElement* transformsElement = object->FirstChildElement("Transforms");
-
-//   for (XMLElement* transformElement = transformsElement->FirstChildElement("Transform"); transformElement != nullptr;
-//        transformElement = transformElement->NextSiblingElement("Transform"))
-//   {
-//     Transform transform;
-//     transform.name = transformElement->Attribute("name");
-//     transform.parent = transformElement->Attribute("parent");
-
-//     // Parse Frame
-//     XMLElement* frameElement = transformElement->FirstChildElement("Frame");
-//     if (frameElement)
-//     {
-//       frameElement->QueryDoubleAttribute("x", &transform.transform.translation().x());
-//       frameElement->QueryDoubleAttribute("y", &transform.transform.translation().y());
-//       frameElement->QueryDoubleAttribute("z", &transform.transform.translation().z());
-//       frameElement->QueryDoubleAttribute("qx", &transform.transform.rotation().x());
-//       frameElement->QueryDoubleAttribute("qy", &transform.transform.rotation().y());
-//       frameElement->QueryDoubleAttribute("qz", &transform.transform.rotation().z());
-//       frameElement->QueryDoubleAttribute("qw", &transform.transform.rotation().w());
-//     }
-//     transforms.transforms.push_back(transform.transform);
-//   }
-// }
+  if (type == "Cylinder")
+  {
+    double radius = parseRequiredDouble(elem, "radius");
+    double height = parseRequiredDouble(elem, "height");
+    return std::make_shared<geometry::CylinderShape>(radius, height);
+  }
+  else if (type == "RectangularPrism")
+  {
+    double width = parseRequiredDouble(elem, "width");
+    double length = parseRequiredDouble(elem, "length");
+    double height = parseRequiredDouble(elem, "height");
+    return std::make_shared<geometry::RectangularPrismShape>(width, length, height);
+  }
+  else if (type == "TruncatedCone")
+  {
+    double base_radius = parseRequiredDouble(elem, "base_radius");
+    double top_radius = parseRequiredDouble(elem, "top_radius");
+    double height = parseRequiredDouble(elem, "height");
+    return std::make_shared<geometry::TruncatedConeShape>(base_radius, top_radius, height);
+  }
+  else if (type == "SphericalCap")
+  {
+    double cap_radius = parseRequiredDouble(elem, "cap_radius");
+    double height = parseRequiredDouble(elem, "height");
+    return std::make_shared<geometry::SphericalCapShape>(cap_radius, height);
+  }
+  else
+  {
+    throw std::runtime_error("Unknown shape type '" + type + "' in <Shape> at line " +
+                             std::to_string(elem->GetLineNum()));
+  }
+}
 
 }  // namespace sodf

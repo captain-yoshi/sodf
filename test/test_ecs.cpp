@@ -15,17 +15,18 @@
 
 using namespace sodf;
 
-TEST(ECS, Parsing)
+TEST(ECS, ParsingSingleObject)
 {
   auto db = ginseng::database{};
 
-  std::string path = SODF_TEST_FOLDER;
-  path += "/../database/biorad/thermocycler_t100.xml";
-
   XMLParser parser;
-  ASSERT_TRUE(parser.loadXML(path));
+  std::string test_dir = SODF_TEST_FOLDER;
+  std::string base_dir = test_dir + "/../database/biorad";
+  std::string filename = "thermocycler_t100.xml";  // wrt. the base dir
+  // path += "/../database/biorad/thermocycler_t100.xml";
+  parser.loadEntities(filename, base_dir, db);
 
-  parser.parseComponents(db);
+  // parser.parseComponents(db);
 
   std::unordered_map<std::string, ginseng::database::ent_id> id_map;
   db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
@@ -165,6 +166,129 @@ TEST(ECS, Parsing)
 
 // ASSERT_EQ(jc_component.joint_map[0].second.joint_position, M_PI);
 // }
+
+TEST(ECS, ParseScene1)
+{
+  auto db = ginseng::database{};
+
+  XMLParser parser;
+  std::string test_dir = SODF_TEST_FOLDER;
+  std::string base_dir = test_dir + "/../database";
+  std::string filename = "scene.xml";  // wrt. the base dir
+  // path += "/../database/biorad/thermocycler_t100.xml";
+  parser.loadEntities(filename, base_dir, db);
+
+  // parser.parseComponents(db);
+
+  std::vector<std::pair<std::string, ginseng::database::ent_id>> ids;
+  db.visit(
+      [&ids](ginseng::database::ent_id id, components::ObjectComponent& object) { ids.emplace_back(object.id, id); });
+
+  ASSERT_TRUE(!ids.empty());
+
+  // pcr1
+  // clone: thermocycler clone
+  // remove:
+  //   link/base
+  //   btn/incubate
+  //   fsm/touchscreen
+  // update: root
+
+  {
+    auto& sid = ids[0].first;
+    auto& eid = ids[0].second;
+
+    ASSERT_TRUE(db.has_component<components::ObjectComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::TransformComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::LinkComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::JointComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::TouchscreenComponent>(eid));
+    ASSERT_FALSE(db.has_component<components::FSMComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::ActionMapComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::AlignGeometricPairComponent>(eid));
+
+    // Object component validation
+    auto& object = db.get_component<components::ObjectComponent>(eid);
+    EXPECT_EQ(object.id, "pcr1");
+    EXPECT_EQ(object.name, "Thermal Cycler");
+    EXPECT_EQ(object.model, "T100");
+    EXPECT_EQ(object.serial_number, "SN-ABC123456");
+    EXPECT_EQ(object.vendor, "BioRad");
+
+    // Transform component validation
+    auto& transform = db.get_component<components::TransformComponent>(eid);
+    EXPECT_EQ(transform.transform_map.size(), 58);
+
+    // Link component validation
+    auto& link = db.get_component<components::LinkComponent>(eid);
+    EXPECT_EQ(link.link_map.size(), 2);
+
+    // Joint component validation
+    auto& joint = db.get_component<components::JointComponent>(eid);
+    EXPECT_EQ(joint.joint_map.size(), 2);
+  }
+}
+TEST(ECS, ParseScene2)
+{
+  auto db = ginseng::database{};
+
+  XMLParser parser;
+  std::string test_dir = SODF_TEST_FOLDER;
+  std::string base_dir = test_dir + "/../database";
+  std::string filename = "scene2.xml";  // wrt. the base dir
+  // path += "/../database/biorad/thermocycler_t100.xml";
+  parser.loadEntities(filename, base_dir, db);
+
+  // parser.parseComponents(db);
+
+  std::vector<std::pair<std::string, ginseng::database::ent_id>> ids;
+  db.visit(
+      [&ids](ginseng::database::ent_id id, components::ObjectComponent& object) { ids.emplace_back(object.id, id); });
+
+  ASSERT_TRUE(!ids.empty());
+
+  // pcr1
+  // clone: thermocycler clone
+  // remove:
+  //   link/base
+  //   btn/incubate
+  //   fsm/touchscreen
+  // update: root
+
+  {
+    auto& sid = ids[0].first;
+    auto& eid = ids[0].second;
+
+    ASSERT_TRUE(db.has_component<components::ObjectComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::TransformComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::LinkComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::JointComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::TouchscreenComponent>(eid));
+    ASSERT_FALSE(db.has_component<components::FSMComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::ActionMapComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::AlignGeometricPairComponent>(eid));
+
+    // Object component validation
+    auto& object = db.get_component<components::ObjectComponent>(eid);
+    EXPECT_EQ(object.id, "pcr2");
+    EXPECT_EQ(object.name, "Thermal Cycler");
+    EXPECT_EQ(object.model, "T100");
+    EXPECT_EQ(object.serial_number, "SN-ABC123456");
+    EXPECT_EQ(object.vendor, "BioRad");
+
+    // Transform component validation
+    auto& transform = db.get_component<components::TransformComponent>(eid);
+    EXPECT_EQ(transform.transform_map.size(), 58);
+
+    // Link component validation
+    auto& link = db.get_component<components::LinkComponent>(eid);
+    EXPECT_EQ(link.link_map.size(), 2);
+
+    // Joint component validation
+    auto& joint = db.get_component<components::JointComponent>(eid);
+    EXPECT_EQ(joint.joint_map.size(), 2);
+  }
+}
 
 int main(int argc, char** argv)
 {

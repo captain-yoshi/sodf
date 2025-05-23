@@ -19,8 +19,6 @@ enum class ButtonType
 
 struct PushButton
 {
-  EntityID transform_id;  // default pose at rest
-
   double activation_force;         // [N]
   Eigen::Vector3d direction_axis;  // direction axis (unit vector, e.g. -X)
 
@@ -29,8 +27,6 @@ struct PushButton
 
 struct RotaryButton
 {
-  EntityID transform_id;  // default pose
-
   double diameter = 0.0;                                     // size across the circular face [m]
   double depth = 0.0;                                        // depth along axis [m]
   Eigen::Vector3d rotation_axis = Eigen::Vector3d::UnitZ();  // Rotation axis [unit vector]
@@ -42,8 +38,6 @@ struct RotaryButton
 
 struct AnalogButton
 {
-  EntityID transform_id;  // default pose
-
   Eigen::Vector3d direction_axis;  // direction axis (unit vector, e.g. -X)
 
   double min_pressure;  // Minimum pressure (analog start)
@@ -52,8 +46,6 @@ struct AnalogButton
 
 struct VirtualButton
 {
-  EntityID transform_id;  // default pose
-
   double activation_force = 0.0;   // [N]
   Eigen::Vector3d direction_axis;  // direction axis (unit vector, e.g. -X)
 

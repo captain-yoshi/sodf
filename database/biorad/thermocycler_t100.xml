@@ -25,6 +25,13 @@
     <!--   </AlignGeometricPair> -->
     <!-- </Origin> -->
 
+    <!-- <Origin id="root"> -->
+    <!--   <AlignFrames with="table"> -->
+    <!--     <Source name="insert/A/from"/> -->
+    <!--     <Target name="insert/X/into"/> -->
+    <!--   </AlignFrames> -->
+    <!-- </Origin> -->
+
     <Link id="link/base">
       <Transform parent="root">
         <Position x="0.0" y="0.0" z="0.0"/>
