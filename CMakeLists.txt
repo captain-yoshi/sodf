@@ -60,6 +60,7 @@ add_library(${PROJECT_NAME}
   src/geometry/alignment.cpp
   src/geometry/volume.cpp
   src/graph/directed_graph.cpp
+  src/xml_parser.cpp
 )
 
 # add quarticRootsFlocke as an internal library
