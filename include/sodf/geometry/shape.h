@@ -1,5 +1,5 @@
-#ifndef VOLUME_H_
-#define VOLUME_H_
+#ifndef SHAPE_H_
+#define SHAPE_H_
 
 #include <vector>
 #include <optional>
@@ -8,12 +8,12 @@
 namespace sodf {
 namespace geometry {
 
-class BaseVolume;
-using BaseVolumePtr = std::shared_ptr<BaseVolume>;
-class RectangularPrismVolume;
-class CylinderVolume;
-class TruncatedConeVolume;
-class SphericalCapVolume;
+class BaseShape;
+using BaseShapePtr = std::shared_ptr<BaseShape>;
+class RectangularPrismShape;
+class CylinderShape;
+class TruncatedConeShape;
+class SphericalCapShape;
 
 /**
  * @brief Computes the height of the shape
@@ -22,29 +22,29 @@ class SphericalCapVolume;
 /**
  * @brief Computes the height of the shape/s given a volume
  */
-double getHeight(const std::vector<BaseVolumePtr>& shapes);
-double getHeight(const std::vector<BaseVolumePtr>& shapes, double volume, double epsilon);
-double getHeight(const RectangularPrismVolume& shape, double volume);
-double getHeight(const CylinderVolume& shape, double volume);
-double getHeight(const TruncatedConeVolume& shape, double volume);
-double getHeight(const SphericalCapVolume& shape, double volume);
+double getHeight(const std::vector<BaseShapePtr>& shapes);
+double getHeight(const std::vector<BaseShapePtr>& shapes, double volume, double epsilon);
+double getHeight(const RectangularPrismShape& shape, double volume);
+double getHeight(const CylinderShape& shape, double volume);
+double getHeight(const TruncatedConeShape& shape, double volume);
+double getHeight(const SphericalCapShape& shape, double volume);
 
-double getVolume(const std::vector<BaseVolumePtr>& shapes);
-double getVolume(const std::vector<BaseVolumePtr>& shapes, double height, double epsilon);
-double getVolume(const RectangularPrismVolume& shape, double height);
-double getVolume(const CylinderVolume& shape, double height);
-double getVolume(const TruncatedConeVolume& shape, double height);
-double getVolume(const SphericalCapVolume& shape, double height);
+double getVolume(const std::vector<BaseShapePtr>& shapes);
+double getVolume(const std::vector<BaseShapePtr>& shapes, double height, double epsilon);
+double getVolume(const RectangularPrismShape& shape, double height);
+double getVolume(const CylinderShape& shape, double height);
+double getVolume(const TruncatedConeShape& shape, double height);
+double getVolume(const SphericalCapShape& shape, double height);
 
 /**
  * @brief Base class for computing height/volume of 3D shapes
  */
-class BaseVolume
+class BaseShape
 {
 public:
-  BaseVolume(double height);
+  BaseShape(double height);
 
-  virtual ~BaseVolume(){};
+  virtual ~BaseShape(){};
 
   virtual double getHeight(double volume) const = 0;
   virtual double getVolume(double height) const = 0;
@@ -60,10 +60,10 @@ protected:
 /**
  * @brief Rectangular Prism
  */
-class RectangularPrismVolume : public BaseVolume
+class RectangularPrismShape : public BaseShape
 {
 public:
-  RectangularPrismVolume(double width /*x*/, double length /*y*/, double height /*z*/);
+  RectangularPrismShape(double width /*x*/, double length /*y*/, double height /*z*/);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -75,10 +75,10 @@ public:
 /**
  * @brief Cylinder
  */
-class CylinderVolume : public BaseVolume
+class CylinderShape : public BaseShape
 {
 public:
-  CylinderVolume(double radius, double height);
+  CylinderShape(double radius, double height);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -89,10 +89,10 @@ public:
 /**
  * @brief Truncated Cone
  */
-class TruncatedConeVolume : public BaseVolume
+class TruncatedConeShape : public BaseShape
 {
 public:
-  TruncatedConeVolume(double base_radius, double top_radius, double height);
+  TruncatedConeShape(double base_radius, double top_radius, double height);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -102,10 +102,10 @@ public:
   const double alpha_;  // angle
 };
 
-class SphericalCapVolume : public BaseVolume
+class SphericalCapShape : public BaseShape
 {
 public:
-  SphericalCapVolume(double cap_radius, double height);
+  SphericalCapShape(double cap_radius, double height);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -117,4 +117,4 @@ public:
 }  // namespace geometry
 }  // namespace sodf
 
-#endif  // VOLUME_H_
+#endif  // SHAPE_H_

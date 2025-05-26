@@ -1,4 +1,4 @@
-#include <sodf/geometry/volume.h>
+#include <sodf/geometry/shape.h>
 
 #include <cmath>
 #include <PolynomialRoots.hh>
@@ -6,7 +6,7 @@
 namespace sodf {
 namespace geometry {
 
-double getHeight(const std::vector<BaseVolumePtr>& shapes)
+double getHeight(const std::vector<BaseShapePtr>& shapes)
 {
   double height = 0.0;
 
@@ -16,7 +16,7 @@ double getHeight(const std::vector<BaseVolumePtr>& shapes)
   return height;
 }
 
-double getHeight(const std::vector<BaseVolumePtr>& shapes, double volume, double epsilon)
+double getHeight(const std::vector<BaseShapePtr>& shapes, double volume, double epsilon)
 {
   double height = 0.0;
 
@@ -55,7 +55,7 @@ double getHeight(const std::vector<BaseVolumePtr>& shapes, double volume, double
   return height;
 }
 
-double getHeight(const RectangularPrismVolume& shape, double volume)
+double getHeight(const RectangularPrismShape& shape, double volume)
 {
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
@@ -63,7 +63,7 @@ double getHeight(const RectangularPrismVolume& shape, double volume)
   return volume / (shape.length_ * shape.width_);
 }
 
-double getHeight(const CylinderVolume& shape, double volume)
+double getHeight(const CylinderShape& shape, double volume)
 {
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
@@ -71,7 +71,7 @@ double getHeight(const CylinderVolume& shape, double volume)
   return volume / (M_PI * shape.radius_ * shape.radius_);
 }
 
-double getHeight(const TruncatedConeVolume& shape, double volume)
+double getHeight(const TruncatedConeShape& shape, double volume)
 {
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
@@ -93,7 +93,7 @@ double getHeight(const TruncatedConeVolume& shape, double volume)
     return roots[0];
 }
 
-double getHeight(const SphericalCapVolume& shape, double volume)
+double getHeight(const SphericalCapShape& shape, double volume)
 {
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
@@ -115,7 +115,7 @@ double getHeight(const SphericalCapVolume& shape, double volume)
     return roots[0];
 }
 
-double getVolume(const std::vector<BaseVolumePtr>& shapes)
+double getVolume(const std::vector<BaseShapePtr>& shapes)
 {
   double volume = 0.0;
 
@@ -125,7 +125,7 @@ double getVolume(const std::vector<BaseVolumePtr>& shapes)
   return volume;
 }
 
-double getVolume(const std::vector<BaseVolumePtr>& shapes, double height, double epsilon)
+double getVolume(const std::vector<BaseShapePtr>& shapes, double height, double epsilon)
 {
   double volume = 0.0;
 
@@ -164,7 +164,7 @@ double getVolume(const std::vector<BaseVolumePtr>& shapes, double height, double
   return volume;
 }
 
-double getVolume(const RectangularPrismVolume& shape, double height)
+double getVolume(const RectangularPrismShape& shape, double height)
 {
   if (height <= 0.0 || height > shape.height())
     return 0.0;
@@ -172,7 +172,7 @@ double getVolume(const RectangularPrismVolume& shape, double height)
   return shape.length_ * shape.width_ * height;
 }
 
-double getVolume(const CylinderVolume& shape, double height)
+double getVolume(const CylinderShape& shape, double height)
 {
   if (height <= 0.0 || height > shape.height())
     return 0.0;
@@ -180,7 +180,7 @@ double getVolume(const CylinderVolume& shape, double height)
   return M_PI * shape.radius_ * shape.radius_ * height;
 }
 
-double getVolume(const TruncatedConeVolume& shape, double height)
+double getVolume(const TruncatedConeShape& shape, double height)
 {
   if (height <= 0.0 || height > shape.height())
     return 0.0;
@@ -194,7 +194,7 @@ double getVolume(const TruncatedConeVolume& shape, double height)
           new_top_radius * new_top_radius);
 }
 
-double getVolume(const SphericalCapVolume& shape, double height)
+double getVolume(const SphericalCapShape& shape, double height)
 {
   if (height <= 0.0 || height > shape.height())
     return 0.0;
@@ -203,81 +203,81 @@ double getVolume(const SphericalCapVolume& shape, double height)
   return M_PI * height * height * (shape.radius_ - (1.0 / 3.0) * height);
 }
 
-BaseVolume::BaseVolume(double height) : height_(height)
+BaseShape::BaseShape(double height) : height_(height)
 {
 }
 
-double BaseVolume::height() const
+double BaseShape::height() const
 {
   return height_;
 }
 
-double BaseVolume::volume() const
+double BaseShape::volume() const
 {
   return volume_;
 }
 
-RectangularPrismVolume::RectangularPrismVolume(double width /*x*/, double length /*y*/, double height /*z*/)
-  : width_(width), length_(length), BaseVolume(height)
+RectangularPrismShape::RectangularPrismShape(double width /*x*/, double length /*y*/, double height /*z*/)
+  : width_(width), length_(length), BaseShape(height)
 {
   volume_ = getVolume(height);
 }
 
-double RectangularPrismVolume::getHeight(double volume) const
+double RectangularPrismShape::getHeight(double volume) const
 {
   return ::sodf::geometry::getHeight(*this, volume);
 }
 
-double RectangularPrismVolume::getVolume(double height) const
+double RectangularPrismShape::getVolume(double height) const
 {
   return ::sodf::geometry::getVolume(*this, height);
 }
 
-CylinderVolume::CylinderVolume(double radius, double height) : radius_(radius), BaseVolume(height)
+CylinderShape::CylinderShape(double radius, double height) : radius_(radius), BaseShape(height)
 {
   volume_ = getVolume(height);
 }
 
-double CylinderVolume::getHeight(double volume) const
+double CylinderShape::getHeight(double volume) const
 {
   return ::sodf::geometry::getHeight(*this, volume);
 }
 
-double CylinderVolume::getVolume(double height) const
+double CylinderShape::getVolume(double height) const
 {
   return ::sodf::geometry::getVolume(*this, height);
 }
 
-TruncatedConeVolume::TruncatedConeVolume(double base_radius, double top_radius, double height)
+TruncatedConeShape::TruncatedConeShape(double base_radius, double top_radius, double height)
   : base_radius_(base_radius)
   , top_radius_(top_radius)
   , alpha_(std::atan2(base_radius - top_radius, height))
-  , BaseVolume(height)
+  , BaseShape(height)
 {
   volume_ = getVolume(height);
 }
 
-double TruncatedConeVolume::getHeight(double volume) const
+double TruncatedConeShape::getHeight(double volume) const
 {
   return ::sodf::geometry::getHeight(*this, volume);
 }
-double TruncatedConeVolume::getVolume(double height) const
+double TruncatedConeShape::getVolume(double height) const
 {
   return ::sodf::geometry::getVolume(*this, height);
 }
 
-SphericalCapVolume::SphericalCapVolume(double cap_radius, double height)
-  : cap_radius_(cap_radius), radius_((cap_radius * cap_radius + height * height) / (2 * height)), BaseVolume(height)
+SphericalCapShape::SphericalCapShape(double cap_radius, double height)
+  : cap_radius_(cap_radius), radius_((cap_radius * cap_radius + height * height) / (2 * height)), BaseShape(height)
 {
   volume_ = getVolume(height);
 }
 
-double SphericalCapVolume::getHeight(double volume) const
+double SphericalCapShape::getHeight(double volume) const
 {
   return ::sodf::geometry::getHeight(*this, volume);
 }
 
-double SphericalCapVolume::getVolume(double height) const
+double SphericalCapShape::getVolume(double height) const
 {
   return ::sodf::geometry::getVolume(*this, height);
 }

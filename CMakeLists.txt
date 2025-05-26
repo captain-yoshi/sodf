@@ -58,6 +58,7 @@ add_library(${PROJECT_NAME}
   src/behavior/state.cpp
   src/conversion.cpp
   src/geometry/alignment.cpp
+  src/geometry/shape.cpp
   src/geometry/volume.cpp
   src/graph/directed_graph.cpp
   src/xml_parser.cpp
