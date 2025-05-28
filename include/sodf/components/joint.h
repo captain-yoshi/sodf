@@ -35,16 +35,6 @@ struct Joint
 struct JointComponent
 {
   FlatMap<std::string, Joint> joint_map;  //
-
-  // Joint* get(const std::string& name)
-  // {
-  //   for (auto& [n, joint] : joints)
-  //   {
-  //     if (n == name)
-  //       return &joint;
-  //   }
-  //   return nullptr;
-  // }
 };
 
 }  // namespace components
