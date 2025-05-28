@@ -3,15 +3,10 @@
 
 #include <Eigen/Geometry>
 #include <sodf/ecs.h>
+#include <sodf/components/shape.h>
 
 namespace sodf {
 namespace components {
-
-struct GeometryData
-{
-  std::string mesh_path;  // STL, DAE, OBJ, etc.
-  Eigen::Vector3d scale = { 1.0, 1.0, 1.0 };
-};
 
 struct InertialProperties
 {
@@ -22,8 +17,8 @@ struct InertialProperties
 
 struct Link
 {
-  GeometryData visual;
-  GeometryData collision;
+  Shape visual;
+  Shape collision;
 
   InertialProperties dynamics;
 };
