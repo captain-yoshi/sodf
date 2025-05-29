@@ -1,36 +1,39 @@
-#ifndef SHAPE_H_
-#define SHAPE_H_
+#ifndef SODF_FLUID_DOMAIN_SHAPE_H_
+#define SODF_FLUID_DOMAIN_SHAPE_H_
 
 #include <vector>
 #include <optional>
 #include <memory>
 
 namespace sodf {
-namespace geometry {
+namespace fluid {
 
-class BaseShape;
-using BaseShapePtr = std::shared_ptr<BaseShape>;
+// domain = fillable region
+class DomainShape;
+using DomainShapePtr = std::shared_ptr<DomainShape>;
 class BoxShape;
 class CylinderShape;
 class ConeShape;
 class SphericalCapShape;
 
 /**
- * @brief Computes the height of the shape/s given a volume
+ * @brief Computes the height (fill level) in a stacked fluid domain for a given volume.
  */
-double getHeight(const std::vector<BaseShapePtr>& shapes);
-double getHeight(const std::vector<BaseShapePtr>& shapes, double volume, double epsilon);
-double getHeight(const BoxShape& shape, double volume);
-double getHeight(const CylinderShape& shape, double volume);
-double getHeight(const ConeShape& shape, double volume);
-double getHeight(const SphericalCapShape& shape, double volume);
+double getFluidHeight(const std::vector<DomainShapePtr>& domains);
+double getFluidHeight(const std::vector<DomainShapePtr>& domains, double volume, double tolerance);
 
-double getVolume(const std::vector<BaseShapePtr>& shapes);
-double getVolume(const std::vector<BaseShapePtr>& shapes, double height, double epsilon);
-double getVolume(const BoxShape& shape, double height);
-double getVolume(const CylinderShape& shape, double height);
-double getVolume(const ConeShape& shape, double height);
-double getVolume(const SphericalCapShape& shape, double height);
+double getFluidHeight(const BoxShape& domain, double volume);
+double getFluidHeight(const CylinderShape& domain, double volume);
+double getFluidHeight(const ConeShape& domain, double volume);
+double getFluidHeight(const SphericalCapShape& domain, double volume);
+
+double getFluidVolume(const std::vector<DomainShapePtr>& domains);
+double getFluidVolume(const std::vector<DomainShapePtr>& domains, double height, double tolerance);
+
+double getFluidVolume(const BoxShape& domain, double height);
+double getFluidVolume(const CylinderShape& domain, double height);
+double getFluidVolume(const ConeShape& domain, double height);
+double getFluidVolume(const SphericalCapShape& domain, double height);
 
 /**
  * @brief Abstract base class for computing height and volume of 3D shapes.
@@ -42,12 +45,12 @@ double getVolume(const SphericalCapShape& shape, double height);
  * Derived classes must implement the geometric relationship between height and volume
  * for their specific shape.
  */
-class BaseShape
+class DomainShape
 {
 public:
-  BaseShape(double height);
+  DomainShape(double height, bool invert);
 
-  virtual ~BaseShape(){};
+  virtual ~DomainShape(){};
 
   virtual double getHeight(double volume) const = 0;
   virtual double getVolume(double height) const = 0;
@@ -58,6 +61,7 @@ public:
 protected:
   double volume_;
   double height_;
+  bool invert_;
 };
 
 /**
@@ -66,10 +70,10 @@ protected:
  * Models a right rectangular prism (box) with given width, length, and height.
  * Provides closed-form solutions for height/volume relationships.
  */
-class BoxShape : public BaseShape
+class BoxShape : public DomainShape
 {
 public:
-  BoxShape(double width, double length, double height);
+  BoxShape(double width, double length, double height, bool invert = false);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -83,7 +87,7 @@ public:
  *
  * Models a cylinder with constant radius and height. Implements analytic formulas for height/volume.
  */
-class CylinderShape : public BaseShape
+class CylinderShape : public DomainShape
 {
 public:
   CylinderShape(double radius, double height);
@@ -113,10 +117,10 @@ public:
  * @param height        Height of the cone/frustum
  * @param alpha_        Half-angle of the cone (derived from radii and height)
  */
-class ConeShape : public BaseShape
+class ConeShape : public DomainShape
 {
 public:
-  ConeShape(double base_radius, double top_radius, double height);
+  ConeShape(double base_radius, double top_radius, double height, bool invert = false);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -145,10 +149,10 @@ public:
  * The geometric convention is that the cap is "standing" with the base at the bottom (z = 0),
  * and the tip at z = height. The tangent circle (base) is at the bottom; the tip is at the top.
  */
-class SphericalCapShape : public BaseShape
+class SphericalCapShape : public DomainShape
 {
 public:
-  SphericalCapShape(double cap_radius, double height);
+  SphericalCapShape(double cap_radius, double height, bool invert = false);
 
   double getHeight(double volume) const override;
   double getVolume(double height) const override;
@@ -157,7 +161,7 @@ public:
   const double radius_;      // radius of the sphere
 };
 
-}  // namespace geometry
+}  // namespace fluid
 }  // namespace sodf
 
-#endif  // SHAPE_H_
+#endif  // SODF_FLUID_DOMAIN_SHAPE_H_

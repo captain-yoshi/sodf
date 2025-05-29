@@ -58,6 +58,8 @@ add_library(${PROJECT_NAME}
   src/conversion.cpp
   src/geometry/alignment.cpp
   src/geometry/shape.cpp
+  src/fluid/fluid_domain_shape.cpp
+  src/systems/fsm.cpp
   src/systems/scene_graph.cpp
   src/systems/fsm.cpp
   src/xml_parser.cpp
