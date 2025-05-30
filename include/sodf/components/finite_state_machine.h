@@ -11,8 +11,8 @@
 namespace sodf {
 namespace components {
 
-int try_transition(const std::vector<std::vector<int>>& transitions, int current_state, int action_id,
-                   int invalid_value = -1)
+inline int try_transition(const std::vector<std::vector<int>>& transitions, int current_state, int action_id,
+                          int invalid_value = -1)
 {
   if (current_state < 0 || current_state >= static_cast<int>(transitions.size()))
     return invalid_value;
