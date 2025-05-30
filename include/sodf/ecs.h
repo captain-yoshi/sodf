@@ -39,6 +39,30 @@ const Value* find_in_flat_map(const std::vector<std::pair<Key, Value>>& flat_map
   return nullptr;
 }
 
+// For const access
+template <typename Value>
+const Value* find_in_flat_map(const std::vector<std::pair<std::string, Value>>& flat_map, std::string_view key)
+{
+  for (const auto& [k, v] : flat_map)
+  {
+    if (k == key)
+      return &v;
+  }
+  return nullptr;
+}
+
+// For mutable access
+template <typename Value>
+Value* find_in_flat_map(std::vector<std::pair<std::string, Value>>& flat_map, std::string_view key)
+{
+  for (auto& [k, v] : flat_map)
+  {
+    if (k == key)
+      return &v;
+  }
+  return nullptr;
+}
+
 template <typename ComponentT>
 ComponentT* getOrCreateComponent(ginseng::database& db, EntityID eid)
 {
