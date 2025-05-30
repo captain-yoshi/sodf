@@ -65,6 +65,22 @@ struct ShapeComponent
   FlatMap<std::string, Shape> shape_map;
 };
 
+struct CompositeShapeEntry
+{
+  Shape shape;                        // Geometry and properties
+  Eigen::Isometry3d local_transform;  // FINAL local pose relative to composite origin
+};
+
+struct CompositeShape
+{
+  std::vector<CompositeShapeEntry> shapes;  // All primitives, fully positioned and oriented
+};
+
+struct CompositeShapeComponent
+{
+  FlatMap<std::string, CompositeShape> composite_shape_map;
+};
+
 }  // namespace components
 }  // namespace sodf
 
