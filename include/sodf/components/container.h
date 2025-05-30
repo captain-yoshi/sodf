@@ -6,7 +6,8 @@
 
 #include <Eigen/Geometry>
 
-#include <sodf/geometry/shape.h>
+#include <sodf/physics/domain_shape.h>
+#include <sodf/components/shape.h>
 
 namespace sodf {
 namespace components {
@@ -17,10 +18,12 @@ struct Container
   std::string content_type;
   std::string material_type;
 
-  Eigen::Vector3d axis;  // Unit vector toward container bottom (gravity direction, e.g., -X)
+  Eigen::Vector3d axis_bottom;  // Unit normal vector of the bottom surface, pointing into (toward) the container bottom.
 
-  // Shapes are stacked upward from the bottom along the container -axis
-  std::vector<geometry::BaseShapePtr> shapes;
+  std::string shape_ref;  // geometric
+  std::string
+      domain_shape_ref;  // Reference ID of the associated shape definition (e.g., fluid, solid, or generic domain shape).
+                         // Allows reuse of shared geometric descriptions between containers of different content types.
 };
 
 struct ContainerComponent
