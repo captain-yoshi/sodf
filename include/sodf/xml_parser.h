@@ -7,6 +7,7 @@
 #include <tinyxml2.h>
 
 #include <sodf/ecs.h>
+#include <sodf/components/shape.h>
 #include <sodf/components/transform.h>
 #include <sodf/components/finite_state_machine.h>
 
@@ -65,6 +66,12 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
                                                           int invalid_value = -1);
 
 // -----------------------------------------------------------------------------
+//
+// -----------------------------------------------------------------------------
+
+components::Shape parseShape(const tinyxml2::XMLElement* elem);
+
+// -----------------------------------------------------------------------------
 // ECS Component Parsing Functions
 // -----------------------------------------------------------------------------
 
@@ -72,6 +79,7 @@ void parseActionMapComponent(const tinyxml2::XMLElement* obj_elem, ginseng::data
 void parseButtonComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseContainerComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseFitConstraintComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseFSMComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseJointComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseLinkComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
