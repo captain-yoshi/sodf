@@ -39,13 +39,17 @@
       </Transform>
 
       <Visual>
-        <Mesh path=""/>
-        <Scale x="1.0" y="1.0" z="1.0"/>
+        <Shape type="Mesh">
+          <File path=""/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
       </Visual>
 
       <Collision>
-        <Mesh path="package://mimik_description/meshes/biorad/thermocycler_t100/collision/base_161k.stl"/>
-        <Scale x="1.0" y="1.0" z="1.0"/>
+        <Shape type="Mesh">
+          <File path="package://mimik_description/meshes/biorad/thermocycler_t100/collision/base_161k.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
       </Collision>
 
       <Inertial>
@@ -80,13 +84,17 @@
       </Transform>
 
       <Visual>
-        <Mesh path=""/>
-        <Scale x="1.0" y="1.0" z="1.0"/>
+        <Shape type="Mesh">
+          <File path=""/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
       </Visual>
 
       <Collision>
-        <Mesh path="package://mimik_description/meshes/biorad/thermocycler_t100/collision/lid_25k.stl"/>
-        <Scale x="1.0" y="1.0" z="1.0"/>
+        <Shape type="Mesh">
+          <File path="package://mimik_description/meshes/biorad/thermocycler_t100/collision/lid_25k.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
       </Collision>
 
       <Inertial>
@@ -123,13 +131,17 @@
       </Transform>
 
       <Visual>
-        <Mesh path=""/>
-        <Scale x="1.0" y="1.0" z="1.0"/>
+        <Shape type="Mesh">
+          <File path=""/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
       </Visual>
 
       <Collision>
-        <Mesh path="package://mimik_description/meshes/biorad/thermocycler_t100/collision/handle_22k.stl"/>
-        <Scale x="1.0" y="1.0" z="1.0"/>
+        <Shape type="Mesh">
+          <File path="package://mimik_description/meshes/biorad/thermocycler_t100/collision/handle_22k.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
       </Collision>
 
       <Inertial>
