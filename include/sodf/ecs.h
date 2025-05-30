@@ -39,6 +39,21 @@ const Value* find_in_flat_map(const std::vector<std::pair<Key, Value>>& flat_map
   return nullptr;
 }
 
+template <typename ComponentT>
+ComponentT* getOrCreateComponent(ginseng::database& db, EntityID eid)
+{
+  // Try to get pointer to the component
+  ComponentT* comp = db.get_component<ComponentT*>(eid);
+  if (!comp)
+  {
+    // Not found: add a default-constructed component
+    db.add_component(eid, ComponentT{});
+    // Now, get again (must exist now)
+    comp = db.get_component<ComponentT*>(eid);
+  }
+  return comp;
+}
+
 }  // namespace sodf
 
 #endif  // ECS_H_
