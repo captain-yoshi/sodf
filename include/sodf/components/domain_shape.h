@@ -1,8 +1,8 @@
-#ifndef SODF_COMPONENTS_FLUID_DOMAIN_SHAPE_H_
-#define SODF_COMPONENTS_FLUID_DOMAIN_SHAPE_H_
+#ifndef SODF_COMPONENTS_DOMAIN_SHAPE_H_
+#define SODF_COMPONENTS_DOMAIN_SHAPE_H_
 
 #include <sodf/ecs.h>
-#include <sodf/fluid/fluid_domain_shape.h>
+#include <sodf/physics/fluid_domain_shape.h>
 
 #include <vector>
 #include <utility>
@@ -17,14 +17,14 @@ namespace components {
 // Each shape is positioned relative to the previous using its own reference point (e.g., base, tip),
 // and may be inverted at construction (such as for a tip-referenced spherical cap).
 // The stacking and all fill height/volume calculations are only valid for this vertical configuration.
-using FluidDomainShapes = std::vector<fluid::DomainShapePtr>;
+using DomainShapes = std::vector<physics::DomainShapePtr>;
 
-struct FluidDomainShapeComponent
+struct DomainShapeComponent
 {
-  FlatMap<std::string, FluidDomainShapes> fluid_domain_shape_map;
+  FlatMap<std::string, DomainShapes> domain_shape_map;
 };
 
 }  // namespace components
 }  // namespace sodf
 
-#endif  // SODF_COMPONENTS_FLUID_DOMAIN_SHAPE_H_
+#endif  // SODF_COMPONENTS_DOMAIN_SHAPE_H_
