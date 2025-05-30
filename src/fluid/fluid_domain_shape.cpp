@@ -76,43 +76,60 @@ double getFluidHeight(const ConeShape& shape, double volume)
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
 
-  double a = (1.0 / 3.0) * M_PI * std::tan(shape.alpha_) * std::tan(shape.alpha_);
-  double b = -M_PI * std::tan(shape.alpha_) * shape.base_radius_;
-  double c = M_PI * shape.base_radius_ * shape.base_radius_;
+  double r1 = shape.base_radius_;
+  double r2 = shape.top_radius_;
+  double H = shape.height();
+
+  double k = (r2 - r1) / H;
+
+  // Coefficients for V(h) = a h^3 + b h^2 + c h
+  double a = (M_PI / 3.0) * k * k;
+  double b = M_PI * r1 * k;
+  double c = M_PI * r1 * r1;
   double d = -volume;
 
   double roots[5] = {};
-
   PolynomialRoots::Cubic csolve(a, b, c, d);
-  // csolve.info(std::cout);
   auto roots_size = csolve.getPositiveRoots(roots);
-
   if (roots_size == 0)
     return 0.0;
-  else
-    return roots[0];
+  return roots[0];
 }
 
-double getFluidHeight(const SphericalCapShape& shape, double volume)
+double getFluidHeight(const SphericalSegmentShape& shape, double volume)
 {
   if (volume <= 0.0 || volume > shape.volume())
     return 0.0;
 
-  double a = -M_PI / 3.0;
-  double b = M_PI * shape.radius_;
-  double c = 0;
-  double d = -volume;
+  double a1 = shape.base_radius_;  // base radius at y=0
+  double a2 = shape.top_radius_;   // top radius at y=H
+  double H = shape.height();
 
-  double roots[5] = {};
+  // Compute z0 (distance from base to sphere center)
+  double z0 = (a2 * a2 - a1 * a1 + H * H) / (2 * H);
+  double r = std::sqrt(a1 * a1 + z0 * z0);
 
-  PolynomialRoots::Cubic csolve(a, b, c, d);
-  // csolve.info(std::cout);
-  auto roots_size = csolve.getPositiveRoots(roots);
+  // Lambda for segment volume up to height h
+  auto segment_volume = [&](double h) {
+    double ah2 = r * r - (z0 - h) * (z0 - h);
+    double ah = (ah2 > 0) ? std::sqrt(ah2) : 0.0;
+    return M_PI * h / 6.0 * (3 * a1 * a1 + 3 * ah * ah + h * h);
+  };
 
-  if (roots_size == 0)
-    return 0.0;
-  else
-    return roots[0];
+  // Binary search for h
+  double low = 0.0, high = H, mid = 0.0;
+  for (int iter = 0; iter < 100; ++iter)
+  {
+    mid = 0.5 * (low + high);
+    double v = segment_volume(mid);
+    if (std::abs(v - volume) < 1e-09)  // adjust tolerance as needed
+      break;
+    if (v < volume)
+      low = mid;
+    else
+      high = mid;
+  }
+  return mid;
 }
 
 double getFluidVolume(const std::vector<DomainShapePtr>& shapes)
@@ -185,25 +202,43 @@ double getFluidVolume(const ConeShape& shape, double height)
   if (height <= 0.0 || height > shape.height())
     return 0.0;
 
-  // Compute new top radii wrt. original shape
-  // https://math.stackexchange.com/a/2219108
-  double new_top_radius = (std::tan(shape.alpha_) * height - shape.base_radius_) * -1.0;
+  double H = shape.height();
+  double r_start, r_end;
 
-  return (1.0 / 3.0) * M_PI * height *
-         (shape.base_radius_ * shape.base_radius_ + shape.base_radius_ * new_top_radius +
-          new_top_radius * new_top_radius);
+  r_start = shape.base_radius_;
+  r_end = shape.base_radius_ + (shape.top_radius_ - shape.base_radius_) * (height / H);
+
+  // Frustum volume formula
+  double volume = (M_PI * height / 3.0) * (r_start * r_start + r_start * r_end + r_end * r_end);
+
+  return volume;
 }
 
-double getFluidVolume(const SphericalCapShape& shape, double height)
+double getFluidVolume(const SphericalSegmentShape& shape, double height)
 {
+  // Height is always positive, meaning "distance away from the reference point"
   if (height <= 0.0 || height > shape.height())
     return 0.0;
 
-  // Use the sphere radius formula
-  return M_PI * height * height * (shape.radius_ - (1.0 / 3.0) * height);
+  double a1 = shape.base_radius_;  // base (at height 0)
+  double a2 = shape.top_radius_;   // top (at height H)
+  double H = shape.height();
+
+  // Step 1: Compute z0 (distance from base to sphere center)
+  double z0 = (a2 * a2 - a1 * a1 + H * H) / (2 * H);
+
+  // Step 2: Compute sphere radius
+  double r = std::sqrt(a1 * a1 + z0 * z0);
+
+  // Step 3: Compute cross-section radius at fluid height
+  double ah2 = r * r - (z0 - height) * (z0 - height);
+  double ah = (ah2 > 0) ? std::sqrt(ah2) : 0.0;
+
+  // Step 4: Plug into segment formula
+  return M_PI * height / 6.0 * (3 * a1 * a1 + 3 * ah * ah + height * height);
 }
 
-DomainShape::DomainShape(double height, bool invert) : height_(height), invert_(invert)
+DomainShape::DomainShape(double height) : height_(height)
 {
 }
 
@@ -217,8 +252,8 @@ double DomainShape::volume() const
   return volume_;
 }
 
-BoxShape::BoxShape(double width /*x*/, double length /*y*/, double height, bool invert)
-  : width_(width), length_(length), DomainShape(height, invert)
+BoxShape::BoxShape(double width /*x*/, double length /*y*/, double height)
+  : width_(width), length_(length), DomainShape(height)
 {
   volume_ = getVolume(height);
 }
@@ -233,7 +268,7 @@ double BoxShape::getVolume(double height) const
   return getFluidVolume(*this, height);
 }
 
-CylinderShape::CylinderShape(double radius, double height) : radius_(radius), DomainShape(height, false)
+CylinderShape::CylinderShape(double radius, double height) : radius_(radius), DomainShape(height)
 {
   volume_ = getVolume(height);
 }
@@ -248,11 +283,8 @@ double CylinderShape::getVolume(double height) const
   return getFluidVolume(*this, height);
 }
 
-ConeShape::ConeShape(double base_radius, double top_radius, double height, bool invert)
-  : base_radius_(base_radius)
-  , top_radius_(top_radius)
-  , alpha_(std::atan2(base_radius - top_radius, height))
-  , DomainShape(height, invert)
+ConeShape::ConeShape(double base_radius, double top_radius, double height)
+  : base_radius_(base_radius), top_radius_(top_radius), DomainShape(height)
 {
   volume_ = getVolume(height);
 }
@@ -266,20 +298,18 @@ double ConeShape::getVolume(double height) const
   return getFluidVolume(*this, height);
 }
 
-SphericalCapShape::SphericalCapShape(double cap_radius, double height, bool invert)
-  : cap_radius_(cap_radius)
-  , radius_((cap_radius * cap_radius + height * height) / (2 * height))
-  , DomainShape(height, invert)
+SphericalSegmentShape::SphericalSegmentShape(double base_radius, double top_radius, double height)
+  : base_radius_(base_radius), top_radius_(top_radius), DomainShape(height)
 {
   volume_ = getVolume(height);
 }
 
-double SphericalCapShape::getHeight(double volume) const
+double SphericalSegmentShape::getHeight(double volume) const
 {
   return getFluidHeight(*this, volume);
 }
 
-double SphericalCapShape::getVolume(double height) const
+double SphericalSegmentShape::getVolume(double height) const
 {
   return getFluidVolume(*this, height);
 }

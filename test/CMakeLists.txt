@@ -4,6 +4,7 @@
 
 set(SODF_TESTS
     test_ecs.cpp
+    test_fluid_domain_shape.cpp
 )
 
 set(TEST_DEPENDECIES
