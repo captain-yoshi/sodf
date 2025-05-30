@@ -2,7 +2,10 @@
 #include <set>
 #include <sodf/xml_parser.h>
 
+#include <sodf/components/fluid_domain_shape.h>
+
 #include <sodf/components/button.h>
+#include <sodf/components/shape.h>
 #include <sodf/components/container.h>
 #include <sodf/components/object.h>
 #include <sodf/components/transform.h>
@@ -16,6 +19,88 @@ using namespace tinyxml2;
 using namespace sodf::components;
 
 namespace sodf {
+
+// Helper for allowed types
+inline bool isSupportedFluidShape(ShapeType type)
+{
+  return type == ShapeType::Box || type == ShapeType::Cylinder || type == ShapeType::Sphere ||
+         type == ShapeType::SphericalSegment;
+}
+
+// --- Helper: extract height of shape for stacking ---
+double shapeHeight(const Shape& shape)
+{
+  // Add more shape types as needed
+  switch (shape.type)
+  {
+    case ShapeType::SphericalSegment:
+    case ShapeType::Cylinder:
+    case ShapeType::Cone:
+    case ShapeType::Box:
+      // Assumes height is always last dimension (see your convention)
+      return shape.dimensions.back();
+    // For others, add as appropriate
+    default:
+      throw std::runtime_error("Automatic stacking: unknown height for this shape type");
+  }
+}
+
+// --- Helper: extract symmetry axis from axes vector (index 0 per convention) ---
+Eigen::Vector3d shapeAxis(const Shape& shape)
+{
+  if (shape.axes.empty())
+    throw std::runtime_error("Shape missing axes info for stacking");
+  return shape.axes[0].normalized();
+}
+
+// --- Helper: build isometry from position/axis ---
+Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis)
+{
+  // Align +Z to axis (for most shapes)
+  Eigen::Vector3d z = axis.normalized();
+  Eigen::Vector3d x = Eigen::Vector3d::UnitX();
+  if (std::abs(z.dot(x)) > 0.99)
+    x = Eigen::Vector3d::UnitY();  // Avoid colinear
+  Eigen::Vector3d y = z.cross(x).normalized();
+  x = y.cross(z).normalized();
+  Eigen::Matrix3d rot;
+  rot.col(0) = x;
+  rot.col(1) = y;
+  rot.col(2) = z;
+  Eigen::Isometry3d iso = Eigen::Isometry3d::Identity();
+  iso.linear() = rot;
+  iso.translation() = pos;
+  return iso;
+}
+
+ShapeType shapeTypeFromString(const std::string& str)
+{
+  if (str == "Rectangle")
+    return ShapeType::Rectangle;
+  if (str == "Circle")
+    return ShapeType::Circle;
+  if (str == "Triangle")
+    return ShapeType::Triangle;
+  if (str == "Polygon")
+    return ShapeType::Polygon;
+  if (str == "Box")
+    return ShapeType::Box;
+  if (str == "Cylinder")
+    return ShapeType::Cylinder;
+  if (str == "Sphere")
+    return ShapeType::Sphere;
+  if (str == "Cone")
+    return ShapeType::SphericalSegment;
+  if (str == "SphericalSegment")
+    return ShapeType::Cone;
+  if (str == "Mesh")
+    return ShapeType::Mesh;
+  if (str == "Plane")
+    return ShapeType::Plane;
+  if (str == "Line")
+    return ShapeType::Line;
+  throw std::runtime_error("Unknown ShapeType: " + str);
+}
 
 // Helper function for unit conversion:
 inline double convertVolumeToSI(double volume, const std::string& units)
@@ -58,15 +143,15 @@ components::ButtonType parseButtonType(const char* type_str)
 
 /// Add only Object tag childrens, e.g. no Transform tag.
 #define SODF_COMPONENT_LIST(X)                                                                                         \
-  X(Origin, parseOriginElement)                                                                                        \
-  X(Link, parseLinkElement)                                                                                            \
-  X(Joint, parseJointElement)                                                                                          \
-  X(FitConstraint, parseFitConstraintElement)                                                                          \
-  X(Product, parseProductElement)                                                                                      \
-  X(Touchscreen, parseTouchscreenElement)                                                                              \
-  X(FSM, parseFSMElement)                                                                                              \
-  X(Button, parseButtonElement)                                                                                        \
-  X(Container, parseContainerElement)
+  X(Origin, parseOriginComponent)                                                                                      \
+  X(Link, parseLinkComponent)                                                                                          \
+  X(Joint, parseJointComponent)                                                                                        \
+  X(FitConstraint, parseFitConstraintComponent)                                                                        \
+  X(Product, parseProductComponent)                                                                                    \
+  X(Touchscreen, parseTouchscreenComponent)                                                                            \
+  X(FSM, parseFSMComponent)                                                                                            \
+  X(Button, parseButtonComponent)                                                                                      \
+  X(Container, parseContainerComponent)
 
 enum class SceneComponentType
 {
@@ -402,15 +487,15 @@ bool XMLParser::loadEntities(const std::string& rel_filepath, const std::string&
       parseFuncs[index](comp.xml, db, eid);
 
       // can reside in every component types
-      parseTransformElement(comp.xml, db, eid);
-      parseActionMapElement(comp.xml, db, eid);
+      parseTransformComponent(comp.xml, db, eid);
+      parseActionMapComponent(comp.xml, db, eid);
     }
   }
 
   return true;
 }
 
-void parseProductElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseProductComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   // Note: the object id has already been populated prior this stage
   auto* component = getOrCreateComponent<ObjectComponent>(db, eid);
@@ -425,7 +510,7 @@ void parseProductElement(const tinyxml2::XMLElement* elem, ginseng::database& db
     component->vendor = vendor->GetText();
 }
 
-void parseOriginElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   // Get id attribute or use "root"
   const char* id = elem->Attribute("id");
@@ -436,8 +521,7 @@ void parseOriginElement(const tinyxml2::XMLElement* elem, ginseng::database& db,
   // Case 1: <Transform> as child
   if (const auto* tf_elem = elem->FirstChildElement("Transform"))
   {
-    TransformFrame frame;
-    parseTransform(tf_elem, frame);  // does not compute/resolve
+    TransformFrame frame = parseTransform(tf_elem);  // does not compute/resolve
 
     // special case, parent must starts with a '/' (absolute)
     if (!frame.parent.empty() && frame.parent.at(0) != '/')
@@ -520,7 +604,7 @@ void parseOriginElement(const tinyxml2::XMLElement* elem, ginseng::database& db,
   // Note: Do NOT add TransformComponent to the db here (let parseTransformElement do it)
 }
 
-void parseTransformElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   // Skip if this element is <Origin>
   if (std::strcmp(elem->Name(), "Origin") == 0)
@@ -548,8 +632,7 @@ void parseTransformElement(const tinyxml2::XMLElement* elem, ginseng::database& 
       }
     }
 
-    TransformFrame frame;
-    parseTransform(transform_elem, frame);
+    TransformFrame frame = parseTransform(transform_elem);
 
     // store to component
     if (std::strcmp(elem->Name(), "Container") == 0)
@@ -570,7 +653,7 @@ void parseTransformElement(const tinyxml2::XMLElement* elem, ginseng::database& 
       // Add surface transform
       {
         std::string surface_id = id_str + "/surface";
-        double current_height = getHeight(container->shapes, container->volume, 10e-04);
+        double current_height = fluid::getFluidHeight(container->shapes, container->volume, 10e-04);
 
         // Add virtual joint
         auto joint = components::Joint{};
@@ -625,7 +708,7 @@ void parseTransformElement(const tinyxml2::XMLElement* elem, ginseng::database& 
   }
 }
 
-void parseLinkElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   Link link;
 
@@ -667,7 +750,7 @@ void parseLinkElement(const tinyxml2::XMLElement* elem, ginseng::database& db, E
   component->link_map.emplace_back(id, std::move(link));
 }
 
-void parseJointElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseJointComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   components::Joint joint;
 
@@ -725,7 +808,7 @@ void parseJointElement(const tinyxml2::XMLElement* elem, ginseng::database& db, 
   component->joint_map.emplace_back(id, std::move(joint));
 }
 
-void parseFitConstraintElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseFitConstraintComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   components::FitConstraint fit;
 
@@ -748,7 +831,7 @@ void parseFitConstraintElement(const tinyxml2::XMLElement* elem, ginseng::databa
   component->fitting_map.emplace_back(id, std::move(fit));
 }
 
-void parseTouchscreenElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   components::Touchscreen ts;
 
@@ -793,7 +876,7 @@ void parseTouchscreenElement(const tinyxml2::XMLElement* elem, ginseng::database
   component->touchscreen_map.emplace_back(id, std::move(ts));
 }
 
-void parseFSMElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   const char* id = elem->Attribute("id");
   if (!id)
@@ -857,7 +940,7 @@ void parseFSMElement(const tinyxml2::XMLElement* elem, ginseng::database& db, En
   component->fsm_map.emplace_back(id, std::move(fsm));
 }
 
-void parseActionMapElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   const char* component_id = elem->Attribute("id");
   if (!component_id)
@@ -895,7 +978,7 @@ void parseActionMapElement(const tinyxml2::XMLElement* elem, ginseng::database& 
     component->action_map.emplace_back(fsm_id, std::move(action_map));
   }
 }
-void parseContainerElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   Container container;
 
@@ -927,17 +1010,17 @@ void parseContainerElement(const tinyxml2::XMLElement* elem, ginseng::database& 
   }
 
   // Body & Shapes
-  if (const auto* body = elem->FirstChildElement("Body"))
-    for (const auto* shape = body->FirstChildElement("Shape"); shape; shape = shape->NextSiblingElement("Shape"))
-      if (auto shape_ptr = parseShapeElement(shape))
-        container.shapes.push_back(shape_ptr);
+  // if (const auto* body = elem->FirstChildElement("Body"))
+  //   for (const auto* shape = body->FirstChildElement("Shape"); shape; shape = shape->NextSiblingElement("Shape"))
+  //     if (auto shape_ptr = parseContainerShapeElement(shape))
+  //       container.shapes.push_back(shape_ptr);
 
   // store to component
   auto* component = getOrCreateComponent<ContainerComponent>(db, eid);
   component->container_map.emplace_back(id, std::move(container));
 }
 
-void parseButtonElement(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID parent_eid)
+void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID parent_eid)
 {
   const char* id = elem->Attribute("id");
   if (!id)
@@ -1033,6 +1116,462 @@ void parseButtonElement(const tinyxml2::XMLElement* elem, ginseng::database& db,
   component->button_map.emplace_back(id, std::move(entry));
 }
 
+Shape parseShape(const tinyxml2::XMLElement* elem)
+{
+  Shape shape;
+
+  // Type
+  const char* type_str = elem->Attribute("type");
+  if (!type_str)
+    throw std::runtime_error("Shape element missing 'type' attribute at line " + std::to_string(elem->GetLineNum()));
+  shape.type = shapeTypeFromString(type_str);
+
+  // --- Handle role attribute for lines ---
+  std::string anchor = elem->Attribute("anchor") ? elem->Attribute("anchor") : "";
+
+  // --- Parse by shape type ---
+  switch (shape.type)
+  {
+    case ShapeType::Rectangle:
+    {
+      // Axes
+      Eigen::Vector3d normal, width, height;
+      if (const auto* a = elem->FirstChildElement("AxisNormal"))
+        parseUnitVector(a, normal);
+      else
+        throw std::runtime_error("Rectangle missing AxisNormal.");
+      if (const auto* a = elem->FirstChildElement("AxisWidth"))
+        parseUnitVector(a, width);
+      else
+        throw std::runtime_error("Rectangle missing AxisWidth.");
+      if (const auto* a = elem->FirstChildElement("AxisHeight"))
+        parseUnitVector(a, height);
+      else
+        throw std::runtime_error("Rectangle missing AxisHeight.");
+      shape.axes = { normal, width, height };
+      // Dimensions
+      const auto* dims = elem->FirstChildElement("Dimensions");
+      if (!dims)
+        throw std::runtime_error("Rectangle missing <Dimensions>");
+      shape.dimensions.push_back(dims->DoubleAttribute("width"));
+      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      break;
+    }
+    case ShapeType::Circle:
+    {
+      Eigen::Vector3d normal, major;
+      if (const auto* a = elem->FirstChildElement("AxisNormal"))
+        parseUnitVector(a, normal);
+      else
+        throw std::runtime_error("Circle missing AxisNormal.");
+      if (const auto* a = elem->FirstChildElement("AxisMajor"))
+        parseUnitVector(a, major);
+      else
+        throw std::runtime_error("Circle missing AxisMajor.");
+      shape.axes = { normal, major };
+      const auto* dims = elem->FirstChildElement("Dimensions");
+      if (!dims)
+        throw std::runtime_error("Circle missing <Dimensions>");
+      shape.dimensions.push_back(dims->DoubleAttribute("radius"));
+      break;
+    }
+    case ShapeType::Triangle:
+    case ShapeType::Polygon:
+    {
+      Eigen::Vector3d normal, ax, ay;
+      if (const auto* a = elem->FirstChildElement("AxisNormal"))
+        parseUnitVector(a, normal);
+      else
+        throw std::runtime_error("Triangle/Polygon missing AxisNormal.");
+      if (const auto* a = elem->FirstChildElement("AxisX"))
+        parseUnitVector(a, ax);
+      else
+        throw std::runtime_error("Triangle/Polygon missing AxisX.");
+      if (const auto* a = elem->FirstChildElement("AxisY"))
+        parseUnitVector(a, ay);
+      else
+        throw std::runtime_error("Triangle/Polygon missing AxisY.");
+      shape.axes = { normal, ax, ay };
+      // Vertices
+      const auto* verts = elem->FirstChildElement("Vertices");
+      if (!verts)
+        throw std::runtime_error("Triangle/Polygon missing <Vertices>");
+      for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
+        shape.vertices.emplace_back(v->DoubleAttribute("x"), v->DoubleAttribute("y"), 0.0);
+      if ((shape.type == ShapeType::Triangle && shape.vertices.size() != 3) ||
+          (shape.type == ShapeType::Polygon && shape.vertices.size() < 3))
+        throw std::runtime_error("Triangle/Polygon has invalid number of vertices.");
+      break;
+    }
+    case ShapeType::Box:
+    {
+      Eigen::Vector3d ax, ay, az;
+      if (const auto* a = elem->FirstChildElement("AxisX"))
+        parseUnitVector(a, ax);
+      else
+        throw std::runtime_error("Box missing AxisX.");
+      if (const auto* a = elem->FirstChildElement("AxisY"))
+        parseUnitVector(a, ay);
+      else
+        throw std::runtime_error("Box missing AxisY.");
+      if (const auto* a = elem->FirstChildElement("AxisZ"))
+        parseUnitVector(a, az);
+      else
+        throw std::runtime_error("Box missing AxisZ.");
+      shape.axes = { ax, ay, az };
+      const auto* dims = elem->FirstChildElement("Dimensions");
+      if (!dims)
+        throw std::runtime_error("Box missing <Dimensions>");
+      shape.dimensions.push_back(dims->DoubleAttribute("width"));
+      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      shape.dimensions.push_back(dims->DoubleAttribute("depth"));
+      break;
+    }
+    case ShapeType::Cylinder:
+    {
+      Eigen::Vector3d symmetry, ref;
+      if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
+        parseUnitVector(a, symmetry);
+      else
+        throw std::runtime_error("Cylinder missing AxisSymmetry.");
+      if (const auto* a = elem->FirstChildElement("ReferenceAxis"))
+        parseUnitVector(a, ref);
+      else
+        throw std::runtime_error("Cylinder missing ReferenceAxis.");
+      shape.axes = { symmetry, ref };
+      const auto* dims = elem->FirstChildElement("Dimensions");
+      if (!dims)
+        throw std::runtime_error("Cylinder missing <Dimensions>");
+      shape.dimensions.push_back(dims->DoubleAttribute("radius"));
+      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      break;
+    }
+    case ShapeType::Sphere:
+    {
+      const auto* dims = elem->FirstChildElement("Dimensions");
+      if (!dims)
+        throw std::runtime_error("Sphere missing <Dimensions>");
+      shape.dimensions.push_back(dims->DoubleAttribute("radius"));
+      break;
+    }
+    case ShapeType::Cone:
+    {
+      Eigen::Vector3d symmetry, ref;
+      if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
+        parseUnitVector(a, symmetry);
+      else
+        throw std::runtime_error("Cone missing AxisSymmetry.");
+      if (const auto* a = elem->FirstChildElement("ReferenceAxis"))
+        parseUnitVector(a, ref);
+      else
+        throw std::runtime_error("Cone missing ReferenceAxis.");
+      shape.axes = { symmetry, ref };
+      const auto* dims = elem->FirstChildElement("Dimensions");
+      if (!dims)
+        throw std::runtime_error("Cone missing <Dimensions>");
+      shape.dimensions.push_back(dims->DoubleAttribute("base_radius"));
+      shape.dimensions.push_back(dims->DoubleAttribute("top_radius"));
+      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      break;
+    }
+    case ShapeType::Plane:
+    {
+      Eigen::Vector3d normal, ax, ay;
+      if (const auto* a = elem->FirstChildElement("AxisNormal"))
+        parseUnitVector(a, normal);
+      else
+        throw std::runtime_error("Plane missing AxisNormal.");
+      if (const auto* a = elem->FirstChildElement("AxisX"))
+        parseUnitVector(a, ax);
+      else
+        throw std::runtime_error("Plane missing AxisX.");
+      if (const auto* a = elem->FirstChildElement("AxisY"))
+        parseUnitVector(a, ay);
+      else
+        throw std::runtime_error("Plane missing AxisY.");
+      shape.axes = { normal, ax, ay };
+      if (const auto* dims = elem->FirstChildElement("Dimensions"))
+      {
+        shape.dimensions.push_back(dims->DoubleAttribute("width"));
+        shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      }
+      break;
+    }
+    case ShapeType::Mesh:
+    {
+      const auto* file = elem->FirstChildElement("File");
+      if (!file || !file->Attribute("path"))
+        throw std::runtime_error("Mesh missing <File path=...>");
+      shape.mesh_path = file->Attribute("path");
+      if (const auto* scale = elem->FirstChildElement("Scale"))
+      {
+        shape.scale.x() = scale->DoubleAttribute("x", 1.0);
+        shape.scale.y() = scale->DoubleAttribute("y", 1.0);
+        shape.scale.z() = scale->DoubleAttribute("z", 1.0);
+      }
+      break;
+    }
+    case ShapeType::Line:
+    {
+      const auto* axis_elem = elem->FirstChildElement("AxisDirection");
+      const auto* len_elem = elem->FirstChildElement("Length");
+      const auto* vtx_elem = elem->FirstChildElement("Vertex");
+
+      bool use_axis_length = (axis_elem && len_elem);
+      bool use_vertices = (vtx_elem != nullptr);
+
+      if (use_axis_length && use_vertices)
+        throw std::runtime_error("Line: Specify either (AxisDirection + Length) or two Vertex tags, not both.");
+
+      if (use_axis_length)
+      {
+        // Role is required for Axis+Length, or defaults to "center"
+        if (anchor.empty())
+          anchor = "center";
+        Eigen::Vector3d axis(0, 0, 0);
+        axis.x() = axis_elem->DoubleAttribute("x", 0.0);
+        axis.y() = axis_elem->DoubleAttribute("y", 0.0);
+        axis.z() = axis_elem->DoubleAttribute("z", 0.0);
+        double length = len_elem->DoubleAttribute("value");
+        if (length <= 0)
+          throw std::runtime_error("Line: Length must be positive.");
+
+        if (anchor == "begin")
+        {
+          // Start: (0,0,0), End: axis * length
+          shape.vertices.emplace_back(0.0, 0.0, 0.0);
+          shape.vertices.emplace_back(axis.normalized() * length);
+        }
+        else if (anchor == "center")
+        {
+          // Centered at (0,0,0): Start: -½axis*length, End: +½axis*length
+          shape.vertices.emplace_back(-0.5 * axis.normalized() * length);
+          shape.vertices.emplace_back(0.5 * axis.normalized() * length);
+        }
+        else
+        {
+          throw std::runtime_error("Line: Unknown anchor '" + anchor + "'. Allowed: begin, center.");
+        }
+        // Optionally: Store a "is_2d" flag if z is 0 for both endpoints
+      }
+      else if (use_vertices)
+      {
+        std::vector<Eigen::Vector3d> verts;
+        for (const auto* v = vtx_elem; v; v = v->NextSiblingElement("Vertex"))
+        {
+          double x = v->DoubleAttribute("x");
+          double y = v->DoubleAttribute("y");
+          double z = 0.0;
+          // If z attribute present, use it (else default to 0.0)
+          v->QueryDoubleAttribute("z", &z);
+          verts.emplace_back(x, y, z);
+        }
+        if (verts.size() != 2)
+          throw std::runtime_error("Line: Must have exactly 2 Vertex tags.");
+
+        bool is2d = (verts[0].z() == 0.0 && verts[1].z() == 0.0);
+        bool is3d = (verts[0].z() != 0.0 || verts[1].z() != 0.0);
+        if (!is2d && !is3d)
+          throw std::runtime_error("Line: Vertices must either both have z=0 or both specify z values.");
+        shape.vertices = std::move(verts);
+        // Optionally: Store is2d flag for later logic
+      }
+      else
+      {
+        throw std::runtime_error("Line: Must specify either (AxisDirection + Length) or two Vertex tags.");
+      }
+      break;
+    }
+
+    default:
+      throw std::runtime_error("Unknown shape type in parseShapeElement.");
+  }
+
+  return shape;
+}
+
+CompositeShape parseCompositeShape(const tinyxml2::XMLElement* composite_elem)
+{
+  CompositeShape composite;
+  Eigen::Vector3d stack_point = Eigen::Vector3d::Zero();  // current stacking position
+  Eigen::Vector3d stack_axis = Eigen::Vector3d::UnitZ();  // default, overwritten per-shape
+  // Needed for align="tip" logic
+  bool first_shape = true;
+
+  for (const tinyxml2::XMLElement* shape_elem = composite_elem->FirstChildElement("Shape"); shape_elem;
+       shape_elem = shape_elem->NextSiblingElement("Shape"))
+  {
+    // Parse geometry with your existing function
+    Shape shape = parseShape(shape_elem);
+
+    // Stack/manual logic
+    std::string stack_attr = shape_elem->Attribute("stack") ? shape_elem->Attribute("stack") : "";
+    std::string align_attr = shape_elem->Attribute("align") ? shape_elem->Attribute("align") : "";
+    const auto* trans_elem = shape_elem->FirstChildElement("Transform");
+
+    Eigen::Isometry3d local_tf = Eigen::Isometry3d::Identity();
+
+    if (stack_attr == "manual" || trans_elem)
+    {
+      // Manual: use transform as given
+      if (trans_elem)
+        local_tf = parseIsometry3D(trans_elem);
+      else
+        local_tf.setIdentity();  // No transform = origin
+    }
+    else
+    {
+      // Automatic stacking
+      Eigen::Vector3d axis = shapeAxis(shape);
+
+      // Alignment for first shape
+      if (first_shape)
+      {
+        if (align_attr == "tip")
+        {
+          // Tip at origin; base at tip + axis*height
+          local_tf.translation() = Eigen::Vector3d::Zero();
+          // Axis orientation (align +Z to axis)
+          local_tf.linear() = buildIsometry(Eigen::Vector3d::Zero(), axis).linear();
+          // For next stacking, place next at base:
+          stack_point = axis * shapeHeight(shape);
+        }
+        else
+        {
+          // Default: base at origin
+          local_tf.translation() = Eigen::Vector3d::Zero();
+          local_tf.linear() = buildIsometry(Eigen::Vector3d::Zero(), axis).linear();
+          // For next stacking, tip is at base + axis*height
+          stack_point = axis * shapeHeight(shape);
+        }
+        stack_axis = axis;
+        first_shape = false;
+      }
+      else
+      {
+        // For subsequent shapes, align as requested
+        if (align_attr == "base" || align_attr.empty())
+        {
+          // Place base at stack_point
+          local_tf.translation() = stack_point;
+          local_tf.linear() = buildIsometry(stack_point, axis).linear();
+          // Next stacking point is base + axis*height
+          stack_point = stack_point + axis * shapeHeight(shape);
+        }
+        else if (align_attr == "tip")
+        {
+          // Place tip at stack_point (base = tip - axis*height)
+          local_tf.translation() = stack_point - axis * shapeHeight(shape);
+          local_tf.linear() = buildIsometry(local_tf.translation(), axis).linear();
+          // Next stacking point is at tip (stack_point)
+          stack_point = stack_point;
+        }
+        else
+        {
+          throw std::runtime_error("Unknown align value: " + align_attr);
+        }
+        stack_axis = axis;
+      }
+    }
+
+    // Add to composite
+    composite.shapes.push_back({ shape, local_tf });
+  }
+  return composite;
+}
+
+void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Button element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  // --- 1. Parse DerivedFromCompositeShape ID ---
+  auto* derived_elem = elem->FirstChildElement("DerivedFromCompositeShape");
+  if (!derived_elem || !derived_elem->Attribute("id"))
+    throw std::runtime_error("FluidDomainShape: missing <DerivedFromCompositeShape id=...>");
+
+  std::string composite_id = derived_elem->Attribute("id");
+  const auto* composite_shapes = db.get_component<CompositeShapeComponent*>(eid);
+  if (!composite_shapes)
+    throw std::runtime_error("CompositeShape not found: " + composite_id);
+
+  auto composite = find_in_flat_map(composite_shapes->composite_shape_map, composite_id);
+  if (!composite)
+    throw std::runtime_error("CompositeShape not found: " + composite_id);
+
+  if (composite->shapes.empty())
+    throw std::runtime_error("CompositeShape is empty: " + composite_id);
+
+  // --- 2. Stacking direction is defined by the first shape's symmetry axis ---
+  Eigen::Vector3d stacking_axis = composite->shapes[0].shape.axes[0].normalized();
+
+  // Sign for stacking: 1 if stacking "with" the axis, -1 if "against"
+  double stacking_sign = 1.0;
+
+  // --- 3. Prepare for stacking and validation ---
+  std::vector<fluid::DomainShapePtr> fluid_domains;
+  // Start stacking at the first shape's local_transform origin
+  double expected_proj = composite->shapes[0].local_transform.translation().dot(stacking_axis);
+
+  for (size_t i = 0; i < composite->shapes.size(); ++i)
+  {
+    const auto& entry = composite->shapes[i];
+    const Shape& shape = entry.shape;
+
+    // --- 4. Throw if not supported type ---
+    if (!isSupportedFluidShape(shape.type))
+      throw std::runtime_error("Unsupported shape in CompositeShape: Only Box, Cylinder, Sphere, SphericalCap allowed");
+
+    // --- 5. Symmetry axis check (must be parallel or anti-parallel to stacking_axis) ---
+    Eigen::Vector3d axis = shape.axes[0].normalized();
+    double axis_alignment = axis.dot(stacking_axis);
+    if (std::abs(std::abs(axis_alignment) - 1.0) > 1e-8)
+      throw std::runtime_error(
+          "All symmetry axes must be parallel or anti-parallel to stacking axis for vertical stacking");
+
+    // --- 6. Deduce invert (reference) ---
+    // If axis is aligned, invert = false. If anti-aligned, invert = true.
+    bool invert = (axis_alignment < 0.0);
+
+    // --- 7. Validate stacking: check if current shape starts where previous ended (projected along stacking axis) ---
+    double shape_proj = entry.local_transform.translation().dot(stacking_axis);
+    if (std::abs(shape_proj - expected_proj) > 1e-8)
+      throw std::runtime_error(
+          "CompositeShapeEntry is not correctly stacked: shapes must be adjacent along stacking axis.");
+
+    // --- 8. Get height along stacking direction ---
+    double shape_height = shape.dimensions.back();  // Always use last dim as height per convention
+    expected_proj += (invert ? -shape_height : shape_height);
+
+    // --- 9. Create correct fluid domain shape ---
+    fluid::DomainShapePtr ptr;
+    switch (shape.type)
+    {
+      case ShapeType::Box:
+        ptr = std::make_shared<fluid::BoxShape>(shape.dimensions[0], shape.dimensions[1], shape.dimensions[2]);
+        break;
+      case ShapeType::Cone:
+        ptr = std::make_shared<fluid::ConeShape>(shape.dimensions[0], shape.dimensions[1], shape.dimensions[2]);
+        break;
+      case ShapeType::Cylinder:
+        ptr = std::make_shared<fluid::CylinderShape>(shape.dimensions[0], shape.dimensions[1]);
+        break;
+      case ShapeType::SphericalSegment:
+        ptr = std::make_shared<fluid::SphericalSegmentShape>(shape.dimensions[0], shape.dimensions[1],
+                                                             shape.dimensions[2]);
+        break;
+      default:
+        throw std::runtime_error("Should not happen: already checked supported shape types.");
+    }
+    fluid_domains.push_back(ptr);
+  }
+
+  // Store in ButtonComponent
+  auto* component = getOrCreateComponent<FluidDomainShapeComponent>(db, eid);
+  component->fluid_domain_shape_map.emplace_back(id, std::move(fluid_domains));
+}
+
 void parsePosition(const tinyxml2::XMLElement* element, Eigen::Vector3d& pos)
 {
   pos.x() = element->DoubleAttribute("x");
@@ -1059,11 +1598,8 @@ void parseQuaternion(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
   q.w() = element->DoubleAttribute("w");
 }
 
-void parseTransform(const tinyxml2::XMLElement* transform_elem, components::TransformFrame& frame)
+Eigen::Isometry3d parseIsometry3D(const tinyxml2::XMLElement* transform_elem)
 {
-  if (const char* parent = transform_elem->Attribute("parent"))
-    frame.parent = std::string(parent);
-
   Eigen::Vector3d pos{ 0, 0, 0 };
   Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
 
@@ -1077,9 +1613,20 @@ void parseTransform(const tinyxml2::XMLElement* transform_elem, components::Tran
     parseQuaternion(quat_elem, q);
   }
 
-  frame.local = Eigen::Translation3d(pos) * q;
+  return Eigen::Translation3d(pos) * q;
+}
+
+components::TransformFrame parseTransform(const tinyxml2::XMLElement* transform_elem)
+{
+  TransformFrame frame;
+  if (const char* parent = transform_elem->Attribute("parent"))
+    frame.parent = std::string(parent);
+
+  frame.local = parseIsometry3D(transform_elem);
   frame.global = Eigen::Isometry3d::Identity();
   frame.dirty = true;
+
+  return frame;
 }
 
 void parseUnitVector(const tinyxml2::XMLElement* element, Eigen::Vector3d& vec, double epsilon)
@@ -1134,49 +1681,49 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
   return transitions;
 }
 
-geometry::BaseShapePtr parseShapeElement(const tinyxml2::XMLElement* elem)
-{
-  if (!elem)
-    throw std::runtime_error("Null element passed to parseShapeElement.");
+// geometry::BaseShapePtr parseContainerShapeElement(const tinyxml2::XMLElement* elem)
+// {
+//   if (!elem)
+//     throw std::runtime_error("Null element passed to parseContainerShapeElement.");
 
-  const char* shape_type = elem->Attribute("name");
-  if (!shape_type)
-    throw std::runtime_error(std::string("Shape element missing 'name' attribute at line ") +
-                             std::to_string(elem->GetLineNum()));
+//   const char* shape_type = elem->Attribute("name");
+//   if (!shape_type)
+//     throw std::runtime_error(std::string("Shape element missing 'name' attribute at line ") +
+//                              std::to_string(elem->GetLineNum()));
 
-  std::string type(shape_type);
+//   std::string type(shape_type);
 
-  if (type == "Cylinder")
-  {
-    double radius = parseRequiredDouble(elem, "radius");
-    double height = parseRequiredDouble(elem, "height");
-    return std::make_shared<geometry::CylinderShape>(radius, height);
-  }
-  else if (type == "RectangularPrism")
-  {
-    double width = parseRequiredDouble(elem, "width");
-    double length = parseRequiredDouble(elem, "length");
-    double height = parseRequiredDouble(elem, "height");
-    return std::make_shared<geometry::RectangularPrismShape>(width, length, height);
-  }
-  else if (type == "TruncatedCone")
-  {
-    double base_radius = parseRequiredDouble(elem, "base_radius");
-    double top_radius = parseRequiredDouble(elem, "top_radius");
-    double height = parseRequiredDouble(elem, "height");
-    return std::make_shared<geometry::TruncatedConeShape>(base_radius, top_radius, height);
-  }
-  else if (type == "SphericalCap")
-  {
-    double cap_radius = parseRequiredDouble(elem, "cap_radius");
-    double height = parseRequiredDouble(elem, "height");
-    return std::make_shared<geometry::SphericalCapShape>(cap_radius, height);
-  }
-  else
-  {
-    throw std::runtime_error("Unknown shape type '" + type + "' in <Shape> at line " +
-                             std::to_string(elem->GetLineNum()));
-  }
-}
+//   if (type == "Cylinder")
+//   {
+//     double radius = parseRequiredDouble(elem, "radius");
+//     double height = parseRequiredDouble(elem, "height");
+//     return std::make_shared<geometry::CylinderShape>(radius, height);
+//   }
+//   else if (type == "Box")
+//   {
+//     double width = parseRequiredDouble(elem, "width");
+//     double length = parseRequiredDouble(elem, "length");
+//     double height = parseRequiredDouble(elem, "height");
+//     return std::make_shared<geometry::BoxShape>(width, length, height);
+//   }
+//   else if (type == "Cone")
+//   {
+//     double base_radius = parseRequiredDouble(elem, "base_radius");
+//     double top_radius = parseRequiredDouble(elem, "top_radius");
+//     double height = parseRequiredDouble(elem, "height");
+//     return std::make_shared<geometry::ConeShape>(base_radius, top_radius, height);
+//   }
+//   else if (type == "SphericalCap")
+//   {
+//     double cap_radius = parseRequiredDouble(elem, "cap_radius");
+//     double height = parseRequiredDouble(elem, "height");
+//     return std::make_shared<geometry::SphericalCapShape>(cap_radius, height);
+//   }
+//   else
+//   {
+//     throw std::runtime_error("Unknown shape type '" + type + "' in <Shape> at line " +
+//                              std::to_string(elem->GetLineNum()));
+//   }
+// }
 
 }  // namespace sodf
