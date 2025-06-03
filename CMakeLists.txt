@@ -3,15 +3,12 @@ project(sodf)
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(orocos_kdl)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   geometry_msgs
-  eigen_conversions
-  kdl_conversions
 )
 
 set(SODF_LIBRARY ${PROJECT_NAME})
@@ -24,7 +21,6 @@ set(ginseng_INCLUDE_DIRS ext/ginseng)
 catkin_package(
   LIBRARIES
     ${PROJECT_NAME}
-    ${orocos_kdl_LIBRARIES}
     quarticRootsFlocke
   INCLUDE_DIRS
     include
@@ -33,12 +29,8 @@ catkin_package(
     ${ginseng_INCLUDE_DIRS}
   CATKIN_DEPENDS
     roscpp
-    geometry_msgs
-    eigen_conversions
-    kdl_conversions
   DEPENDS
     EIGEN3
-    orocos_kdl
     Boost
 )
 
