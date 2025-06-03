@@ -4,6 +4,8 @@
 #include <sodf/components/domain_shape.h>
 #include <sodf/components/container.h>
 #include <sodf/components/shape.h>
+#include <sodf/components/grasp.h>
+#include <sodf/components/object.h>
 
 #include <gtest/gtest.h>
 
@@ -122,9 +124,9 @@ TEST(XMLParser, ParseBoxShape)
 {
   std::string xml_txt = R"(
     <Shape type="Box">
-      <AxisX x="1.0" y="0.0" z="0.0"/>
-      <AxisY x="0.0" y="1.0" z="0.0"/>
-      <AxisZ x="0.0" y="0.0" z="1.0"/>
+      <AxisWidth x="1.0" y="0.0" z="0.0"/>
+      <AxisDepth x="0.0" y="1.0" z="0.0"/>
+      <AxisHeight x="0.0" y="0.0" z="1.0"/>
       <Dimensions width="0.05" height="0.01" depth="0.02"/>
     </Shape>)";
 
@@ -147,7 +149,7 @@ TEST(XMLParser, ParseCylinderShape)
   std::string xml_txt = R"(
     <Shape type="Cylinder">
       <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
-      <ReferenceAxis x="1.0" y="0.0" z="0.0"/>
+      <AxisReference x="1.0" y="0.0" z="0.0"/>
       <Dimensions radius="0.012" height="0.20"/>
     </Shape>)";
 
@@ -376,7 +378,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 TEST(XMLParser, ContainerComponent)
 {
   std::string xml_txt = R"(
-    <Root>
+    <root>
       <FluidDomainShape id="fluid/container">
         <StackedShapes>
           <Shape type="SphericalSegment" base_radius="0.0" top_radius="0.00142" height="0.00167"/>
@@ -395,7 +397,7 @@ TEST(XMLParser, ContainerComponent)
         <AxisBottom x="1.0" y="0.0" z="0.0"/>
         <DomainShapeRef id="fluid/container"/>
       </Container>
-    </Root>
+    </root>
   )";
 
   auto db = ginseng::database{};
@@ -446,4 +448,280 @@ TEST(XMLParser, ContainerComponent)
   auto shapes = sodf::find_in_flat_map(domain_component->domain_shape_map, container.domain_shape_ref);
   ASSERT_NE(shapes, nullptr);
   ASSERT_EQ(shapes->size(), 4);
+}
+
+TEST(XMLParser, ParallelGraspDerivedFrom)
+{
+  // No shapes defined
+  {
+    std::string xml_txt = R"(
+    <root>
+      <Object id="test">
+
+        <ParallelGrasp id="grasp/handle">
+          <DerivedFromParallelShapes>
+            <AxisSymetrie x="0.0" y="0.0" z="-1.0"/>
+            <AxisNormal x="-1.0" y="0.0" z="0.0"/>
+            <Shape id="area/front/handle"/>
+            <Shape id="area/back/handle"/>
+            <Shape id="area/left/handle"/>
+            <Shape id="area/rigth/handle"/>
+          </DerivedFromParallelShapes>
+        </ParallelGrasp>
+
+     </Object>
+   </root>
+  )";
+
+    XMLParser parser;
+    auto db = ginseng::database{};
+    ASSERT_ANY_THROW(parser.loadEntitiesFromText(xml_txt, db));
+  }
+
+  // No shapes defined
+  {
+    std::string xml_txt = R"(
+    <root>
+      <Object id="test">
+
+        <!-- FRONT SURFACE (normal +X) -->
+        <Shape id="area/front/handle" type="Rectangle">
+          <Transform parent="root">
+            <Position x="-0.01" y="-0.3" z="0.7"/> <!-- +0.01 along X -->
+            <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+          </Transform>
+          <AxisNormal x="1.0" y="0.0" z="0.0"/>
+          <AxisWidth  x="0.0" y="1.0" z="0.0"/>
+          <AxisHeight x="0.0" y="0.0" z="1.0"/>
+          <Dimensions width="0.01" height="0.05"/>
+        </Shape>
+
+        <!-- BACK SURFACE (normal -X) -->
+        <Shape id="area/back/handle" type="Rectangle">
+          <Transform parent="root">
+            <Position x="0.01" y="-0.3" z="0.7"/> <!-- -0.01 along X -->
+            <Orientation roll="0.0" pitch="0.0" yaw="pi"/>
+          </Transform>
+          <AxisNormal x="1.0" y="0.0" z="0.0"/>
+          <AxisWidth  x="0.0" y="1.0" z="0.0"/>
+          <AxisHeight x="0.0" y="0.0" z="1.0"/>
+          <Dimensions width="0.01" height="0.05"/>
+        </Shape>
+
+        <!-- LEFT SURFACE (normal -Y) -->
+        <Shape id="area/left/handle" type="Rectangle">
+          <Transform parent="root">
+            <Position x="0.0" y="-0.29" z="0.7"/> <!-- -0.01 along Y -->
+            <Orientation roll="0.0" pitch="0.0" yaw="-pi/2"/>
+          </Transform>
+          <AxisNormal x="1.0" y="0.0" z="0.0"/>
+          <AxisWidth  x="0.0" y="1.0" z="0.0"/>
+          <AxisHeight x="0.0" y="0.0" z="1.0"/>
+          <Dimensions width="0.01" height="0.05"/>
+        </Shape>
+
+        <!-- RIGHT SURFACE (normal +Y) -->
+        <Shape id="area/right/handle" type="Rectangle">
+          <Transform parent="root">
+            <Position x="0.0" y="-0.31" z="0.7"/> <!-- +0.01 along Y -->
+            <Orientation roll="0.0" pitch="0.0" yaw="+pi/2"/>
+          </Transform>
+          <AxisNormal x="1.0" y="0.0" z="0.0"/>
+          <AxisWidth  x="0.0" y="1.0" z="0.0"/>
+          <AxisHeight x="0.0" y="0.0" z="1.0"/>
+          <Dimensions width="0.01" height="0.05"/>
+        </Shape>
+
+        <ParallelGrasp id="grasp/handle">
+          <DerivedFromParallelShapes>
+            <AxisRotational x="0.0" y="0.0" z="-1.0"/>
+            <AxisNormal x="-1.0" y="0.0" z="0.0"/>
+            <Shape id="area/front/handle"/>
+            <Shape id="area/back/handle"/>
+            <Shape id="area/left/handle"/>
+            <Shape id="area/right/handle"/>
+          </DerivedFromParallelShapes>
+        </ParallelGrasp>
+
+      </Object>
+    </root>
+    )";
+
+    XMLParser parser;
+    auto db = ginseng::database{};
+    parser.loadEntitiesFromText(xml_txt, db);
+
+    std::unordered_map<std::string, ginseng::database::ent_id> id_map;
+    db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+      id_map.insert({ object.id, id });
+    });
+
+    ASSERT_TRUE(!id_map.empty());
+
+    auto& sid = id_map.begin()->first;
+    auto& eid = id_map.begin()->second;
+
+    ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
+    auto& component = db.get_component<components::ParallelGraspComponent>(eid);
+
+    const auto* grasp_ptr = find_in_flat_map(component.grasp_map, "grasp/handle");
+    ASSERT_TRUE(grasp_ptr);
+    const auto& grasp = *grasp_ptr;
+
+    ASSERT_EQ(0.02, grasp.gap_size);
+    ASSERT_EQ(ParallelGraspApproach::INTERNAL, grasp.approach);
+    ASSERT_EQ(4, grasp.rotational_symmetry);
+    ASSERT_EQ("area/front/handle", grasp.real_surfaces[0]);
+    ASSERT_EQ("area/back/handle", grasp.real_surfaces[1]);
+    ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+
+    auto& vshape = grasp.virtual_surface;
+    ASSERT_EQ(ShapeType::Rectangle, vshape.type);
+    ASSERT_EQ(0.01, vshape.dimensions.at(0));
+    ASSERT_EQ(0.05, vshape.dimensions.at(1));
+    ASSERT_TRUE(vshape.vertices.empty());
+    ASSERT_EQ(3, vshape.axes.size());
+    ASSERT_TRUE(vshape.mesh_path.empty());
+    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, -1, 0)));
+    ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 0, -1)));
+    ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
+  }
+
+  {
+    std::string xml_txt = R"(
+    <root>
+      <Object id="test">
+
+        <Shape id="box" type="Box">
+          <Transform parent="root">
+            <Position x="0.0" y="-0.3" z="0.1"/>
+            <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+          </Transform>
+          <AxisWidth x="1.0" y="0.0" z="0.0"/>
+          <AxisDepth x="0.0" y="1.0" z="0.0"/>
+          <AxisHeight x="0.0" y="0.0" z="1.0"/>
+          <Dimensions width="0.02" depth="0.02" height="0.05"/>
+        </Shape>
+
+        <ParallelGrasp id="grasp">
+          <DerivedFromParallelShapes>
+            <Approach value="Internal"/>
+            <AxisRotational x="0.0" y="0.0" z="-1.0"/>
+            <AxisNormal x="1.0" y="0.0" z="0.0"/>
+            <Shape id="box"/>
+          </DerivedFromParallelShapes>
+        </ParallelGrasp>
+
+      </Object>
+    </root>
+    )";
+
+    XMLParser parser;
+    auto db = ginseng::database{};
+    parser.loadEntitiesFromText(xml_txt, db);
+
+    std::unordered_map<std::string, ginseng::database::ent_id> id_map;
+    db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+      id_map.insert({ object.id, id });
+    });
+
+    ASSERT_TRUE(!id_map.empty());
+
+    auto& sid = id_map.begin()->first;
+    auto& eid = id_map.begin()->second;
+
+    ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
+    auto& component = db.get_component<components::ParallelGraspComponent>(eid);
+
+    const auto* grasp_ptr = find_in_flat_map(component.grasp_map, "grasp");
+    ASSERT_TRUE(grasp_ptr);
+    const auto& grasp = *grasp_ptr;
+
+    ASSERT_EQ(0.02, grasp.gap_size);
+    ASSERT_EQ(ParallelGraspApproach::INTERNAL, grasp.approach);
+    ASSERT_EQ(4, grasp.rotational_symmetry);
+    ASSERT_EQ("box", grasp.real_surfaces[0]);
+    ASSERT_EQ("", grasp.real_surfaces[1]);
+    ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+
+    auto& vshape = grasp.virtual_surface;
+    ASSERT_EQ(ShapeType::Rectangle, vshape.type);
+    ASSERT_EQ(0.02, vshape.dimensions.at(0));
+    ASSERT_EQ(0.05, vshape.dimensions.at(1));
+    ASSERT_EQ(3, vshape.axes.size());
+    // ASSERT_TRUE(vshape.vertices.empty());
+    ASSERT_TRUE(vshape.mesh_path.empty());
+    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 1, 0)));
+    ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(0, 0, 1)));
+  }
+
+  {
+    std::string xml_txt = R"(
+    <root>
+      <Object id="test">
+
+        <Shape id="cylinder" type="Cylinder">
+          <Transform parent="root">
+            <Position x="0.0" y="0.0" z="1.0"/>
+            <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+          </Transform>
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+
+          <Dimensions radius="0.012" height="0.020"/>
+        </Shape>
+
+        <ParallelGrasp id="grasp">
+          <DerivedFromParallelShapes>
+            <Approach value="Internal"/>
+            <AxisRotational x="0.0" y="0.0" z="1.0"/>
+            <AxisNormal x="1.0" y="0.0" z="0.0"/>
+            <Shape id="cylinder"/>
+          </DerivedFromParallelShapes>
+        </ParallelGrasp>
+
+      </Object>
+    </root>
+    )";
+
+    XMLParser parser;
+    auto db = ginseng::database{};
+    parser.loadEntitiesFromText(xml_txt, db);
+
+    std::unordered_map<std::string, ginseng::database::ent_id> id_map;
+    db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+      id_map.insert({ object.id, id });
+    });
+
+    ASSERT_TRUE(!id_map.empty());
+
+    auto& sid = id_map.begin()->first;
+    auto& eid = id_map.begin()->second;
+
+    ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
+    auto& component = db.get_component<components::ParallelGraspComponent>(eid);
+
+    const auto* grasp_ptr = find_in_flat_map(component.grasp_map, "grasp");
+    ASSERT_TRUE(grasp_ptr);
+    const auto& grasp = *grasp_ptr;
+
+    ASSERT_EQ(0.024, grasp.gap_size);
+    ASSERT_EQ(ParallelGraspApproach::INTERNAL, grasp.approach);
+    ASSERT_EQ(0, grasp.rotational_symmetry);
+    ASSERT_EQ("cylinder", grasp.real_surfaces[0]);
+    ASSERT_EQ("", grasp.real_surfaces[1]);
+    ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+
+    auto& vshape = grasp.virtual_surface;
+    ASSERT_EQ(ShapeType::Line, vshape.type);
+    ASSERT_EQ(1, vshape.dimensions.size());
+    ASSERT_EQ(0.02, vshape.dimensions.at(0));
+    ASSERT_EQ(1, vshape.axes.size());
+    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(vshape.mesh_path.empty());
+    ASSERT_EQ(2, vshape.vertices.size());
+    ASSERT_TRUE(vshape.vertices[0].isApprox(Eigen::Vector3d(-0.01, 0, 0)));
+    ASSERT_TRUE(vshape.vertices[1].isApprox(Eigen::Vector3d(0.01, 0, 0)));
+  }
 }
