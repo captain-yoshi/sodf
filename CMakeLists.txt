@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
+find_library(MUPARSER_LIB muparser REQUIRED)
+find_path(MUPARSER_INCLUDE_DIR muParser.h REQUIRED)
+
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -21,6 +24,7 @@ set(ginseng_INCLUDE_DIRS ext/ginseng)
 catkin_package(
   LIBRARIES
     ${PROJECT_NAME}
+    ${MUPARSER_LIB}
     quarticRootsFlocke
   INCLUDE_DIRS
     include
@@ -42,6 +46,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIRS}
   ${better_enums_INCLUDE_DIRS}
   ${ginseng_INCLUDE_DIRS}
+  ${MUPARSER_INCLUDE_DIR}
 )
 
 add_library(${PROJECT_NAME}

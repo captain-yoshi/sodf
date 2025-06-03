@@ -11,6 +11,7 @@ set(SODF_TESTS
 set(TEST_DEPENDECIES
     ${SODF_LIBRARY}
     quarticRootsFlocke
+    ${MUPARSER_LIB}
 )
 
 if(ament_cmake_FOUND)

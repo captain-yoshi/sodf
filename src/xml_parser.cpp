@@ -15,6 +15,8 @@
 #include <sodf/components/touchscreen.h>
 #include <sodf/components/finite_state_machine.h>
 
+#include "muParser.h"
+
 using namespace tinyxml2;
 using namespace sodf::components;
 
@@ -122,11 +124,23 @@ inline double convertVolumeToSI(double volume, const std::string& units)
 // Helper: safely parse required XML double attribute
 inline double parseRequiredDouble(const tinyxml2::XMLElement* elem, const char* attr_name)
 {
-  double val = 0.0;
-  if (elem->QueryDoubleAttribute(attr_name, &val) != tinyxml2::XML_SUCCESS)
-    throw std::runtime_error(std::string("Missing or invalid attribute '") + attr_name + "' in <Shape> at line " +
+  const char* expr = elem->Attribute(attr_name);
+  if (!expr)
+    throw std::runtime_error(std::string("Missing attribute '") + attr_name + "' in <Shape> at line " +
                              std::to_string(elem->GetLineNum()));
-  return val;
+
+  try
+  {
+    mu::Parser parser;
+    parser.DefineConst("pi", M_PI);
+    parser.DefineConst("inf", std::numeric_limits<double>::infinity());
+    parser.SetExpr(expr);
+    return parser.Eval();
+  }
+  catch (mu::Parser::exception_type& e)
+  {
+    throw std::runtime_error(std::string("Error parsing expression for attribute '") + attr_name + "': " + e.GetMsg());
+  }
 }
 
 // Helper: Parse ButtonType from string
