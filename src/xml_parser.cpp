@@ -31,14 +31,14 @@ std::string getDirectory(const std::string& filepath)
 }
 
 // Helper for allowed types
-inline bool isSupportedFluidShape(geometry::ShapeType type)
+bool isSupportedFluidShape(geometry::ShapeType type)
 {
   return type == geometry::ShapeType::Box || type == geometry::ShapeType::Cylinder ||
          type == geometry::ShapeType::Sphere || type == geometry::ShapeType::SphericalSegment;
 }
 
 // Helper function for unit conversion:
-inline double convertVolumeToSI(double volume, const std::string& units)
+double convertVolumeToSI(double volume, const std::string& units)
 {
   if (units == "uL")
     return volume * 1e-9;
@@ -50,7 +50,7 @@ inline double convertVolumeToSI(double volume, const std::string& units)
 }
 
 // Helper: safely parse required XML double attribute
-inline double parseRequiredDouble(const tinyxml2::XMLElement* elem, const char* attr_name)
+double parseRequiredDouble(const tinyxml2::XMLElement* elem, const char* attr_name)
 {
   const char* expr = elem->Attribute(attr_name);
   if (!expr)
@@ -111,7 +111,7 @@ enum class SceneComponentType
       COUNT
 };
 
-inline SceneComponentType sceneComponentTypeFromString(const std::string& name)
+SceneComponentType sceneComponentTypeFromString(const std::string& name)
 {
 #define X(tag, func)                                                                                                   \
   if (name == #tag)                                                                                                    \
@@ -156,7 +156,7 @@ struct SceneObject
 };
 using SceneMap = std::unordered_map<std::string, SceneObject>;
 
-inline std::string canonical_ns(const std::string& parent_ns, const std::string& local_ns)
+std::string canonical_ns(const std::string& parent_ns, const std::string& local_ns)
 {
   if (parent_ns.empty())
     return local_ns;
@@ -165,7 +165,7 @@ inline std::string canonical_ns(const std::string& parent_ns, const std::string&
   return parent_ns + "::" + local_ns;
 }
 
-inline std::string canonicalize_ref(const std::string& current_ns, const std::string& ref)
+std::string canonicalize_ref(const std::string& current_ns, const std::string& ref)
 {
   if (ref.empty())
     return current_ns;
@@ -181,7 +181,7 @@ inline std::string canonicalize_ref(const std::string& current_ns, const std::st
   return ref;
 }
 
-inline std::string extract_namespace(const std::string& qualified_id)
+std::string extract_namespace(const std::string& qualified_id)
 {
   auto pos = qualified_id.rfind("::");
   if (pos == std::string::npos)
