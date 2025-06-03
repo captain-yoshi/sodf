@@ -1,9 +1,8 @@
 #ifndef SODF_COMPONENTS_LINK_H_
 #define SODF_COMPONENTS_LINK_H_
 
-#include <Eigen/Geometry>
 #include <sodf/ecs.h>
-#include <sodf/components/shape.h>
+#include <sodf/geometry/shape.h>
 
 namespace sodf {
 namespace components {
@@ -17,8 +16,8 @@ struct InertialProperties
 
 struct Link
 {
-  Shape visual;
-  Shape collision;
+  geometry::Shape visual;
+  geometry::Shape collision;
 
   InertialProperties dynamics;
 };

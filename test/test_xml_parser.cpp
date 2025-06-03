@@ -7,7 +7,9 @@
 
 #include <gtest/gtest.h>
 
+using namespace sodf;
 using namespace sodf::components;
+using namespace sodf::geometry;
 
 TEST(XMLParser, ParseRectangleShape)
 {
