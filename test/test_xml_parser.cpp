@@ -230,7 +230,7 @@ TEST(XMLParser, ParseConeShape)
   std::string xml_txt = R"(
     <Shape type="Cone">
       <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
-      <ReferenceAxis x="1.0" y="0.0" z="0.0"/>
+      <AxisReference x="1.0" y="0.0" z="0.0"/>
       <Dimensions base_radius="0.01" top_radius="0.002" height="0.025"/>
     </Shape>)";
 
