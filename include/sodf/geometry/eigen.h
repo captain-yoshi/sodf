@@ -1,5 +1,5 @@
-#ifndef SODF_GEOMETRY_EIGNE_H_
-#define SODF_GEOMETRY_EIGNE_H_
+#ifndef SODF_GEOMETRY_EIGEN_H_
+#define SODF_GEOMETRY_EIGEN_H_
 
 #include <Eigen/Geometry>
 
@@ -24,4 +24,4 @@ Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3
 }  // namespace geometry
 }  // namespace sodf
 
-#endif  // SODF_GEOMETRY_EIGNE_H_
+#endif  // SODF_GEOMETRY_EIGEN_H_
