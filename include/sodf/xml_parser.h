@@ -22,12 +22,14 @@ public:
   XMLParser();
   ~XMLParser();
 
-  /// Loads entities and their components from XML files into the ECS database.
-  bool loadEntities(const std::string& rel_filepath, const std::string& abs_basepath, ginseng::database& db);
+  // Loads entities from a file (resolves includes relative to file location)
+  bool loadEntitiesFromFile(const std::string& filename, ginseng::database& db);
+
+  // Loads entities from text (optionally resolve includes relative to base_dir)
+  bool loadEntitiesFromText(const std::string& text, ginseng::database& db, const std::string& base_dir = "");
 
 private:
-  /// Loads a single XML file.
-  bool loadXML(const std::string& filename);
+  bool loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ginseng::database& db);
 
   /// Pointer to the loaded XML document (lifetime is managed).
   std::unique_ptr<tinyxml2::XMLDocument> doc;
@@ -53,7 +55,7 @@ void parseQuaternion(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
 components::TransformFrame parseTransform(const tinyxml2::XMLElement* transform_elem);
 
 /// Parse a unit vector from an XML element, with optional tolerance.
-void parseUnitVector(const tinyxml2::XMLElement* element, Eigen::Vector3d& vec, double epsilon = 1e-8);
+Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsilon = 1e-8);
 
 // -----------------------------------------------------------------------------
 // FSM/Transition Parsing Utilities
@@ -69,7 +71,7 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
 //
 // -----------------------------------------------------------------------------
 
-components::Shape parseShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseShape(const tinyxml2::XMLElement* elem);
 
 // -----------------------------------------------------------------------------
 // ECS Component Parsing Functions
@@ -84,7 +86,9 @@ void parseFSMComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& 
 void parseJointComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseLinkComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseOriginComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseParallelGraspComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseProductComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseShapeComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseTouchscreenComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseTransformComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 

@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <iostream>
 #include <set>
 #include <sodf/xml_parser.h>
@@ -5,6 +6,7 @@
 #include <sodf/components/domain_shape.h>
 
 #include <sodf/components/button.h>
+#include <sodf/components/grasp.h>
 #include <sodf/components/shape.h>
 #include <sodf/components/container.h>
 #include <sodf/components/object.h>
@@ -19,94 +21,20 @@
 
 using namespace tinyxml2;
 using namespace sodf::components;
+using namespace sodf::geometry;
 
 namespace sodf {
 
-const DomainShapes* getDomainShapesByRef(const DomainShapeComponent& comp, const std::string& domain_shape_ref)
+std::string getDirectory(const std::string& filepath)
 {
-  return find_in_flat_map(comp.domain_shape_map, domain_shape_ref);
+  return std::filesystem::path(filepath).parent_path().string();
 }
 
 // Helper for allowed types
-inline bool isSupportedFluidShape(ShapeType type)
+inline bool isSupportedFluidShape(geometry::ShapeType type)
 {
-  return type == ShapeType::Box || type == ShapeType::Cylinder || type == ShapeType::Sphere ||
-         type == ShapeType::SphericalSegment;
-}
-
-// --- Helper: extract height of shape for stacking ---
-double shapeHeight(const Shape& shape)
-{
-  // Add more shape types as needed
-  switch (shape.type)
-  {
-    case ShapeType::SphericalSegment:
-    case ShapeType::Cylinder:
-    case ShapeType::Cone:
-    case ShapeType::Box:
-      // Assumes height is always last dimension (see your convention)
-      return shape.dimensions.back();
-    // For others, add as appropriate
-    default:
-      throw std::runtime_error("Automatic stacking: unknown height for this shape type");
-  }
-}
-
-// --- Helper: extract symmetry axis from axes vector (index 0 per convention) ---
-Eigen::Vector3d shapeAxis(const Shape& shape)
-{
-  if (shape.axes.empty())
-    throw std::runtime_error("Shape missing axes info for stacking");
-  return shape.axes[0].normalized();
-}
-
-// --- Helper: build isometry from position/axis ---
-Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis)
-{
-  // Align +Z to axis (for most shapes)
-  Eigen::Vector3d z = axis.normalized();
-  Eigen::Vector3d x = Eigen::Vector3d::UnitX();
-  if (std::abs(z.dot(x)) > 0.99)
-    x = Eigen::Vector3d::UnitY();  // Avoid colinear
-  Eigen::Vector3d y = z.cross(x).normalized();
-  x = y.cross(z).normalized();
-  Eigen::Matrix3d rot;
-  rot.col(0) = x;
-  rot.col(1) = y;
-  rot.col(2) = z;
-  Eigen::Isometry3d iso = Eigen::Isometry3d::Identity();
-  iso.linear() = rot;
-  iso.translation() = pos;
-  return iso;
-}
-
-ShapeType shapeTypeFromString(const std::string& str)
-{
-  if (str == "Rectangle")
-    return ShapeType::Rectangle;
-  if (str == "Circle")
-    return ShapeType::Circle;
-  if (str == "Triangle")
-    return ShapeType::Triangle;
-  if (str == "Polygon")
-    return ShapeType::Polygon;
-  if (str == "Box")
-    return ShapeType::Box;
-  if (str == "Cylinder")
-    return ShapeType::Cylinder;
-  if (str == "Sphere")
-    return ShapeType::Sphere;
-  if (str == "Cone")
-    return ShapeType::Cone;
-  if (str == "SphericalSegment")
-    return ShapeType::SphericalSegment;
-  if (str == "Mesh")
-    return ShapeType::Mesh;
-  if (str == "Plane")
-    return ShapeType::Plane;
-  if (str == "Line")
-    return ShapeType::Line;
-  throw std::runtime_error("Unknown ShapeType: " + str);
+  return type == geometry::ShapeType::Box || type == geometry::ShapeType::Cylinder ||
+         type == geometry::ShapeType::Sphere || type == geometry::ShapeType::SphericalSegment;
 }
 
 // Helper function for unit conversion:
@@ -171,6 +99,8 @@ components::ButtonType parseButtonType(const char* type_str)
   X(FSM, parseFSMComponent)                                                                                            \
   X(Button, parseButtonComponent)                                                                                      \
   X(FluidDomainShape, parseFluidDomainShapeComponent)                                                                  \
+  X(Shape, parseShapeComponent)                                                                                        \
+  X(ParallelGrasp, parseParallelGraspComponent)                                                                        \
   X(Container, parseContainerComponent)
 
 enum class SceneComponentType
@@ -188,7 +118,7 @@ inline SceneComponentType sceneComponentTypeFromString(const std::string& name)
     return SceneComponentType::tag;
   SODF_COMPONENT_LIST(X)
 #undef X
-  throw std::runtime_error("Unknown SceneComponentType string: " + name);
+  throw std::runtime_error("Unknown ComponentType string: " + name);
 }
 
 using ParseFunc = std::function<void(const tinyxml2::XMLElement*, ginseng::database&, sodf::EntityID)>;
@@ -262,20 +192,24 @@ inline std::string extract_namespace(const std::string& qualified_id)
 void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, const std::string& parent_ns,
                       const std::string& base_dir, const std::string& filename);
 
-void processInclude(const XMLElement* include_elem, ObjectIndex& object_index, const std::string& base_dir,
+void processInclude(const XMLElement* include_elem, ObjectIndex& object_index, const std::string& including_file_dir,
                     const std::string& parent_ns)
 {
   std::string path = include_elem->Attribute("path");
   std::string ns = include_elem->Attribute("ns") ? include_elem->Attribute("ns") : "";
   // std::string full_ns = parent_ns.empty() ? ns : (parent_ns.empty() ? ns : parent_ns + "::" + ns);
   std::string full_ns = canonical_ns(parent_ns, ns);
-  std::string inc_filename = base_dir + "/" + path;
+
+  // Resolve included file path relative to current file's directory
+  std::string inc_filename = including_file_dir.empty() ? path : (including_file_dir + "/" + path);
 
   auto* inc_doc = new tinyxml2::XMLDocument();
-  if (inc_doc->LoadFile((base_dir + "/" + path).c_str()) != tinyxml2::XML_SUCCESS)
-    throw std::runtime_error("Failed to include: " + path);
+  if (inc_doc->LoadFile(inc_filename.c_str()) != tinyxml2::XML_SUCCESS)
+    throw std::runtime_error("Failed to include: " + inc_filename);
 
-  buildObjectIndex(inc_doc, object_index, full_ns, base_dir, inc_filename);  // pass the full_ns down!
+  std::string inc_file_dir = getDirectory(inc_filename);
+
+  buildObjectIndex(inc_doc, object_index, full_ns, inc_file_dir, inc_filename);
 }
 
 void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, const std::string& ns,
@@ -464,54 +398,54 @@ XMLParser::~XMLParser()
 {
 }
 
-// Load XML file
-bool XMLParser::loadXML(const std::string& filename)
+bool XMLParser::loadEntitiesFromFile(const std::string& filename, ginseng::database& db)
 {
   doc = std::make_unique<tinyxml2::XMLDocument>();
-
-  XMLError result = doc->LoadFile(filename.c_str());
-  if (result != XML_SUCCESS)
+  if (doc->LoadFile(filename.c_str()) != tinyxml2::XML_SUCCESS)
   {
     std::cerr << "Error loading XML file: " << filename << std::endl;
     return false;
   }
-  return true;
+  std::string base_dir = std::filesystem::path(filename).parent_path().string();
+  return loadEntities(doc.get(), base_dir, db);
 }
 
-bool XMLParser::loadEntities(const std::string& rel_filepath, const std::string& abs_basepath, ginseng::database& db)
+bool XMLParser::loadEntitiesFromText(const std::string& text, ginseng::database& db, const std::string& base_dir)
 {
-  if (!loadXML(abs_basepath + "/" + rel_filepath))
+  doc = std::make_unique<tinyxml2::XMLDocument>();
+  if (doc->Parse(text.c_str()) != tinyxml2::XML_SUCCESS)
+  {
+    std::cerr << "Error parsing XML text" << std::endl;
     return false;
+  }
+  // base_dir can be "" (no includes) or user-specified for relative includes
+  return loadEntities(doc.get(), base_dir, db);
+}
 
+bool XMLParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ginseng::database& db)
+{
   ObjectIndex object_index;
-  buildObjectIndex(doc.get(), object_index, "", abs_basepath, abs_basepath + "/" + rel_filepath);
+  buildObjectIndex(doc, object_index, "", base_dir, "[root]");
 
   SceneMap scene_map;
-  parseSceneObjects(doc.get(), object_index, scene_map);
+  parseSceneObjects(doc, object_index, scene_map);
 
   for (const auto& scene : scene_map)
   {
     auto eid = db.create_entity();
-    // add id to object
     ObjectComponent obj_comp{ .id = scene.second.id };
     db.add_component(eid, std::move(obj_comp));
 
     for (const auto& comp : scene.second.components)
     {
-      // SceneComponentType type = typeFromString(comp.type);
       size_t index = static_cast<size_t>(comp.type);
-
       if (index >= parseFuncs.size())
         throw std::runtime_error("No parse function for component id: " + comp.id);
-
       parseFuncs[index](comp.xml, db, eid);
-
-      // can reside in every component types
       parseTransformComponent(comp.xml, db, eid);
       parseActionMapComponent(comp.xml, db, eid);
     }
   }
-
   return true;
 }
 
@@ -674,7 +608,8 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
       auto* domain_component = db.get_component<DomainShapeComponent*>(eid);
       if (!domain_component)
         throw std::runtime_error("No DomainShapeComponent found for Container '" + id_str + "'");
-      const auto* domain_shapes = getDomainShapesByRef(*domain_component, container->domain_shape_ref);
+
+      const auto domain_shapes = find_in_flat_map(domain_component->domain_shape_map, container->domain_shape_ref);
       if (!domain_shapes)
         throw std::runtime_error("DomainShapeComponent is empty");
 
@@ -812,7 +747,7 @@ void parseJointComponent(const tinyxml2::XMLElement* elem, ginseng::database& db
     joint.position = position->DoubleAttribute("value");
 
   if (const auto* axis = elem->FirstChildElement("Axis"))
-    parseUnitVector(axis, joint.axis);
+    joint.axis = parseUnitVector(axis);
 
   // if (const auto* named = elem->FirstChildElement("NamedPositions"))
   // {
@@ -842,7 +777,7 @@ void parseFitConstraintComponent(const tinyxml2::XMLElement* elem, ginseng::data
                              std::to_string(elem->GetLineNum()));
 
   if (const auto* axis = elem->FirstChildElement("Axis"))
-    parseUnitVector(axis, fit.axis);
+    fit.axis = parseUnitVector(axis);
 
   if (const auto* sym = elem->FirstChildElement("RotationalSymmetry"))
     fit.rotational_symmetry = sym->UnsignedAttribute("value");
@@ -870,7 +805,7 @@ void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::databa
   }
 
   if (const auto* normal = elem->FirstChildElement("SurfaceNormal"))
-    parseUnitVector(normal, ts.surface_normal);
+    ts.surface_normal = parseUnitVector(normal);
 
   if (const auto* pressure = elem->FirstChildElement("Pressure"))
   {
@@ -1011,7 +946,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
     throw std::runtime_error("Container element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
 
   if (const auto* a = elem->FirstChildElement("AxisBottom"))
-    parseUnitVector(a, container.axis_bottom);
+    container.axis_bottom = parseUnitVector(a);
   else
     throw std::runtime_error("Container missing AxisBottom.");
 
@@ -1086,7 +1021,7 @@ void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
 
   Eigen::Vector3d direction_axis = Eigen::Vector3d(0, 0, 1);  // default Z
   if (const auto* dir = elem->FirstChildElement("DirectionAxis"))
-    parseUnitVector(dir, direction_axis);
+    direction_axis = parseUnitVector(dir);
 
   double min_hold_duration = 0.0;
   if (const auto* hold = elem->FirstChildElement("MinHoldDuration"))
@@ -1126,7 +1061,7 @@ void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
 
       // Rotation axis
       if (const auto* dir = elem->FirstChildElement("DirectionAxis"))
-        parseUnitVector(dir, btn.rotation_axis);
+        btn.rotation_axis = parseUnitVector(dir);
 
       // Angles & detent (optionally)
       btn.min_angle = elem->FirstChildElement("MinAngle") ?
@@ -1247,7 +1182,7 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* elem, ginseng::d
   component->domain_shape_map.emplace_back(id, std::move(shapes));
 }
 
-Shape parseShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
 {
   Shape shape;
 
@@ -1268,15 +1203,15 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
       // Axes
       Eigen::Vector3d normal, width, height;
       if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        parseUnitVector(a, normal);
+        normal = parseUnitVector(a);
       else
         throw std::runtime_error("Rectangle missing AxisNormal.");
       if (const auto* a = elem->FirstChildElement("AxisWidth"))
-        parseUnitVector(a, width);
+        width = parseUnitVector(a);
       else
         throw std::runtime_error("Rectangle missing AxisWidth.");
       if (const auto* a = elem->FirstChildElement("AxisHeight"))
-        parseUnitVector(a, height);
+        height = parseUnitVector(a);
       else
         throw std::runtime_error("Rectangle missing AxisHeight.");
       shape.axes = { normal, width, height };
@@ -1292,11 +1227,11 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
     {
       Eigen::Vector3d normal, major;
       if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        parseUnitVector(a, normal);
+        normal = parseUnitVector(a);
       else
         throw std::runtime_error("Circle missing AxisNormal.");
       if (const auto* a = elem->FirstChildElement("AxisMajor"))
-        parseUnitVector(a, major);
+        major = parseUnitVector(a);
       else
         throw std::runtime_error("Circle missing AxisMajor.");
       shape.axes = { normal, major };
@@ -1311,15 +1246,15 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
     {
       Eigen::Vector3d normal, ax, ay;
       if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        parseUnitVector(a, normal);
+        normal = parseUnitVector(a);
       else
         throw std::runtime_error("Triangle/Polygon missing AxisNormal.");
       if (const auto* a = elem->FirstChildElement("AxisX"))
-        parseUnitVector(a, ax);
+        ax = parseUnitVector(a);
       else
         throw std::runtime_error("Triangle/Polygon missing AxisX.");
       if (const auto* a = elem->FirstChildElement("AxisY"))
-        parseUnitVector(a, ay);
+        ay = parseUnitVector(a);
       else
         throw std::runtime_error("Triangle/Polygon missing AxisY.");
       shape.axes = { normal, ax, ay };
@@ -1337,38 +1272,38 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
     case ShapeType::Box:
     {
       Eigen::Vector3d ax, ay, az;
-      if (const auto* a = elem->FirstChildElement("AxisX"))
-        parseUnitVector(a, ax);
+      if (const auto* a = elem->FirstChildElement("AxisWidth"))
+        ax = parseUnitVector(a);
       else
-        throw std::runtime_error("Box missing AxisX.");
-      if (const auto* a = elem->FirstChildElement("AxisY"))
-        parseUnitVector(a, ay);
+        throw std::runtime_error("Box missing AxisWidth.");
+      if (const auto* a = elem->FirstChildElement("AxisDepth"))
+        ay = parseUnitVector(a);
       else
-        throw std::runtime_error("Box missing AxisY.");
-      if (const auto* a = elem->FirstChildElement("AxisZ"))
-        parseUnitVector(a, az);
+        throw std::runtime_error("Box missing AxisDepth.");
+      if (const auto* a = elem->FirstChildElement("AxisHeight"))
+        az = parseUnitVector(a);
       else
-        throw std::runtime_error("Box missing AxisZ.");
+        throw std::runtime_error("Box missing AxisHeight.");
       shape.axes = { ax, ay, az };
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Box missing <Dimensions>");
       shape.dimensions.push_back(dims->DoubleAttribute("width"));
-      shape.dimensions.push_back(dims->DoubleAttribute("height"));
       shape.dimensions.push_back(dims->DoubleAttribute("depth"));
+      shape.dimensions.push_back(dims->DoubleAttribute("height"));
       break;
     }
     case ShapeType::Cylinder:
     {
       Eigen::Vector3d symmetry, ref;
       if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
-        parseUnitVector(a, symmetry);
+        symmetry = parseUnitVector(a);
       else
         throw std::runtime_error("Cylinder missing AxisSymmetry.");
-      if (const auto* a = elem->FirstChildElement("ReferenceAxis"))
-        parseUnitVector(a, ref);
+      if (const auto* a = elem->FirstChildElement("AxisReference"))
+        ref = parseUnitVector(a);
       else
-        throw std::runtime_error("Cylinder missing ReferenceAxis.");
+        throw std::runtime_error("Cylinder missing AxisReference.");
       shape.axes = { symmetry, ref };
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
@@ -1389,13 +1324,13 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
     {
       Eigen::Vector3d symmetry, ref;
       if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
-        parseUnitVector(a, symmetry);
+        symmetry = parseUnitVector(a);
       else
         throw std::runtime_error("Cone missing AxisSymmetry.");
-      if (const auto* a = elem->FirstChildElement("ReferenceAxis"))
-        parseUnitVector(a, ref);
+      if (const auto* a = elem->FirstChildElement("AxisReference"))
+        ref = parseUnitVector(a);
       else
-        throw std::runtime_error("Cone missing ReferenceAxis.");
+        throw std::runtime_error("Cone missing AxisReference.");
       shape.axes = { symmetry, ref };
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
@@ -1409,13 +1344,13 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
     {
       Eigen::Vector3d symmetry, ref;
       if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
-        parseUnitVector(a, symmetry);
+        symmetry = parseUnitVector(a);
       else
         throw std::runtime_error("SphericalSegment missing AxisSymmetry.");
-      if (const auto* a = elem->FirstChildElement("ReferenceAxis"))
-        parseUnitVector(a, ref);
+      if (const auto* a = elem->FirstChildElement("AxisReference"))
+        ref = parseUnitVector(a);
       else
-        throw std::runtime_error("SphericalSegment missing ReferenceAxis.");
+        throw std::runtime_error("SphericalSegment missing AxisReference.");
       shape.axes = { symmetry, ref };
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
@@ -1429,15 +1364,15 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
     {
       Eigen::Vector3d normal, ax, ay;
       if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        parseUnitVector(a, normal);
+        normal = parseUnitVector(a);
       else
         throw std::runtime_error("Plane missing AxisNormal.");
       if (const auto* a = elem->FirstChildElement("AxisX"))
-        parseUnitVector(a, ax);
+        ax = parseUnitVector(a);
       else
         throw std::runtime_error("Plane missing AxisX.");
       if (const auto* a = elem->FirstChildElement("AxisY"))
-        parseUnitVector(a, ay);
+        ay = parseUnitVector(a);
       else
         throw std::runtime_error("Plane missing AxisY.");
       shape.axes = { normal, ax, ay };
@@ -1481,7 +1416,7 @@ Shape parseShape(const tinyxml2::XMLElement* elem)
           anchor = "center";
 
         Eigen::Vector3d axis(0, 0, 0);
-        parseUnitVector(axis_elem, axis);
+        axis = parseUnitVector(axis_elem);
         shape.axes.push_back(axis);
 
         double length = len_elem->DoubleAttribute("value");
@@ -1574,7 +1509,7 @@ CompositeShape parseCompositeShape(const tinyxml2::XMLElement* composite_elem)
     else
     {
       // Automatic stacking
-      Eigen::Vector3d axis = shapeAxis(shape);
+      Eigen::Vector3d axis = getShapeSymmetryAxis(shape);
 
       // Alignment for first shape
       if (first_shape)
@@ -1634,16 +1569,16 @@ CompositeShape parseCompositeShape(const tinyxml2::XMLElement* composite_elem)
 
 void parsePosition(const tinyxml2::XMLElement* element, Eigen::Vector3d& pos)
 {
-  pos.x() = element->DoubleAttribute("x");
-  pos.y() = element->DoubleAttribute("y");
-  pos.z() = element->DoubleAttribute("z");
+  pos.x() = parseRequiredDouble(element, "x");
+  pos.y() = parseRequiredDouble(element, "y");
+  pos.z() = parseRequiredDouble(element, "z");
 }
 
 void parseOrientationRPY(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
 {
-  double roll = element->DoubleAttribute("roll");
-  double pitch = element->DoubleAttribute("pitch");
-  double yaw = element->DoubleAttribute("yaw");
+  double roll = parseRequiredDouble(element, "roll");
+  double pitch = parseRequiredDouble(element, "pitch");
+  double yaw = parseRequiredDouble(element, "yaw");
   Eigen::AngleAxisd rx(roll, Eigen::Vector3d::UnitX());
   Eigen::AngleAxisd ry(pitch, Eigen::Vector3d::UnitY());
   Eigen::AngleAxisd rz(yaw, Eigen::Vector3d::UnitZ());
@@ -1652,10 +1587,10 @@ void parseOrientationRPY(const tinyxml2::XMLElement* element, Eigen::Quaterniond
 
 void parseQuaternion(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
 {
-  q.x() = element->DoubleAttribute("x");
-  q.y() = element->DoubleAttribute("y");
-  q.z() = element->DoubleAttribute("z");
-  q.w() = element->DoubleAttribute("w");
+  q.x() = parseRequiredDouble(element, "x");
+  q.y() = parseRequiredDouble(element, "y");
+  q.z() = parseRequiredDouble(element, "z");
+  q.w() = parseRequiredDouble(element, "w");
 }
 
 Eigen::Isometry3d parseIsometry3D(const tinyxml2::XMLElement* transform_elem)
@@ -1689,8 +1624,10 @@ components::TransformFrame parseTransform(const tinyxml2::XMLElement* transform_
   return frame;
 }
 
-void parseUnitVector(const tinyxml2::XMLElement* element, Eigen::Vector3d& vec, double epsilon)
+Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsilon)
 {
+  Eigen::Vector3d vec;
+
   vec.x() = element->DoubleAttribute("x");
   vec.y() = element->DoubleAttribute("y");
   vec.z() = element->DoubleAttribute("z");
@@ -1702,6 +1639,7 @@ void parseUnitVector(const tinyxml2::XMLElement* element, Eigen::Vector3d& vec, 
     oss << "Expected unit vector but got vector with norm " << norm << " at line " << element->GetLineNum();
     throw std::runtime_error(oss.str());
   }
+  return vec;
 }
 
 std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLElement* trans_elem,
@@ -1741,49 +1679,402 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
   return transitions;
 }
 
-// geometry::BaseShapePtr parseContainerShapeElement(const tinyxml2::XMLElement* elem)
-// {
-//   if (!elem)
-//     throw std::runtime_error("Null element passed to parseContainerShapeElement.");
+components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem,
+                                             const components::ShapeComponent& shape_component,
+                                             const components::TransformComponent& transform_component,
+                                             TransformFrame& transform)
+{
+  ParallelGrasp grasp;
 
-//   const char* shape_type = elem->Attribute("name");
-//   if (!shape_type)
-//     throw std::runtime_error(std::string("Shape element missing 'name' attribute at line ") +
-//                              std::to_string(elem->GetLineNum()));
+  // Case 1: Completely Defined
+  if (const auto* transform_elem = elem->FirstChildElement("Transform"))
+  {
+    // Read transform
+    transform = parseTransform(transform_elem);
 
-//   std::string type(shape_type);
+    // Approach
+    grasp.approach = (std::string(elem->FirstChildElement("Approach")->Attribute("value")) == "INTERNAL") ?
+                         ParallelGraspApproach::INTERNAL :
+                         ParallelGraspApproach::EXTERNAL;
 
-//   if (type == "Cylinder")
-//   {
-//     double radius = parseRequiredDouble(elem, "radius");
-//     double height = parseRequiredDouble(elem, "height");
-//     return std::make_shared<geometry::CylinderShape>(radius, height);
-//   }
-//   else if (type == "Box")
-//   {
-//     double width = parseRequiredDouble(elem, "width");
-//     double length = parseRequiredDouble(elem, "length");
-//     double height = parseRequiredDouble(elem, "height");
-//     return std::make_shared<geometry::BoxShape>(width, length, height);
-//   }
-//   else if (type == "Cone")
-//   {
-//     double base_radius = parseRequiredDouble(elem, "base_radius");
-//     double top_radius = parseRequiredDouble(elem, "top_radius");
-//     double height = parseRequiredDouble(elem, "height");
-//     return std::make_shared<geometry::ConeShape>(base_radius, top_radius, height);
-//   }
-//   else if (type == "SphericalCap")
-//   {
-//     double cap_radius = parseRequiredDouble(elem, "cap_radius");
-//     double height = parseRequiredDouble(elem, "height");
-//     return std::make_shared<geometry::SphericalCapShape>(cap_radius, height);
-//   }
-//   else
-//   {
-//     throw std::runtime_error("Unknown shape type '" + type + "' in <Shape> at line " +
-//                              std::to_string(elem->GetLineNum()));
-//   }
-// }
+    // Gap Size
+    grasp.gap_size = elem->FirstChildElement("GapSize")->DoubleAttribute("value");
+
+    // Rotational Axis/Symmetry
+    Eigen::Vector3d axis_of_rotation;
+    axis_of_rotation = parseUnitVector(elem->FirstChildElement("RotationalAxis"));
+    grasp.axis_of_rotation = axis_of_rotation;
+    grasp.rotational_symmetry = elem->FirstChildElement("RotationalSymmetry")->UnsignedAttribute("value");
+
+    // Real surfaces (by Shape ID)
+    const auto* reals = elem->FirstChildElement("RealSurfaces");
+    std::vector<std::string> surface_ids;
+    for (const auto* surf = reals ? reals->FirstChildElement("Shape") : nullptr; surf;
+         surf = surf->NextSiblingElement("Shape"))
+    {
+      surface_ids.push_back(surf->Attribute("id"));
+    }
+
+    if (surface_ids.size() == 2)
+    {
+      // Standard: two surfaces for a parallel grasp
+      grasp.real_surfaces[0] = surface_ids[0];
+      grasp.real_surfaces[1] = surface_ids[1];
+    }
+    else if (surface_ids.size() == 1)
+    {
+      // Permit a single surface if the shape is Cylinder or Box
+
+      auto shape = find_in_flat_map(shape_component.shape_map, surface_ids[0]);
+      if (!shape)
+        throw std::runtime_error("No Shape entry found for '" + surface_ids[0] + "' in ShapeComponent");
+
+      if (shape->type == ShapeType::Cylinder || shape->type == ShapeType::Box)
+      {
+        grasp.real_surfaces[0] = surface_ids[0];
+        grasp.real_surfaces[1] = "";  // or std::nullopt if using optional
+      }
+      else
+      {
+        throw std::runtime_error("ParallelGrasp: Single real surface only allowed for Cylinder or Box shapes, got '" +
+                                 shapeTypeToString(shape->type) + "' for surface '" + surface_ids[0] + "'.");
+      }
+    }
+    else
+    {
+      throw std::runtime_error("ParallelGrasp: Must specify exactly 2 real surfaces, "
+                               "or 1 if the shape is a Cylinder or Box.");
+    }
+
+    // Virtual surface
+    grasp.virtual_surface = parseShape(elem->FirstChildElement("VirtualSurface"));
+    return grasp;
+  }
+
+  // Case 2: Derived from shapes
+  else if (const auto* derived_elem = elem->FirstChildElement("DerivedFromParallelShapes"))
+  {
+    // 4. Compute virtual surface orientation using supplied axes and first shape normal
+    const auto* axis_rot_elem = derived_elem->FirstChildElement("AxisRotational");
+    const auto* axis_norm_elem = derived_elem->FirstChildElement("AxisNormal");
+
+    if (!axis_rot_elem || !axis_norm_elem)
+    {
+      std::ostringstream oss;
+      oss << "ParallelGrasp <DerivedFromShapes> is missing required ";
+      if (!axis_rot_elem)
+        oss << "<AxisRotational> ";
+      if (!axis_norm_elem)
+        oss << "<AxisNormal> ";
+      oss << "tag(s) at line " << derived_elem->GetLineNum() << ".";
+      throw std::runtime_error(oss.str());
+    }
+
+    // Eigen::Vector3d axis_rotational, axis_normal;
+    const Eigen::Vector3d axis_rotational = parseUnitVector(axis_rot_elem);
+    const Eigen::Vector3d axis_normal = parseUnitVector(axis_norm_elem);
+
+    // 1. Collect and validate referenced shapes (must be 2D for pairs)
+    std::vector<const Shape*> shape_ptrs;
+    std::vector<std::string_view> shape_ids;
+    for (const auto* shape_elem = derived_elem->FirstChildElement("Shape"); shape_elem;
+         shape_elem = shape_elem->NextSiblingElement("Shape"))
+    {
+      const auto& shape_id = shape_elem->Attribute("id");
+      auto shape = find_in_flat_map(shape_component.shape_map, shape_id);
+      if (!shape)
+        throw std::runtime_error("No Shape entry found for '" + std::string(shape_id) + "' in ShapeComponent");
+      shape_ptrs.push_back(shape);
+      shape_ids.push_back(shape_id);
+    }
+    constexpr double CENTROID_TOLERANCE = 1e-6;
+
+    // Check for even and >=2 shapes
+    if (shape_ptrs.size() >= 2 && shape_ptrs.size() % 2 == 0)
+    {
+      size_t num_pairs = shape_ptrs.size() / 2;
+      std::vector<Eigen::Vector3d> centroids;  // Pairwise centroids
+      std::vector<Eigen::Vector3d> normals;    // Pairwise normals
+
+      // For each pair, validate and compute
+      for (size_t i = 0; i < shape_ptrs.size(); i += 2)
+      {
+        // 2D shape check
+        for (int j = 0; j < 2; ++j)
+        {
+          if (!is2DShape(*shape_ptrs[i + j]))
+            throw std::runtime_error("Shape '" + std::string(shape_ids[i + j]) + "' is not a 2D shape.");
+        }
+
+        // Get transforms
+        auto tf0 = find_in_flat_map(transform_component.transform_map, shape_ids[i]);
+        if (!tf0)
+          throw std::runtime_error("No Transform entry found for '" + std::string(shape_ids[i]) +
+                                   "' in TransformComponent");
+        auto tf1 = find_in_flat_map(transform_component.transform_map, shape_ids[i + 1]);
+        if (!tf1)
+          throw std::runtime_error("No Transform entry found for '" + std::string(shape_ids[i + 1]) +
+                                   "' in TransformComponent");
+
+        // Compute centroids/normals in parent frame
+        Eigen::Vector3d c0 = tf0->local * getShapeCentroid(*shape_ptrs[i]);
+        Eigen::Vector3d c1 = tf1->local * getShapeCentroid(*shape_ptrs[i + 1]);
+        Eigen::Vector3d n0 = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[i]);
+        Eigen::Vector3d n1 = tf1->local.linear() * getShapeNormalAxis(*shape_ptrs[i + 1]);
+
+        // Normals must be parallel
+        if (n0.cross(n1).norm() > 1e-6)
+          throw std::runtime_error("2D shapes are not parallel (normals differ) for pair " + std::to_string(i / 2));
+
+        // Centroids must match in plane
+        Eigen::Vector3d delta = c1 - c0;
+        double projected = delta.dot(n0.normalized());
+        Eigen::Vector3d delta_in_plane = delta - projected * n0.normalized();
+
+        std::cout << delta_in_plane << std::endl;
+
+        if (delta_in_plane.norm() > CENTROID_TOLERANCE)
+          throw std::runtime_error("2D shape centroids do not align (mismatch in the plane) for pair " +
+                                   std::to_string(i / 2));
+
+        // Store centroid and normal for this pair
+        centroids.push_back(0.5 * (c0 + c1));
+        std::cout << "centroids = " << centroids.back().matrix() << std::endl;
+
+        normals.push_back(n0.normalized());
+
+        // For the first pair: save surface IDs and compute the grasp gap size
+        if (i == 0)
+        {
+          grasp.real_surfaces[0] = shape_ids[i];
+          grasp.real_surfaces[1] = shape_ids[i + 1];
+
+          grasp.gap_size = std::abs((c1 - c0).dot(n0.normalized()));
+        }
+      }
+
+      // validate centroids are at the same place
+      const Eigen::Vector3d& ref_centroid = centroids[0];
+      for (size_t i = 1; i < centroids.size(); ++i)
+      {
+        if (!centroids[i].isApprox(ref_centroid, CENTROID_TOLERANCE))
+        {
+          std::cerr << "Centroid " << i << ": " << centroids[i].transpose()
+                    << " does not match reference: " << ref_centroid.transpose() << std::endl;
+          throw std::runtime_error("ParallelGrasp validation failed: Centroid mismatch for pair " + std::to_string(i));
+        }
+      }
+
+      // Use first pair as reference for transform
+      transform.parent = shape_ids[0];
+
+      // Virtual surface: average centroid, first normal, axis of rotation, etc.
+      Eigen::Vector3d centroid = Eigen::Vector3d::Zero();
+      for (const auto& c : centroids)
+        centroid += c;
+      centroid /= static_cast<double>(centroids.size());
+
+      // For orientation, use supplied axes
+      Eigen::Vector3d x_axis = axis_rotational.normalized();
+      Eigen::Vector3d z_axis = axis_normal.normalized();
+      Eigen::Vector3d y_axis = z_axis.cross(x_axis);
+
+      Eigen::Matrix3d rot = computeOrientationFromAxes(x_axis, y_axis, z_axis);
+      transform.local = Eigen::Isometry3d::Identity();
+      transform.local.linear() = rot;
+      transform.local.translation() = centroid;
+
+      std::cout << transform.local.matrix() << std::endl;
+
+      grasp.virtual_surface = *shape_ptrs[0];
+      grasp.virtual_surface.axes = { rot.col(1), rot.col(0), rot.col(2) };
+
+      std::cout << "normal: " << rot.col(2).transpose() << std::endl;
+      std::cout << "rotational: " << rot.col(0).transpose() << std::endl;
+      std::cout << "in-plane: " << rot.col(1).transpose() << std::endl;
+
+      // Deduce approach (INTERNAL/EXTERNAL) from first pair
+      Eigen::Vector3d to_virtual =
+          centroid -
+          (find_in_flat_map(transform_component.transform_map, shape_ids[0])->local * getShapeCentroid(*shape_ptrs[0]));
+      grasp.approach =
+          (to_virtual.dot(normals[0]) > 0) ? ParallelGraspApproach::INTERNAL : ParallelGraspApproach::EXTERNAL;
+
+      Eigen::Vector3d axis_of_rotation_world = transform.local.linear() * axis_rotational.normalized();
+      grasp.axis_of_rotation = axis_of_rotation_world;
+
+      // grasp.axis_of_rotation = axis_rotational;
+      grasp.rotational_symmetry = static_cast<uint32_t>(num_pairs * 2);
+    }
+
+    // For a single 3D shape (e.g., cylinder, box lateral)
+    else if (shape_ptrs.size() == 1 &&
+             (shape_ptrs[0]->type == ShapeType::Cylinder || shape_ptrs[0]->type == ShapeType::Box))
+    {
+      grasp.real_surfaces[0] = shape_ids[0];
+      grasp.real_surfaces[1] = "";
+
+      // Get first shape_transform
+      auto shape_tf = find_in_flat_map(transform_component.transform_map, shape_ids[0]);
+      if (!shape_tf)
+        throw std::runtime_error("No Transform entry found for '" + std::string(shape_ids[0]) +
+                                 "' in TransformComponent");
+
+      // Parse axes from ParallelGrasp, *in cylinder (local) frame*
+      Eigen::Vector3d axis_rotational_local = axis_rotational;
+      Eigen::Vector3d axis_normal_local = axis_normal;
+      axis_rotational_local.normalize();
+      axis_normal_local.normalize();
+
+      // Compute the in-plane (right-handed) axis
+      Eigen::Vector3d axis_inplane_local = axis_normal_local.cross(axis_rotational_local);
+      axis_inplane_local.normalize();
+
+      // Transform: Cylinder-local to root/parent frame
+      const Eigen::Matrix3d& shape3d_to_parent = shape_tf->local.linear();
+
+      // Map the axes (they remain orthogonal/unit length if the transform is pure rotation)
+      Eigen::Vector3d axis_rotational_root = shape3d_to_parent * axis_rotational_local;
+      Eigen::Vector3d axis_normal_root = shape3d_to_parent * axis_normal_local;
+      Eigen::Vector3d axis_inplane_root = shape3d_to_parent * axis_inplane_local;
+
+      // Get centroid in Cylinder frame, map to parent/root frame
+      Eigen::Vector3d centroid_3dshape = getShapeCentroid(*shape_ptrs[0]);  // usually center or surface point
+      Eigen::Vector3d centroid_root = shape_tf->local * centroid_3dshape;
+
+      transform.local.linear().col(0) = axis_rotational_root;  // X axis (rotation/symmetry)
+      transform.local.linear().col(1) = axis_inplane_root;     // Y axis (in-plane tangent)
+      transform.local.linear().col(2) = axis_normal_root;      // Z axis (normal)
+      transform.local.translation() = centroid_root;
+
+      // 4. (Optional) Debug print
+      std::cout << shapeTypeToString(shape_ptrs[0]->type) << " grasp transform:\n"
+                << transform.local.matrix() << std::endl;
+
+      if (shape_ptrs[0]->type == ShapeType::Cylinder)
+      {
+        // Virtual surface is a line along axis_rotational, centered at centroid
+        grasp.virtual_surface.type = ShapeType::Line;
+        double length = shape_ptrs[0]->dimensions.at(1);  // height
+                                                          // Eigen::Vector3d p0_local(-0.5 * length, 0.0, 0.0);
+                                                          // Eigen::Vector3d p1_local(0.5 * length, 0.0, 0.0);
+
+        grasp.virtual_surface.dimensions.push_back(length);
+
+        Eigen::Vector3d p0_local = -0.5 * length * Eigen::Vector3d::UnitX();  // "UnitX" of the grasp frame
+        Eigen::Vector3d p1_local = 0.5 * length * Eigen::Vector3d::UnitX();
+        grasp.virtual_surface.vertices = { p0_local, p1_local };
+        grasp.virtual_surface.axes = { Eigen::Vector3d::UnitX() };  // always local X of the grasp frame
+        grasp.rotational_symmetry = 0;                              // Infinite symmetry
+        grasp.gap_size = 2.0 * shape_ptrs[0]->dimensions.at(0);     // diameter
+      }
+      else if (shape_ptrs[0]->type == ShapeType::Box)
+      {
+        // Box dimensions in the *box's local frame* (not the grasp frame!)
+        double box_dims[3] = { shape_ptrs[0]->dimensions.at(0), shape_ptrs[0]->dimensions.at(1),
+                               shape_ptrs[0]->dimensions.at(2) };
+
+        // Compute the dimensions in the local grasp frame
+        // Project box's local axes onto the new grasp frame axes
+        // The "width" and "height" of the rectangle are the *projections* of box dims
+        double width = 0.0, height = 0.0;
+
+        // The new grasp frame's X, Y, Z in box local coordinates
+        // Eigen::Matrix3d grasp_in_box = (box_to_parent.transpose() * transform.local.linear());
+        Eigen::Matrix3d grasp_in_box = (shape3d_to_parent.transpose() * transform.local.linear());
+
+        // Compute the lengths along the in-plane (Y) and rotational (X) axes
+        for (int i = 0; i < 3; ++i)
+        {
+          // Box axis i in box frame: unit vector e_i
+          Eigen::Vector3d axis_box = Eigen::Vector3d::Unit(i);
+          // Project onto grasp frame axes:
+          width += std::abs(axis_inplane_local.dot(axis_box)) * box_dims[i];
+          height += std::abs(axis_rotational_local.dot(axis_box)) * box_dims[i];
+        }
+
+        grasp.virtual_surface.type = ShapeType::Rectangle;
+        grasp.virtual_surface.dimensions = { width, height };
+        grasp.virtual_surface.axes = { Eigen::Vector3d::UnitX(), Eigen::Vector3d::UnitY(),
+                                       Eigen::Vector3d::UnitZ() };  // always grasp frame axes
+
+        // Vertices (optional): corners in grasp frame, centered at origin
+        Eigen::Vector3d corner0(-0.5 * width, -0.5 * height, 0);
+        Eigen::Vector3d corner1(0.5 * width, -0.5 * height, 0);
+        Eigen::Vector3d corner2(0.5 * width, 0.5 * height, 0);
+        Eigen::Vector3d corner3(-0.5 * width, 0.5 * height, 0);
+        grasp.virtual_surface.vertices = { corner0, corner1, corner2, corner3 };
+
+        grasp.gap_size = width;  // or set according to your symmetry convention
+        grasp.rotational_symmetry = 4;
+      }
+
+      grasp.axis_of_rotation = Eigen::Vector3d::UnitX();  // X axis in grasp frame
+
+      // Require and parse Approach tag
+      const auto* approach_elem = derived_elem->FirstChildElement("Approach");
+      if (!approach_elem || !approach_elem->Attribute("value"))
+        throw std::runtime_error(
+            "ParallelGrasp: <Approach> tag with 'value' attribute is required for single 3D shape (box/cylinder).");
+
+      std::string approach_str = approach_elem->Attribute("value");
+      if (approach_str == "Internal")
+        grasp.approach = ParallelGraspApproach::INTERNAL;
+      else if (approach_str == "External")
+        grasp.approach = ParallelGraspApproach::EXTERNAL;
+      else
+        throw std::runtime_error("ParallelGrasp: <Approach> value must be 'Internal' or 'External', got: " +
+                                 approach_str);
+    }
+    else
+    {
+      throw std::runtime_error(
+          "ParallelGrasp: Must derive from exactly two 2D shapes (parallel), or one 3D lateral shape (cylinder/box).");
+    }
+
+    std::cout << grasp;
+
+    return grasp;
+  }
+  throw std::runtime_error("Could not parse ParallelGrasp: missing required elements.");
+}
+
+// void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, const components::ShapeComponent& shape_component,
+//                                  const components::TransformComponent& transform_component, TransformFrame& transform)
+void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("ParallelGrasp element missing 'id' attribute at line " +
+                             std::to_string(elem->GetLineNum()));
+
+  auto shape_component = db.get_component<ShapeComponent*>(eid);
+  if (!shape_component)
+    throw std::runtime_error("ShapeComponent does not exists, required by ParallelGraspComponent");
+
+  auto transform_component = db.get_component<TransformComponent*>(eid);
+  if (!transform_component)
+    throw std::runtime_error("TransformComponent does not exists, required by ParallelGraspComponent");
+
+  TransformFrame tf;
+  auto grasp = parseParallelGrasp(elem, *shape_component, *transform_component, tf);
+
+  transform_component->transform_map.emplace_back(id, std::move(tf));
+
+  auto* grasp_component = getOrCreateComponent<ParallelGraspComponent>(db, eid);
+  grasp_component->grasp_map.emplace_back(id, std::move(grasp));
+}
+
+void parseShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+{
+  const char* id = elem->Attribute("id");
+  if (!id)
+    throw std::runtime_error("Shape element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  auto shape = parseShape(elem);
+
+  auto* shape_component = getOrCreateComponent<ShapeComponent>(db, eid);
+  shape_component->shape_map.emplace_back(id, std::move(shape));
+}
 
 }  // namespace sodf
