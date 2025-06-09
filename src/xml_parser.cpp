@@ -472,35 +472,81 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
     throw std::runtime_error("Origin element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
   std::string origin_id = id;
 
-  // Case 1: <Transform> as child
-  if (const auto* tf_elem = elem->FirstChildElement("Transform"))
+  // Count which "case" is present
+  int case_count = 0;
+  const tinyxml2::XMLElement* tf_elem = nullptr;
+  const tinyxml2::XMLElement* align_frames_elem = nullptr;
+  const tinyxml2::XMLElement* align_pair_frames_elem = nullptr;
+
+  // Check children: only one is allowed
+  for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
   {
-    TransformFrame frame = parseTransform(tf_elem);  // does not compute/resolve
+    std::string tag = child->Name();
+    if (tag == "Transform")
+    {
+      tf_elem = child;
+      ++case_count;
+    }
+    else if (tag == "AlignFrames")
+    {
+      align_frames_elem = child;
+      ++case_count;
+    }
+    else if (tag == "AlignPairFrames")
+    {
+      align_pair_frames_elem = child;
+      ++case_count;
+    }
+    else
+      throw std::runtime_error("Unknown element <" + tag + "> in <Origin> at line " +
+                               std::to_string(child->GetLineNum()));
+  }
 
-    // special case, parent must starts with a '/' (absolute)
-    if (!frame.parent.empty() && frame.parent.at(0) != '/')
-      throw std::runtime_error("Transform <parent> attribute inside <Origin> must be empty or start with '/'. "
-                               "Found: '" +
-                               frame.parent + "' at line " + std::to_string(tf_elem->GetLineNum()));
+  if (case_count == 0)
+    throw std::runtime_error(
+        "Origin must contain exactly one of <Transform>, <AlignGeometricPair>, <AlignFrames> at line " +
+        std::to_string(elem->GetLineNum()));
+  if (case_count > 1)
+    throw std::runtime_error(
+        "Origin must not contain multiple <Transform>/<AlignGeometricPair>/<AlignFrames> at line " +
+        std::to_string(elem->GetLineNum()));
 
-    // store to component
-    auto* component = getOrCreateComponent<TransformComponent>(db, eid);
+  // Now dispatch:
+  if (tf_elem)
+  {
+    TransformNode frame = parseTransformNode(tf_elem);
+
+    auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
 
     // Overwrite or insert as first entry
-    if (component->transform_map.empty())
-      component->transform_map.emplace_back(origin_id, std::move(frame));
+    if (tf_component->transform_map.empty())
+      tf_component->transform_map.emplace_back(origin_id, std::move(frame));
     else
-      component->transform_map[0] = std::make_pair(origin_id, std::move(frame));
+      tf_component->transform_map[0] = std::make_pair(origin_id, std::move(frame));
+
+    auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
+    origin_component->origin = Transform{ .parent = frame.parent, .tf = frame.local };
   }
-  // Case 2: <AlignGeometricPair> (store for deferred system)
-  else if (const auto* align_elem = elem->FirstChildElement("AlignGeometricPair"))
+  else if (align_frames_elem)
   {
-    AlignGeometricPairComponent align;
-    align.target_id = align_elem->Attribute("with");
-    align.tolerance = align_elem->DoubleAttribute("tolerance", 1e-3);
+    AlignFrames align;
+    align.target_id = align_frames_elem->Attribute("with");
+    const auto* src = align_frames_elem->FirstChildElement("Source");
+    const auto* tgt = align_frames_elem->FirstChildElement("Target");
+    align.source_tf = src && src->Attribute("name") ? src->Attribute("name") : "";
+    align.target_tf = tgt && tgt->Attribute("name") ? tgt->Attribute("name") : "";
+
+    auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
+    origin_component->origin = align;
+  }
+  else if (align_pair_frames_elem)
+  {
+    AlignPairFrames align;
+    align.target_id = align_pair_frames_elem->Attribute("with");
+    align.tolerance = align_pair_frames_elem->DoubleAttribute("tolerance", 1e-3);
 
     int found = 0;
-    for (const auto* tag = align_elem->FirstChildElement(); tag; tag = tag->NextSiblingElement())
+    for (const auto* tag = align_pair_frames_elem->FirstChildElement(); tag; tag = tag->NextSiblingElement())
     {
       std::string tname = tag->Name();
       const char* name_attr = tag->Attribute("name");
@@ -522,9 +568,9 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
       else if (tname == "Target" || tname == "TargetTransform")
       {
         if (found == 2)
-          align.target1 = name;
+          align.target_tf1 = name;
         else if (found == 3)
-          align.target2 = name;
+          align.target_tf2 = name;
         else
           throw std::runtime_error("Too many <Target> tags in <AlignGeometricPair> at line " +
                                    std::to_string(tag->GetLineNum()));
@@ -534,28 +580,13 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
                                  std::to_string(tag->GetLineNum()));
       found++;
     }
-    if (align.source1.empty() || align.source2.empty() || align.target1.empty() || align.target2.empty())
+    if (align.source_tf1.empty() || align.source_tf2.empty() || align.target_tf1.empty() || align.target_tf2.empty())
       throw std::runtime_error("Missing source/target transforms in <AlignGeometricPair> at line " +
-                               std::to_string(align_elem->GetLineNum()));
+                               std::to_string(align_pair_frames_elem->GetLineNum()));
 
-    // Attach to database for later use (deferred alignment system)
-    db.add_component(eid, std::move(align));
+    auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
+    origin_component->origin = align;
   }
-  // Case 3: <AlignFrames> (store for deferred system)
-  else if (const auto* align_elem = elem->FirstChildElement("AlignFrames"))
-  {
-    components::AlignFramesComponent align;
-    align.target_id = align_elem->Attribute("with");
-    const auto* src = align_elem->FirstChildElement("Source");
-    const auto* tgt = align_elem->FirstChildElement("Target");
-    align.source = src && src->Attribute("name") ? src->Attribute("name") : "";
-    align.target = tgt && tgt->Attribute("name") ? tgt->Attribute("name") : "";
-
-    // Attach to database for later use (deferred alignment system)
-    db.add_component(eid, std::move(align));
-  }
-
-  // Note: Do NOT add TransformComponent to the db here (let parseTransformElement do it)
 }
 
 void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
@@ -586,7 +617,7 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
       }
     }
 
-    TransformFrame frame = parseTransform(transform_elem);
+    TransformNode frame = parseTransformNode(transform_elem);
 
     // store to component
     if (std::strcmp(elem->Name(), "Container") == 0)
@@ -609,55 +640,55 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
       if (!domain_component)
         throw std::runtime_error("No DomainShapeComponent found for Container '" + id_str + "'");
 
-      const auto domain_shapes = find_in_flat_map(domain_component->domain_shape_map, container->domain_shape_ref);
+      const auto domain_shapes = find_in_flat_map(domain_component->domain_shape_map, container->domain_shape_id);
       if (!domain_shapes)
         throw std::runtime_error("DomainShapeComponent is empty");
 
-      // Add surface transform
-      {
-        std::string surface_id = id_str + "/surface";
-        double current_height = physics::getFillHeight(*domain_shapes, container->volume, 10e-04);
+      // // Add surface transform
+      // {
+      //   std::string surface_id = id_str + "/surface";
+      //   double current_height = physics::getFillHeight(*domain_shapes, container->volume, 10e-04);
 
-        // Add virtual joint
-        auto joint = components::Joint{};
-        joint.type = components::JointType::PRISMATIC;
-        joint.actuation = components::JointActuation::VIRTUAL;
-        joint.position = -current_height;
-        joint.axis = container->axis_bottom;
+      //   // Add virtual joint
+      //   auto joint = components::Joint{};
+      //   joint.type = components::JointType::PRISMATIC;
+      //   joint.actuation = components::JointActuation::VIRTUAL;
+      //   joint.position = -current_height;
+      //   joint.axis = container->axis_bottom;
 
-        auto* joint_component = getOrCreateComponent<components::JointComponent>(db, eid);
-        joint_component->joint_map.emplace_back("joint/" + bottom_id, std::move(joint));
+      //   auto* joint_component = getOrCreateComponent<components::JointComponent>(db, eid);
+      //   joint_component->joint_map.emplace_back("joint/" + bottom_id, std::move(joint));
 
-        // Add virtual joint transform
-        TransformFrame joint_frame;
-        joint_frame.is_static = false;  // virtual prismatic joint to simulate liquid height
-        joint_frame.parent = bottom_id;
+      //   // Add virtual joint transform
+      //   TransformNode joint_frame;
+      //   joint_frame.is_static = false;  // virtual prismatic joint to simulate liquid height
+      //   joint_frame.parent = bottom_id;
 
-        transform_component->transform_map.emplace_back("joint/" + bottom_id, std::move(joint_frame));
+      //   transform_component->transform_map.emplace_back("joint/" + bottom_id, std::move(joint_frame));
 
-        // Add surface transform
-        TransformFrame surface_frame;
-        surface_frame.is_static = true;  // virtual prismatic joint to simulate liquid height
-        surface_frame.parent = "joint/" + bottom_id;
+      //   // Add surface transform
+      //   TransformNode surface_frame;
+      //   surface_frame.is_static = true;  // virtual prismatic joint to simulate liquid height
+      //   surface_frame.parent = "joint/" + bottom_id;
 
-        transform_component->transform_map.emplace_back(surface_id, std::move(surface_frame));
-      }
+      //   transform_component->transform_map.emplace_back(surface_id, std::move(surface_frame));
+      // }
 
-      // Add top transform
-      {
-        double max_height = physics::getMaxFillHeight(*domain_shapes);
+      // // Add top transform
+      // {
+      //   double max_height = physics::getMaxFillHeight(*domain_shapes);
 
-        // The axis points towards the bottom
-        Eigen::Vector3d top_offset = -container->axis_bottom.normalized() * max_height;
-        TransformFrame top_frame = frame;
+      //   // The axis points towards the bottom
+      //   Eigen::Vector3d top_offset = -container->axis_bottom.normalized() * max_height;
+      //   TransformNode top_frame = frame;
 
-        top_frame.local.translation().x() += top_offset.x();
-        top_frame.local.translation().y() += top_offset.y();
-        top_frame.local.translation().z() += top_offset.z();
+      //   top_frame.local.translation().x() += top_offset.x();
+      //   top_frame.local.translation().y() += top_offset.y();
+      //   top_frame.local.translation().z() += top_offset.z();
 
-        std::string top_id = id_str + "/top";
-        transform_component->transform_map.emplace_back(top_id, std::move(top_frame));
-      }
+      //   std::string top_id = id_str + "/top";
+      //   transform_component->transform_map.emplace_back(top_id, std::move(top_frame));
+      // }
     }
     else
     {

@@ -52,7 +52,7 @@ void parseOrientationRPY(const tinyxml2::XMLElement* element, Eigen::Quaterniond
 void parseQuaternion(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q);
 
 /// Parse a transform frame from an XML <Transform> element.
-components::TransformFrame parseTransform(const tinyxml2::XMLElement* transform_elem);
+geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform_elem);
 
 /// Parse a unit vector from an XML element, with optional tolerance.
 Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsilon = 1e-8);
