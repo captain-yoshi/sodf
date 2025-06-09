@@ -11,7 +11,7 @@ struct InertialProperties
 {
   double mass = 0.0;
   Eigen::Vector3d center_of_mass = Eigen::Vector3d::Zero();
-  Eigen::Matrix3d inertia_tensor = Eigen::Matrix3d::Zero();  // 3×3 symmetric matrix
+  Eigen::Matrix3d inertia_tensor = 1e-6 * Eigen::Matrix3d::Identity();  // 3×3 symmetric matrix
 };
 
 struct Link
@@ -24,7 +24,7 @@ struct Link
 
 struct LinkComponent
 {
-  FlatMap<std::string, Link> link_map;  //
+  FlatMap<std::string, Link> link_map;
 };
 
 }  // namespace components
