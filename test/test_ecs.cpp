@@ -2,6 +2,7 @@
 #include <sodf/ecs.h>
 #include <sodf/xml_parser.h>
 
+#include <sodf/components/button.h>
 #include <sodf/components/object.h>
 #include <sodf/components/transform.h>
 #include <sodf/components/joint.h>
@@ -10,6 +11,7 @@
 #include <sodf/components/finite_state_machine.h>
 
 #include <sodf/systems/fsm.h>
+#include <sodf/systems/scene_graph.h>
 
 #include <gtest/gtest.h>
 
@@ -17,16 +19,11 @@ using namespace sodf;
 
 TEST(ECS, ParsingSingleObject)
 {
-  auto db = ginseng::database{};
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/biorad/thermocycler_t100.xml";
 
   XMLParser parser;
-  std::string test_dir = SODF_TEST_FOLDER;
-  std::string base_dir = test_dir + "/../database/biorad";
-  std::string filename = "thermocycler_t100.xml";  // wrt. the base dir
-  // path += "/../database/biorad/thermocycler_t100.xml";
-  parser.loadEntities(filename, base_dir, db);
-
-  // parser.parseComponents(db);
+  auto db = ginseng::database{};
+  parser.loadEntitiesFromFile(filename, db);
 
   std::unordered_map<std::string, ginseng::database::ent_id> id_map;
   db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
@@ -45,6 +42,7 @@ TEST(ECS, ParsingSingleObject)
   ASSERT_TRUE(db.has_component<components::TouchscreenComponent>(eid));
   ASSERT_TRUE(db.has_component<components::FSMComponent>(eid));
   ASSERT_TRUE(db.has_component<components::ActionMapComponent>(eid));
+  ASSERT_TRUE(db.has_component<components::VirtualButtonComponent>(eid));
 
   // Object component validation
   auto& object = db.get_component<components::ObjectComponent>(eid);
@@ -65,6 +63,10 @@ TEST(ECS, ParsingSingleObject)
   // Joint component validation
   auto& joint = db.get_component<components::JointComponent>(eid);
   EXPECT_EQ(joint.joint_map.size(), 2);
+
+  // Button component validation
+  auto& button = db.get_component<components::VirtualButtonComponent>(eid);
+  EXPECT_EQ(button.button_map.size(), 51);
 
   // db.visit([](components::FSMComponent& fsm_comp) {
   //   for (auto& [fsm_id, fsm] : fsm_comp.fsm_map)
@@ -169,16 +171,11 @@ TEST(ECS, ParsingSingleObject)
 
 TEST(ECS, ParseScene1)
 {
-  auto db = ginseng::database{};
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/scene.xml";
 
   XMLParser parser;
-  std::string test_dir = SODF_TEST_FOLDER;
-  std::string base_dir = test_dir + "/../database";
-  std::string filename = "scene.xml";  // wrt. the base dir
-  // path += "/../database/biorad/thermocycler_t100.xml";
-  parser.loadEntities(filename, base_dir, db);
-
-  // parser.parseComponents(db);
+  auto db = ginseng::database{};
+  parser.loadEntitiesFromFile(filename, db);
 
   std::vector<std::pair<std::string, ginseng::database::ent_id>> ids;
   db.visit(
@@ -205,7 +202,8 @@ TEST(ECS, ParseScene1)
     ASSERT_TRUE(db.has_component<components::TouchscreenComponent>(eid));
     ASSERT_FALSE(db.has_component<components::FSMComponent>(eid));
     ASSERT_TRUE(db.has_component<components::ActionMapComponent>(eid));
-    ASSERT_TRUE(db.has_component<components::AlignGeometricPairComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::OriginComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::VirtualButtonComponent>(eid));
 
     // Object component validation
     auto& object = db.get_component<components::ObjectComponent>(eid);
@@ -227,19 +225,20 @@ TEST(ECS, ParseScene1)
     auto& joint = db.get_component<components::JointComponent>(eid);
     EXPECT_EQ(joint.joint_map.size(), 2);
   }
+
+  auto obj_ent_map = sodf::systems::make_object_entity_map(db);
+  sodf::systems::align_origin_transforms(db, obj_ent_map);
+  sodf::systems::resolve_transform_parent_entities(db, obj_ent_map);
+  sodf::systems::update_all_global_transforms(db);
 }
+
 TEST(ECS, ParseScene2)
 {
-  auto db = ginseng::database{};
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/scene2.xml";
 
   XMLParser parser;
-  std::string test_dir = SODF_TEST_FOLDER;
-  std::string base_dir = test_dir + "/../database";
-  std::string filename = "scene2.xml";  // wrt. the base dir
-  // path += "/../database/biorad/thermocycler_t100.xml";
-  parser.loadEntities(filename, base_dir, db);
-
-  // parser.parseComponents(db);
+  auto db = ginseng::database{};
+  parser.loadEntitiesFromFile(filename, db);
 
   std::vector<std::pair<std::string, ginseng::database::ent_id>> ids;
   db.visit(
@@ -266,7 +265,7 @@ TEST(ECS, ParseScene2)
     ASSERT_TRUE(db.has_component<components::TouchscreenComponent>(eid));
     ASSERT_FALSE(db.has_component<components::FSMComponent>(eid));
     ASSERT_TRUE(db.has_component<components::ActionMapComponent>(eid));
-    ASSERT_TRUE(db.has_component<components::AlignGeometricPairComponent>(eid));
+    ASSERT_TRUE(db.has_component<components::OriginComponent>(eid));
 
     // Object component validation
     auto& object = db.get_component<components::ObjectComponent>(eid);

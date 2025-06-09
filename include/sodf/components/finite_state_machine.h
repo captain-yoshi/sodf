@@ -79,6 +79,8 @@ struct ActionMapEntry
 {
   std::string trigger;  // e.g. "press"
   std::string action;   // e.g. "incubate"
+  std::string component_id;
+  std::string component_type;
 };
 
 struct ActionMap

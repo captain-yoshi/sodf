@@ -12,32 +12,24 @@
 namespace sodf {
 namespace components {
 
-
 // Forward declaration
 struct ShapeComponent
 {
   FlatMap<std::string, geometry::Shape> shape_map;
 };
 
-struct CompositeShapeEntry
+struct StackedShapeEntry
 {
-  geometry::Shape shape;                        // Geometry and properties
-  Eigen::Isometry3d local_transform;  // FINAL local pose relative to composite origin
+  geometry::Shape shape;
+  Eigen::Isometry3d relative_transform;  // relative to previous shape base
 };
 
-struct CompositeShape
+using StackedShapes = std::vector<StackedShapeEntry>;
+
+struct StackedShapeComponent
 {
-  std::vector<CompositeShapeEntry> shapes;  // All primitives, fully positioned and oriented
+  FlatMap<std::string, StackedShapes> stack_map;
 };
-
-struct CompositeShapeComponent
-{
-  FlatMap<std::string, CompositeShape> composite_shape_map;
-};
-
-
-
-
 
 }  // namespace components
 }  // namespace sodf

@@ -96,57 +96,73 @@ void resolve_transform_parent_entities(ginseng::database& db, const ObjectEntity
 
 void align_origin_transforms(ginseng::database& db, const ObjectEntityMap& obj_ent_map)
 {
-  db.visit(
-      [&](ginseng::database::ent_id id, components::TransformComponent& tf, components::AlignFramesComponent& align) {
-        if (tf.transform_map.empty())
-          return;
-
-        auto it = obj_ent_map.find(align.target_id);
-        if (it == obj_ent_map.end())
-          throw std::runtime_error("AlignFrames: Target object id '" + align.target_id + "' not found.");
-
-        EntityID target_eid = it->second;
-
-        // Get local source frame in this entity and target frame in target entity
-        const auto& src_frame = get_local_to_root(db, id, align.source);          // stylus/tip
-        const auto& tgt_frame = get_local_to_root(db, target_eid, align.target);  // adapter/stylus
-
-        auto& origin = tf.transform_map[0].second;
-
-        origin.local = tgt_frame.inverse() * src_frame;
-        origin.parent = align.target_id;
-        origin.dirty = true;
-      });
-
-  db.visit([&](ginseng::database::ent_id id, components::TransformComponent& tf,
-               components::AlignGeometricPairComponent& align) {
+  db.visit([&](ginseng::database::ent_id id, components::TransformComponent& tf, components::OriginComponent& origin) {
     if (tf.transform_map.empty())
-      return;
+      throw std::runtime_error("Cannot set align Origin component if not transforms exists");
 
-    auto it = obj_ent_map.find(align.target_id);
-    if (it == obj_ent_map.end())
-      throw std::runtime_error("AlignFrames: Target object id '" + align.target_id + "' not found.");
+    std::visit(
+        [&](const auto& variant) {
+          using T = std::decay_t<decltype(variant)>;
 
-    EntityID target_eid = it->second;
+          if constexpr (std::is_same_v<T, sodf::geometry::Transform>)
+          {
+            auto& origin = tf.transform_map[0].second;
 
-    // Get source frame in this entity and target frame in target entity
-    const auto& src1_frame = get_local_to_root(db, id, align.source1);  // stylus/tip
-    const auto& src2_frame = get_local_to_root(db, id, align.source2);  // stylus/tip
-    const auto& tgt1_frame = get_local_to_root(db, id, align.target1);  // stylus/tip
-    const auto& tgt2_frame = get_local_to_root(db, id, align.target2);  // stylus/tip
+            origin.local = variant.tf;
+            origin.parent = variant.parent;
+            origin.dirty = true;
+          }
+          else if constexpr (std::is_same_v<T, sodf::geometry::AlignFrames>)
+          {
+            auto it = obj_ent_map.find(variant.target_id);
+            if (it == obj_ent_map.end())
+              throw std::runtime_error("AlignFrames: Target object id '" + variant.target_id + "' not found.");
 
-    // Align source frames to target frames
-    auto tf_align = geometry::alignCenterFrames(tgt1_frame,  //
-                                                tgt2_frame,  //
-                                                src1_frame,  //
-                                                src2_frame,  //
-                                                align.tolerance);
+            EntityID target_eid = it->second;
 
-    auto& origin = tf.transform_map[0].second;
+            // Get local source frame in this entity and target frame in target entity
+            const auto& src_frame = get_local_to_root(db, id, variant.source_tf);          // stylus/tip
+            const auto& tgt_frame = get_local_to_root(db, target_eid, variant.target_tf);  // adapter/stylus
 
-    origin.local = tf_align;
-    origin.parent = align.target_id;
-    origin.dirty = true;
+            auto& origin = tf.transform_map[0].second;
+
+            origin.local = tgt_frame.inverse() * src_frame;
+            origin.parent = variant.target_id;
+            origin.dirty = true;
+          }
+          else if constexpr (std::is_same_v<T, sodf::geometry::AlignPairFrames>)
+          {
+            auto it = obj_ent_map.find(variant.target_id);
+            if (it == obj_ent_map.end())
+              throw std::runtime_error("AlignFrames: Target object id '" + variant.target_id + "' not found.");
+
+            EntityID target_eid = it->second;
+
+            // Get source frame in this entity and target frame in target entity
+            const auto& src1_frame = get_local_to_root(db, id, variant.source_tf1);  // stylus/tip
+            const auto& src2_frame = get_local_to_root(db, id, variant.source_tf2);  // stylus/tip
+            const auto& tgt1_frame = get_local_to_root(db, id, variant.target_tf1);  // stylus/tip
+            const auto& tgt2_frame = get_local_to_root(db, id, variant.target_tf2);  // stylus/tip
+
+            // Variant.source frames to target frames
+            auto tf_align = geometry::alignCenterFrames(tgt1_frame,  //
+                                                        tgt2_frame,  //
+                                                        src1_frame,  //
+                                                        src2_frame,  //
+                                                        variant.tolerance);
+
+            auto& origin = tf.transform_map[0].second;
+
+            origin.local = tf_align;
+            origin.parent = variant.target_id;
+            origin.dirty = true;
+          }
+          else
+          {
+            throw std::runtime_error("Origin variant not defined in visit");
+          }
+        },
+        origin.origin);
   });
 }
 
@@ -194,6 +210,28 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
     return;
 
   // Update the local transform from joint if this is NOT the first frame
+  // components::JointComponent* joint_comp = db.get_component<components::JointComponent*>(id);
+  // if (frame_idx != 0 && !frame.is_static && joint_comp)
+  // {
+  //   auto joint_it = std::find_if(joint_comp->joint_map.begin(), joint_comp->joint_map.end(),
+  //                                [&](const auto& joint_pair) { return joint_pair.first == frame_name; });
+  //   if (joint_it != joint_comp->joint_map.end())
+  //   {
+  //     const auto& joint = joint_it->second;
+  //     if (joint.type == components::JointType::REVOLUTE)
+  //     {
+  //       // Revolute: pure rotation about axis
+  //       frame.local = Eigen::Translation3d(0, 0, 0) * Eigen::AngleAxisd(joint.position, joint.axis);
+  //     }
+  //     else if (joint.type == components::JointType::PRISMATIC)
+  //     {
+  //       // Prismatic: pure translation along axis
+  //       frame.local = Eigen::Translation3d(joint.position * joint.axis);
+  //     }
+  //     // else: FIXED, keep as is
+  //   }
+  // }
+
   components::JointComponent* joint_comp = db.get_component<components::JointComponent*>(id);
   if (frame_idx != 0 && !frame.is_static && joint_comp)
   {
@@ -202,17 +240,68 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
     if (joint_it != joint_comp->joint_map.end())
     {
       const auto& joint = joint_it->second;
-      if (joint.type == components::JointType::REVOLUTE)
+      switch (joint.type)
       {
-        // Revolute: pure rotation about axis
-        frame.local = Eigen::Translation3d(0, 0, 0) * Eigen::AngleAxisd(joint.position, joint.axis);
+        case components::JointType::REVOLUTE:
+        {
+          // 1 DOF rotation
+          Eigen::Vector3d axis = joint.axes.col(0);
+          frame.local = Eigen::Translation3d(0, 0, 0) * Eigen::AngleAxisd(joint.position[0], axis.normalized());
+          break;
+        }
+        case components::JointType::PRISMATIC:
+        {
+          // 1 DOF translation
+          Eigen::Vector3d axis = joint.axes.col(0);
+          frame.local = Eigen::Translation3d(joint.position[0] * axis.normalized());
+          break;
+        }
+        case components::JointType::SPHERICAL:
+        {
+          // 3 DOF rotation; interpret as ZYX Euler angles (yaw, pitch, roll) by convention
+          double yaw = joint.position[0];    // Z
+          double pitch = joint.position[1];  // Y
+          double roll = joint.position[2];   // X
+          Eigen::AngleAxisd rollAngle(roll, joint.axes.col(0).normalized());
+          Eigen::AngleAxisd pitchAngle(pitch, joint.axes.col(1).normalized());
+          Eigen::AngleAxisd yawAngle(yaw, joint.axes.col(2).normalized());
+          // Apply in ZYX order: yaw * pitch * roll
+          frame.local = Eigen::Translation3d(0, 0, 0) * (yawAngle * pitchAngle * rollAngle);
+          break;
+        }
+        case components::JointType::PLANAR:
+        {
+          // 2 DOF translation in plane, 1 DOF rotation about plane normal (axes: 0=X, 1=Y, 2=Normal)
+          double tx = joint.position[0];
+          double ty = joint.position[1];
+          double rz = joint.position[2];
+          Eigen::Vector3d x_axis = joint.axes.col(0).normalized();
+          Eigen::Vector3d y_axis = joint.axes.col(1).normalized();
+          Eigen::Vector3d normal = joint.axes.col(2).normalized();
+          // Local translation in plane
+          Eigen::Vector3d translation = tx * x_axis + ty * y_axis;
+          Eigen::AngleAxisd rot(rz, normal);
+          frame.local = Eigen::Translation3d(translation) * rot;
+          break;
+        }
+        case components::JointType::FLOATING:
+        {
+          // 3 DOF translation + 3 DOF rotation (ZYX Euler angles)
+          Eigen::Vector3d translation = joint.position.segment<3>(0);
+          double yaw = joint.position[3];
+          double pitch = joint.position[4];
+          double roll = joint.position[5];
+          Eigen::AngleAxisd rollAngle(roll, joint.axes.col(3).normalized());
+          Eigen::AngleAxisd pitchAngle(pitch, joint.axes.col(4).normalized());
+          Eigen::AngleAxisd yawAngle(yaw, joint.axes.col(5).normalized());
+          frame.local = Eigen::Translation3d(translation) * (yawAngle * pitchAngle * rollAngle);
+          break;
+        }
+        case components::JointType::FIXED:
+        default:
+          // Do nothing (fixed, or unknown type)
+          break;
       }
-      else if (joint.type == components::JointType::PRISMATIC)
-      {
-        // Prismatic: pure translation along axis
-        frame.local = Eigen::Translation3d(joint.position * joint.axis);
-      }
-      // else: FIXED, keep as is
     }
   }
 

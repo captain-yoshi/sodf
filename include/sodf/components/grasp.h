@@ -9,27 +9,25 @@
 namespace sodf {
 namespace components {
 
-enum class ParallelGraspApproach : uint8_t
-{
-  INTERNAL,  // Approach must be greater then the gap size
-  EXTERNAL,  // Approach must be lower then the gap size
-};
-
 struct ParallelGrasp
 {
+  enum class ApproachType : uint8_t
+  {
+    INTERNAL,  // Approach must be greater then the gap size
+    EXTERNAL,  // Approach must be lower then the gap size
+  };
+
   double gap_size;
   Eigen::Vector3d axis_of_rotation;
-  ParallelGraspApproach approach = ParallelGraspApproach::INTERNAL;
+  ApproachType approach = ApproachType::INTERNAL;
 
-  // References to the true contact surfaces for this grasp (e.g., actual mesh or shape components).
-  // Used for contact, collision, or quality evaluation.
-  // For 3D shapes (e.g., cylinders), the reference is the lateral (side) surface. Bases (top/bottom faces)
-  // should be represented as separate surfaces if relevant.
-  std::array<std::string, 2> real_surfaces;
+  // References of shape/s contacted by the gripper jaws for this grasp.
+  // Typically one 3D shape or a pair of opposing shapes, may include multiple pairs of symmetric regions.
+  std::vector<std::string> contact_shape_ids;
 
   // Synthetic grasp region, used for canonical frame definition and rotational symmetry.
   // For symmetric objects (e.g., cylinders), encodes the infinite family of grasps as a line.
-  geometry::Shape virtual_surface;
+  geometry::Shape canonical_surface;
 
   // Number of allowed orientations around axis_of_rotation
   // E.g. 1 = unique grasp, 2 = 0 / 180 degrees, 0 = infinite symmetry
@@ -41,14 +39,14 @@ struct ParallelGraspComponent
   FlatMap<std::string, ParallelGrasp> grasp_map;
 };
 
-inline std::ostream& operator<<(std::ostream& os, ParallelGraspApproach approach)
+inline std::ostream& operator<<(std::ostream& os, ParallelGrasp::ApproachType approach)
 {
   switch (approach)
   {
-    case ParallelGraspApproach::INTERNAL:
+    case ParallelGrasp::ApproachType::INTERNAL:
       os << "INTERNAL";
       break;
-    case ParallelGraspApproach::EXTERNAL:
+    case ParallelGrasp::ApproachType::EXTERNAL:
       os << "EXTERNAL";
       break;
     default:
@@ -63,8 +61,15 @@ inline std::ostream& operator<<(std::ostream& os, const ParallelGrasp& grasp)
      << "  gap_size=" << grasp.gap_size << ",\n"
      << "  axis_of_rotation=" << grasp.axis_of_rotation.transpose() << ",\n"
      << "  approach=" << grasp.approach << ",\n"
-     << "  real_surfaces=[" << grasp.real_surfaces[0] << ", " << grasp.real_surfaces[1] << "],\n"
-     << "  virtual_surface=" << grasp.virtual_surface << ",\n"
+     << "  contact_shape_ids=[";
+  for (size_t i = 0; i < grasp.contact_shape_ids.size(); ++i)
+  {
+    os << grasp.contact_shape_ids[i];
+    if (i + 1 < grasp.contact_shape_ids.size())
+      os << ", ";
+  }
+  os << "],\n"
+     << "  canonical_surface=" << grasp.canonical_surface << ",\n"
      << "  rotational_symmetry=" << grasp.rotational_symmetry << "\n"
      << ")";
   return os;

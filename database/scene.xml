@@ -10,36 +10,70 @@
   <!-- </include> -->
 
 
-  <Object id="pcr1" clone="allo::biorad_thermal_cycler_t100" />
-  <Object id="pcr1" remove="" >
+  <Object id="pcr1" clone="allo::biorad_thermal_cycler_t100" >
+    <!-- <upsert> -->
+    <!--   <Origin id="root"> -->
+    <!--     <AlignGeometricPair with="table" tolerance="1e-3"> -->
+    <!--       <Source name="insert/A/from"/> -->
+    <!--       <Source name="insert/B/from"/> -->
+    <!--       <Target name="insert/X/into"/> -->
+    <!--       <Target name="insert/Y/into"/> -->
+    <!--     </AlignGeometricPair> -->
+    <!--   </Origin> -->
+    <!-- </upsert> -->
 
-    <Link id="link/base"/>
-
-    <Button id="btn/incubate" type="virtual">
-      <ActionMap fsm="fsm/touchscreen">
-        <Map trigger="press" action="incubate"/>
-      </ActionMap>
-    </Button>
-
-    <FSM id="fsm/touchscreen">
-      <States/>
-      <Actions>
-        <Action name="incubate" />
-      </Actions>
-    </FSM>
-
+    <remove>
+      <Link id="link/base"/>
+      <VirtualButton id="btn/incubate" type="virtual"/>
+      <FSM id="fsm/touchscreen"/>
+    </remove>
   </Object>
 
-  <Object id="pcr1" update="" >
-    <Origin id="root">
-      <AlignGeometricPair with="table" tolerance="1e-3">
-        <Source name="insert/A/from"/>
-        <Source name="insert/B/from"/>
-        <Target name="insert/X/into"/>
-        <Target name="insert/Y/into"/>
-      </AlignGeometricPair>
-    </Origin>
-  </Object>
+
+
+
+
+  <!-- <Object id="pcr1" clone="allo::biorad_thermal_cycler_t100" /> -->
+  <!-- <Object id="pcr1" remove="" > -->
+
+  <!--   <Link id="link/base"/> -->
+
+  <!--   <Button id="btn/incubate" type="virtual"> -->
+  <!--     <ActionMap fsm="fsm/touchscreen"> -->
+  <!--       <Map trigger="press" action="incubate"/> -->
+  <!--     </ActionMap> -->
+  <!--   </Button> -->
+
+  <!--   <FSM id="fsm/touchscreen"> -->
+  <!--     <States/> -->
+  <!--     <Actions> -->
+  <!--       <Action name="incubate" /> -->
+  <!--     </Actions> -->
+  <!--   </FSM> -->
+
+  <!-- </Object> -->
+
+  <!-- <Object id="pcr1" update="" > -->
+  <!--   <Origin id="root"> -->
+  <!--     <AlignGeometricPair with="table" tolerance="1e-3"> -->
+  <!--       <Source name="insert/A/from"/> -->
+  <!--       <Source name="insert/B/from"/> -->
+  <!--       <Target name="insert/X/into"/> -->
+  <!--       <Target name="insert/Y/into"/> -->
+  <!--     </AlignGeometricPair> -->
+  <!--   </Origin> -->
+  <!-- </Object> -->
+
+  <!-- <Object id="pcr1" > -->
+  <!--   <Origin id="root"> -->
+  <!--     <AlignGeometricPair with="table" tolerance="1e-3"> -->
+  <!--       <Source name="insert/A/from"/> -->
+  <!--       <Source name="insert/B/from"/> -->
+  <!--       <Target name="insert/X/into"/> -->
+  <!--       <Target name="insert/Y/into"/> -->
+  <!--     </AlignGeometricPair> -->
+  <!--   </Origin> -->
+  <!-- </Object> -->
 
   <!-- <Object id="pcr3" clone="pcr2" /> -->
 

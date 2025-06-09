@@ -2,7 +2,7 @@
 <root>
 
   <!-- import all objects as is -->
-  <include path="scene.xml" ns=""/>
+  <include path="scene.xml" ns="bb"/>
 
   <!-- import only the objects with the import tag -->
   <!-- <include path="thermocycler_t100.xml" > -->
@@ -10,8 +10,41 @@
   <!-- </include> -->
 
 
-  <Object id="pcr2" clone="pcr1" />
+  <Object id="pcr2" clone="bb::allo::biorad_thermal_cycler_t100" />
 
-  <!-- <Object id="pcr3" clone="pcr2" /> -->
+  <Object id="pcr3" clone="bb::pcr1" />
+
+  <Object id="pcr4" clone="bb::pcr1" />
+
+
+
+
+  <Object id="/allo" clone="bb::pcr1" >
+    <upsert>
+      <Origin id="root">
+        <Transform parent="">
+          <Position x="0.0" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Origin>
+    </upsert>
+  </Object>
+
+
+
+  <Object id="pcr5" clone="bb::pcr1" >
+    <upsert>
+      <Origin id="root">
+        <Transform parent="/allo">
+          <Position x="0.0" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Origin>
+    </upsert>
+  </Object>
+
+
+
+
 
 </root>

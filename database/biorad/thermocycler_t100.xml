@@ -40,7 +40,8 @@
 
       <Visual>
         <Shape type="Mesh">
-          <File path=""/>
+          <!-- <File path="package://mimik_description/meshes/biorad/thermocycler_t100/visual/base_161k.dae"/> -->
+          <File path="package://mimik_description/meshes/biorad/thermocycler_t100/visual/base_alternate.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
@@ -85,7 +86,7 @@
 
       <Visual>
         <Shape type="Mesh">
-          <File path=""/>
+          <File path="package://mimik_description/meshes/biorad/thermocycler_t100/visual/lid_34k.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
@@ -110,7 +111,7 @@
 
     <Joint id="joint/handle">
       <Type value="REVOLUTE"/>
-      <Actuation value="SPRING"/>
+      <Actuation value="PASSIVE"/>
       <Transform parent="root">
         <Position x="0.08556154884" y="0.0" z="-0.0015419616"/>
         <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
@@ -132,7 +133,7 @@
 
       <Visual>
         <Shape type="Mesh">
-          <File path=""/>
+          <File path="package://mimik_description/meshes/biorad/thermocycler_t100/visual/handle_32k.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
@@ -161,7 +162,7 @@
         <Position x="0.08436" y="0.16794261249" z="0.0"/>
         <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
       </Transform>
-      <Axis x="1.0" y="0.0" z="0.0"/>
+      <AxisInsertion x="1.0" y="0.0" z="0.0"/>
       <RotationalSymmetry value="2"/>
       <ApproachDistance value="0.0"/>
     </FitConstraint>
@@ -172,7 +173,7 @@
         <Position x="0.08436" y="0.16794261249" z="0.0"/>
         <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
       </Transform>
-      <Axis x="1.0" y="0.0" z="0.0"/>
+      <AxisInsertion x="1.0" y="0.0" z="0.0"/>
       <RotationalSymmetry value="2"/>
       <ApproachDistance value="0.0"/>
     </FitConstraint>
@@ -368,875 +369,677 @@
 
 
 
+    <Shape id="shape/ui_button" type="Rectangle">
+      <AxisNormal x="1.0" y="0.0" z="0.0"/>
+      <AxisWidth x="0.0" y="1.0" z="0.0"/>
+      <AxisHeight x="0.0" y="0.0" z="1.0"/>
 
+      <Dimensions width="0.05" height="0.01"/>
+    </Shape>
 
-    <Button id="btn/incubate" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/incubate">
+      <Shape id="shape/ui_button"/>
       <Label text="Incubate"/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01425" z="-0.0026"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="incubate"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/saved_protocols" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/saved_protocols">
+      <Shape id="shape/ui_button"/>
       <Label text="Saved Protocols"/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01325" z="-0.0026"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="saved_protocols"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-
-    <Button id="btn/home" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/home">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.04580" z="-0.03794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="home"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/view_clock" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/view_clock">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.02230" z="-0.03794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="view_clock"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/pause" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/pause">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00070" z="-0.03794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="pause"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/skip_step" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/skip_step">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.02370" z="-0.03794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="skip_step"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/run" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/run">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.04670" z="-0.03794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="run"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/cancel_run" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/cancel_run">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.04670" z="-0.03794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="cancel_run"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/yes" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/yes">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01080" z="-0.01094"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="yes"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/no" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/no">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01220" z="-0.01094"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="no"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/zero" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/zero">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00020" z="-0.01994"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="zero"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/one" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/one">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01180" z="0.01606"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="one"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/two" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/two">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00020" z="0.01606"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="two"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/three" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/three">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01220" z="0.01606"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="three"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/four" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/four">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01180" z="0.00406"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="four"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/five" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/five">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00020" z="0.00406"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="five"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/six" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/six">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01220" z="0.00406"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="six"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/seven" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/seven">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01180" z="-0.00794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="seven"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/eight" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/eight">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00020" z="-0.00794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="eight"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/nine" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/nine">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01220" z="-0.00794"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="nine"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/dot" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/dot">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01180" z="-0.01994"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="dot"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/backspace" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/backspace">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01220" z="-0.01994"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="backspace"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/infinity" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/infinity">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01180" z="-0.01994"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="infinity"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/off" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/off">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01180" z="-0.01994"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="off"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/ok" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/ok">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01130" z="-0.03194"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="ok"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/cancel" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/cancel">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.03194"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="cancel"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/bloc_temperature" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/bloc_temperature">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01670" z="0.01156"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="bloc_temperature"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/hold_time" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/hold_time">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01670" z="0.00106"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="hold_time"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/lid_temperature" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/lid_temperature">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01670" z="-0.00944"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="lid_temperature"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/volume" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/volume">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00620" z="0.00006"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="volume"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/ok_popup" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/ok_popup">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01130" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="ok_popup"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/cancel_popup" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/cancel_popup">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="cancel_popup"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_options" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_options">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00620" z="0.00006"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_options"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_options" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_options">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.01130" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_options"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/edit" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/edit">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="edit"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_up" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_up">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_up"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_down" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_down">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_down"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/recent_folders" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/recent_folders">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="recent_folders"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/main_folder" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/main_folder">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="0.03630" z="0.01306"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="main_folder"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_1" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_1">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_1"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_2" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_2">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_2"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_3" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_3">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_3"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_4" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_4">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_4"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/folder_5" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/folder_5">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="folder_5"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_up" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_up">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_up"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_down" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_down">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_down"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_1" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_1">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.00170" z="0.02256"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_1"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_2" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_2">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_2"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_3" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_3">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_3"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_4" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_4">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_4"/>
       </ActionMap>
-    </Button>
+    </VirtualButton>
 
-    <Button id="btn/file_5" type="virtual">
-      <Bounds width="0.0" height="0.0"/>
+    <VirtualButton id="btn/file_5">
+      <Shape id="shape/ui_button"/>
       <Label text=""/>
-
+      <Image uri=""/>
       <Transform parent="touchscreen">
         <Position x="0.0" y="-0.01270" z="-0.01444"/>
       </Transform>
-
-      <ActivationForce value="0.0"/>
-      <DirectionAxis x="1.0" y="0.0" z="0.0"/>
-      <MinHoldDuration value="0.0"/>
-
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
       <ActionMap fsm="fsm/touchscreen">
         <Map trigger="press" action="file_5"/>
       </ActionMap>
+    </VirtualButton>
 
-    </Button>
+
   </Object>
 </root>

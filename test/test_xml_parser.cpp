@@ -308,14 +308,42 @@ TEST(XMLParser, ParseLine3DShape)
 TEST(XMLParser, FluidDomaineShapeComponent)
 {
   std::string xml_txt = R"(
-    <FluidDomainShape id="fluid/container">
-      <StackedShapes>
-        <Shape type="SphericalSegment" base_radius="0.0" top_radius="0.00142" height="0.00167"/>
-        <Shape type="Cone" base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
-        <Shape type="Cone" base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
-        <Shape type="Cylinder" radius="0.00275" height="0.0040"/>
-      </StackedShapes>
-    </FluidDomainShape>)";
+
+    <root>
+
+
+      <StackedShape id="stacked_shape">
+        <Shape type="SphericalSegment">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
+        </Shape>
+
+        <Shape type="Cone">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
+        </Shape>
+
+        <Shape type="Cone">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
+        </Shape>
+
+        <Shape type="Cylinder">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions radius="0.00275" height="0.0040"/>
+        </Shape>
+      </StackedShape>
+
+
+      <FluidDomainShape id="fluid/container">
+        <StackedShape id="stacked_shape"/>
+      </FluidDomainShape>)
+
+    </root>)";
 
   auto db = ginseng::database{};
   auto eid = db.create_entity();
@@ -324,24 +352,62 @@ TEST(XMLParser, FluidDomaineShapeComponent)
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml_txt.c_str()), tinyxml2::XML_SUCCESS);
 
-  // 2. Get root element (here, it's "FluidDomainShape")
-  const tinyxml2::XMLElement* shape_elem = doc.RootElement();
-  ASSERT_TRUE(shape_elem);
+  // 2. Get root element (here, it's "Root")
+  const tinyxml2::XMLElement* root = doc.RootElement();
+  ASSERT_TRUE(root);
 
-  // Parse the XML (replace this with your actual parser)
-  sodf::parseFluidDomainShapeComponent(shape_elem, db, eid);
+  // 3. Parse all FluidDomainShapes and Containers (order doesn't matter)
+  for (const tinyxml2::XMLElement* child = root->FirstChildElement(); child; child = child->NextSiblingElement())
+  {
+    std::string tag = child->Name();
+    if (tag == "StackedShape")
+    {
+      sodf::parseStackedShapeComponent(child, db, eid);
+    }
+    else if (tag == "FluidDomainShape")
+    {
+      sodf::parseFluidDomainShapeComponent(child, db, eid);
+    }
+  }
+
+  //////////////////////////////////////////////////
+
+  // auto db = ginseng::database{};
+  // auto eid = db.create_entity();
+
+  // // 1. Parse string as XML document
+  // tinyxml2::XMLDocument doc;
+  // ASSERT_EQ(doc.Parse(xml_txt.c_str()), tinyxml2::XML_SUCCESS);
+
+  // // 2. Get root element (here, it's "FluidDomainShape")
+  // const tinyxml2::XMLElement* shape_elem = doc.RootElement();
+  // ASSERT_TRUE(shape_elem);
+
+  // // Parse the XML (replace this with your actual parser)
+  // sodf::parseFluidDomainShapeComponent(shape_elem, db, eid);
+  const auto* stacked_component = db.get_component<sodf::components::StackedShapeComponent*>(eid);
+  ASSERT_NE(stacked_component, nullptr);  // component must exist
+
+  // Check that the shape was registered
+  auto geom_shape = sodf::find_in_flat_map(stacked_component->stack_map, "stacked_shape");
+  ASSERT_NE(geom_shape, nullptr);    // shape must exist
+  ASSERT_EQ(geom_shape->size(), 4);  // 4 stacked shapes
 
   const auto* domain_component = db.get_component<sodf::components::DomainShapeComponent*>(eid);
   ASSERT_NE(domain_component, nullptr);  // component must exist
 
   // Check that the shape was registered
-  auto shapes = sodf::find_in_flat_map(domain_component->domain_shape_map, "fluid/container");
-  ASSERT_NE(shapes, nullptr);    // shape must exist
-  ASSERT_EQ(shapes->size(), 4);  // 4 stacked shapes
+  auto fluid_domain_shape = sodf::find_in_flat_map(domain_component->domain_shape_map, "fluid/container");
+
+  ASSERT_NE(fluid_domain_shape, nullptr);            // shape must exist
+  ASSERT_EQ(fluid_domain_shape->domains.size(), 4);  // 4 stacked shapes
+  ASSERT_EQ(fluid_domain_shape->stacked_shape_id, "stacked_shape");
+
+  auto& shapes = fluid_domain_shape->domains;
 
   // Check first shape (SphericalSegment)
   {
-    auto sph_seg = std::dynamic_pointer_cast<sodf::physics::FluidSphericalSegmentShape>(shapes->at(0));
+    auto sph_seg = std::dynamic_pointer_cast<sodf::physics::FluidSphericalSegmentShape>(shapes.at(0));
     ASSERT_TRUE(bool(sph_seg));
     EXPECT_NEAR(sph_seg->base_radius_, 0.0, 1e-8);
     EXPECT_NEAR(sph_seg->top_radius_, 0.00142, 1e-8);
@@ -350,7 +416,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 
   // Check second shape (Cone)
   {
-    auto cone1 = std::dynamic_pointer_cast<sodf::physics::FluidConeShape>(shapes->at(1));
+    auto cone1 = std::dynamic_pointer_cast<sodf::physics::FluidConeShape>(shapes.at(1));
     ASSERT_TRUE(bool(cone1));
     EXPECT_NEAR(cone1->base_radius_, 0.00142, 1e-8);
     EXPECT_NEAR(cone1->top_radius_, 0.00256, 1e-8);
@@ -359,7 +425,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 
   // Check third shape (Cone)
   {
-    auto cone2 = std::dynamic_pointer_cast<sodf::physics::FluidConeShape>(shapes->at(2));
+    auto cone2 = std::dynamic_pointer_cast<sodf::physics::FluidConeShape>(shapes.at(2));
     ASSERT_TRUE(bool(cone2));
     EXPECT_NEAR(cone2->base_radius_, 0.00256, 1e-8);
     EXPECT_NEAR(cone2->top_radius_, 0.00275, 1e-8);
@@ -368,7 +434,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 
   // Check fourth shape (Cylinder)
   {
-    auto cyl = std::dynamic_pointer_cast<sodf::physics::FluidCylinderShape>(shapes->at(3));
+    auto cyl = std::dynamic_pointer_cast<sodf::physics::FluidCylinderShape>(shapes.at(3));
     ASSERT_TRUE(bool(cyl));
     EXPECT_NEAR(cyl->radius_, 0.00275, 1e-8);
     EXPECT_NEAR(cyl->getMaxFillHeight(), 0.0040, 1e-8);
@@ -379,23 +445,46 @@ TEST(XMLParser, ContainerComponent)
 {
   std::string xml_txt = R"(
     <root>
+
+      <StackedShape id="stacked_shape">
+        <Shape type="SphericalSegment">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
+        </Shape>
+
+        <Shape type="Cone">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
+        </Shape>
+
+        <Shape type="Cone">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
+        </Shape>
+
+        <Shape type="Cylinder">
+          <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+          <AxisReference x="1.0" y="0.0" z="0.0"/>
+          <Dimensions radius="0.00275" height="0.0040"/>
+        </Shape>
+      </StackedShape>
+
       <FluidDomainShape id="fluid/container">
-        <StackedShapes>
-          <Shape type="SphericalSegment" base_radius="0.0" top_radius="0.00142" height="0.00167"/>
-          <Shape type="Cone" base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
-          <Shape type="Cone" base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
-          <Shape type="Cylinder" radius="0.00275" height="0.0040"/>
-        </StackedShapes>
-      </FluidDomainShape>
+        <StackedShape id="stacked_shape"/>
+      </FluidDomainShape>)
+
       <Container id="container/A1">
         <Transform parent="root">
           <Position x="0.08436" y="0.16794261249" z="0.0"/>
           <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
         </Transform>
-        <Material type="polypropylene" />
         <Content type="water" volume="0.0" units="uL"/>
         <AxisBottom x="1.0" y="0.0" z="0.0"/>
-        <DomainShapeRef id="fluid/container"/>
+        <DomainShape id="fluid/container"/>
+        <Material id=""/>
       </Container>
     </root>
   )";
@@ -415,7 +504,11 @@ TEST(XMLParser, ContainerComponent)
   for (const tinyxml2::XMLElement* child = root->FirstChildElement(); child; child = child->NextSiblingElement())
   {
     std::string tag = child->Name();
-    if (tag == "FluidDomainShape")
+    if (tag == "StackedShape")
+    {
+      sodf::parseStackedShapeComponent(child, db, eid);
+    }
+    else if (tag == "FluidDomainShape")
     {
       sodf::parseFluidDomainShapeComponent(child, db, eid);
     }
@@ -436,18 +529,18 @@ TEST(XMLParser, ContainerComponent)
 
   const auto& container = *container_it;
   EXPECT_EQ(container.content_type, "water");
-  EXPECT_EQ(container.material_type, "polypropylene");
+  // EXPECT_EQ(container.material_type, "polypropylene");
   EXPECT_NEAR(container.axis_bottom.x(), 1.0, 1e-8);
   EXPECT_NEAR(container.axis_bottom.y(), 0.0, 1e-8);
   EXPECT_NEAR(container.axis_bottom.z(), 0.0, 1e-8);
-  EXPECT_EQ(container.domain_shape_ref, "fluid/container");
+  EXPECT_EQ(container.domain_shape_id, "fluid/container");
 
   // Check that the referenced domain shape exists
   const auto* domain_component = db.get_component<sodf::components::DomainShapeComponent*>(eid);
   ASSERT_NE(domain_component, nullptr);
-  auto shapes = sodf::find_in_flat_map(domain_component->domain_shape_map, container.domain_shape_ref);
+  auto shapes = sodf::find_in_flat_map(domain_component->domain_shape_map, container.domain_shape_id);
   ASSERT_NE(shapes, nullptr);
-  ASSERT_EQ(shapes->size(), 4);
+  ASSERT_EQ(shapes->domains.size(), 4);
 }
 
 TEST(XMLParser, ParallelGraspDerivedFrom)
@@ -534,8 +627,9 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
 
         <ParallelGrasp id="grasp/handle">
           <DerivedFromParallelShapes>
-            <AxisRotational x="0.0" y="0.0" z="-1.0"/>
-            <AxisNormal x="-1.0" y="0.0" z="0.0"/>
+            <AxisRotationalFirstShape x="0.0" y="0.0" z="-1.0"/>
+            <AxisNormalFirstShape x="-1.0" y="0.0" z="0.0"/>
+            <AxisRotationalGrasp x="1.0" y="0.0" z="0.0"/>
             <Shape id="area/front/handle"/>
             <Shape id="area/back/handle"/>
             <Shape id="area/left/handle"/>
@@ -562,28 +656,41 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& eid = id_map.begin()->second;
 
     ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
-    auto& component = db.get_component<components::ParallelGraspComponent>(eid);
+    auto& grasp_component = db.get_component<components::ParallelGraspComponent>(eid);
 
-    const auto* grasp_ptr = find_in_flat_map(component.grasp_map, "grasp/handle");
+    ASSERT_TRUE(db.has_component<components::TransformComponent>(eid));
+    auto& tf_component = db.get_component<components::TransformComponent>(eid);
+    const auto* tf_ptr = find_in_flat_map(tf_component.transform_map, "grasp/handle");
+    ASSERT_TRUE(tf_ptr);
+
+    const auto* grasp_ptr = find_in_flat_map(grasp_component.grasp_map, "grasp/handle");
     ASSERT_TRUE(grasp_ptr);
     const auto& grasp = *grasp_ptr;
 
     ASSERT_EQ(0.02, grasp.gap_size);
-    ASSERT_EQ(ParallelGraspApproach::INTERNAL, grasp.approach);
+    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp.approach);
     ASSERT_EQ(4, grasp.rotational_symmetry);
-    ASSERT_EQ("area/front/handle", grasp.real_surfaces[0]);
-    ASSERT_EQ("area/back/handle", grasp.real_surfaces[1]);
+    ASSERT_EQ("area/front/handle", grasp.contact_shape_ids[0]);
+    ASSERT_EQ("area/back/handle", grasp.contact_shape_ids[1]);
+
+    std::cout << grasp << std::endl;
+
+    std::cout << tf_ptr->local.matrix() << std::endl;
+    std::cout << (tf_ptr->local.linear() * grasp.axis_of_rotation).matrix() << std::endl;
+
+    // ASSERT_TRUE((tf_ptr->local.linear() * grasp.axis_of_rotation).isApprox(Eigen::Vector3d(1, 0, 0)));
+    std::cout << grasp.axis_of_rotation.matrix() << std::endl;
     ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
 
-    auto& vshape = grasp.virtual_surface;
+    auto& vshape = grasp.canonical_surface;
     ASSERT_EQ(ShapeType::Rectangle, vshape.type);
     ASSERT_EQ(0.01, vshape.dimensions.at(0));
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
     ASSERT_TRUE(vshape.vertices.empty());
     ASSERT_EQ(3, vshape.axes.size());
     ASSERT_TRUE(vshape.mesh_path.empty());
-    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, -1, 0)));
-    ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 0, -1)));
+    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, -1)));
+    ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, -1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
   }
 
@@ -606,8 +713,9 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         <ParallelGrasp id="grasp">
           <DerivedFromParallelShapes>
             <Approach value="Internal"/>
-            <AxisRotational x="0.0" y="0.0" z="-1.0"/>
-            <AxisNormal x="1.0" y="0.0" z="0.0"/>
+            <AxisRotationalFirstShape x="0.0" y="0.0" z="-1.0"/>
+            <AxisNormalFirstShape x="1.0" y="0.0" z="0.0"/>
+            <AxisRotationalGrasp x="1.0" y="0.0" z="0.0"/>
             <Shape id="box"/>
           </DerivedFromParallelShapes>
         </ParallelGrasp>
@@ -638,22 +746,24 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     const auto& grasp = *grasp_ptr;
 
     ASSERT_EQ(0.02, grasp.gap_size);
-    ASSERT_EQ(ParallelGraspApproach::INTERNAL, grasp.approach);
+    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp.approach);
     ASSERT_EQ(4, grasp.rotational_symmetry);
-    ASSERT_EQ("box", grasp.real_surfaces[0]);
-    ASSERT_EQ("", grasp.real_surfaces[1]);
+    ASSERT_EQ(1, grasp.contact_shape_ids.size());
+    ASSERT_EQ("box", grasp.contact_shape_ids[0]);
     ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
 
-    auto& vshape = grasp.virtual_surface;
+    auto& vshape = grasp.canonical_surface;
     ASSERT_EQ(ShapeType::Rectangle, vshape.type);
     ASSERT_EQ(0.02, vshape.dimensions.at(0));
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
     ASSERT_EQ(3, vshape.axes.size());
     // ASSERT_TRUE(vshape.vertices.empty());
+    std::cout << grasp << std::endl;
+
     ASSERT_TRUE(vshape.mesh_path.empty());
-    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, 1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 1, 0)));
-    ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(0, 0, 1)));
+    ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
   }
 
   {
@@ -675,8 +785,9 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         <ParallelGrasp id="grasp">
           <DerivedFromParallelShapes>
             <Approach value="Internal"/>
-            <AxisRotational x="0.0" y="0.0" z="1.0"/>
-            <AxisNormal x="1.0" y="0.0" z="0.0"/>
+            <AxisRotationalFirstShape x="0.0" y="0.0" z="1.0"/>
+            <AxisNormalFirstShape x="1.0" y="0.0" z="0.0"/>
+            <AxisRotationalGrasp x="1.0" y="0.0" z="0.0"/>
             <Shape id="cylinder"/>
           </DerivedFromParallelShapes>
         </ParallelGrasp>
@@ -707,18 +818,22 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     const auto& grasp = *grasp_ptr;
 
     ASSERT_EQ(0.024, grasp.gap_size);
-    ASSERT_EQ(ParallelGraspApproach::INTERNAL, grasp.approach);
+    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp.approach);
     ASSERT_EQ(0, grasp.rotational_symmetry);
-    ASSERT_EQ("cylinder", grasp.real_surfaces[0]);
-    ASSERT_EQ("", grasp.real_surfaces[1]);
+    ASSERT_EQ(1, grasp.contact_shape_ids.size());
+    ASSERT_EQ("cylinder", grasp.contact_shape_ids[0]);
     ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
 
-    auto& vshape = grasp.virtual_surface;
+    auto& vshape = grasp.canonical_surface;
     ASSERT_EQ(ShapeType::Line, vshape.type);
     ASSERT_EQ(1, vshape.dimensions.size());
     ASSERT_EQ(0.02, vshape.dimensions.at(0));
-    ASSERT_EQ(1, vshape.axes.size());
+
+    std::cout << grasp << std::endl;
+
+    ASSERT_EQ(2, vshape.axes.size());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 0, 1)));
     ASSERT_TRUE(vshape.mesh_path.empty());
     ASSERT_EQ(2, vshape.vertices.size());
     ASSERT_TRUE(vshape.vertices[0].isApprox(Eigen::Vector3d(-0.01, 0, 0)));

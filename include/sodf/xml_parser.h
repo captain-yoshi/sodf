@@ -89,8 +89,10 @@ void parseOriginComponent(const tinyxml2::XMLElement* obj_elem, ginseng::databas
 void parseParallelGraspComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseProductComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseShapeComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid);
 void parseTouchscreenComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseTransformComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseVirtualButtonComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 
 }  // namespace sodf
 

@@ -17,11 +17,15 @@ namespace components {
 // Each shape is positioned relative to the previous using its own reference point (e.g., base, tip),
 // and may be inverted at construction (such as for a tip-referenced spherical cap).
 // The stacking and all fill height/volume calculations are only valid for this vertical configuration.
-using DomainShapes = std::vector<physics::DomainShapePtr>;
+struct DomainShape
+{
+  std::string stacked_shape_id;                  // Stacked shape geometry for visualization
+  std::vector<physics::DomainShapePtr> domains;  // Physics and geometric logic (e.g., SphericalCap, Cylinder, etc.)
+};
 
 struct DomainShapeComponent
 {
-  FlatMap<std::string, DomainShapes> domain_shape_map;
+  FlatMap<std::string, DomainShape> domain_shape_map;
 };
 
 }  // namespace components
