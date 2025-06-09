@@ -67,13 +67,6 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape);
 ShapeType shapeTypeFromString(const std::string& str);
 std::string shapeTypeToString(ShapeType type);
 
-inline int get_major_axis(const Eigen::Vector3d& v)
-{
-  int i;
-  v.cwiseAbs().maxCoeff(&i);
-  return i;
-}
-
 inline std::ostream& operator<<(std::ostream& os, ShapeType type)
 {
   return os << shapeTypeToString(type);
