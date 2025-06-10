@@ -5,6 +5,7 @@
 
 #include <sodf/components/domain_shape.h>
 
+#include <sodf/component_type.h>
 #include <sodf/components/button.h>
 #include <sodf/components/grasp.h>
 #include <sodf/components/shape.h>
@@ -16,6 +17,7 @@
 #include <sodf/components/fitting.h>
 #include <sodf/components/touchscreen.h>
 #include <sodf/components/finite_state_machine.h>
+#include <sodf/components/action_map.h>
 
 #include "muParser.h"
 
@@ -885,11 +887,12 @@ void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, 
 
 void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* component_id = elem->Attribute("id");
-  if (!component_id)
+  if (!elem->FirstChildElement("ActionMap"))
     return;
 
-  components::ActionMap action_map;
+  const char* component_id = elem->Attribute("id");
+  if (!component_id)
+    throw std::runtime_error("Component missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
 
   for (const tinyxml2::XMLElement* action_map_elem = elem->FirstChildElement("ActionMap"); action_map_elem;
        action_map_elem = action_map_elem->NextSiblingElement("ActionMap"))
@@ -899,28 +902,52 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database
       throw std::runtime_error("ActionMap missing 'fsm' attribute at line " +
                                std::to_string(action_map_elem->GetLineNum()));
 
-    action_map.action_id = component_id;
+    // Build up ActionMap locally
+    components::ActionMap action_map;
 
     for (const tinyxml2::XMLElement* map_elem = action_map_elem->FirstChildElement("Map"); map_elem;
          map_elem = map_elem->NextSiblingElement("Map"))
     {
+      components::ActionMapEntry entry;
+      // Required
       const char* trigger = map_elem->Attribute("trigger");
       const char* action = map_elem->Attribute("action");
       if (!trigger || !action)
-        throw std::runtime_error("Map missing 'trigger' or 'action' attribute at line " +
-                                 std::to_string(map_elem->GetLineNum()));
+        throw std::runtime_error("Map missing 'trigger' or 'action' at line " + std::to_string(map_elem->GetLineNum()));
 
-      components::ActionMapEntry entry;
       entry.trigger = trigger;
       entry.action = action;
+
+      // Optional: trigger_params
+      const char* trigger_params = map_elem->Attribute("trigger_params");
+      if (trigger_params)
+        entry.trigger_params = trigger_params;
+
+      entry.component_id = component_id;
+      entry.component_type = componentTypeFromString(elem->Name());
+
       action_map.mappings.push_back(std::move(entry));
     }
 
-    // store to component
-    auto* component = getOrCreateComponent<ActionMapComponent>(db, eid);
-    component->action_map.emplace_back(fsm_id, std::move(action_map));
+    // Only after the entire ActionMap is successfully parsed, mutate ECS
+    auto* component = getOrCreateComponent<components::ActionMapComponent>(db, eid);
+
+    // If FSM id already exists, append to mappings
+    auto it = std::find_if(component->action_map.begin(), component->action_map.end(),
+                           [fsm_id](const auto& pair) { return pair.first == fsm_id; });
+
+    if (it != component->action_map.end())
+    {
+      it->second.mappings.insert(it->second.mappings.end(), std::make_move_iterator(action_map.mappings.begin()),
+                                 std::make_move_iterator(action_map.mappings.end()));
+    }
+    else
+    {
+      component->action_map.emplace_back(fsm_id, std::move(action_map));
+    }
   }
 }
+
 void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   Container container;

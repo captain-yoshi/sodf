@@ -9,7 +9,7 @@ enum class ComponentType
 {
   Unknown = 0,  // For error handling or untagged types
   Product,
-  PhysicalButton,
+  Button,
   VirtualButton,
   Touchscreen,
   Joint,
@@ -22,7 +22,7 @@ enum class ComponentType
   // Add more types as needed (LED, Slider, etc.)
 };
 
-inline const char* component_type_to_string(ComponentType type)
+inline const char* componentTypeToString(ComponentType type)
 {
   switch (type)
   {
@@ -30,8 +30,8 @@ inline const char* component_type_to_string(ComponentType type)
       return "Unknown";
     case ComponentType::Product:
       return "Product";
-    case ComponentType::PhysicalButton:
-      return "PhysicalButton";
+    case ComponentType::Button:
+      return "Button";
     case ComponentType::VirtualButton:
       return "VirtualButton";
     case ComponentType::Touchscreen:
@@ -56,13 +56,13 @@ inline const char* component_type_to_string(ComponentType type)
   }
 }
 
-inline ComponentType component_type_from_string(const std::string& type_str)
+inline ComponentType componentTypeFromString(const std::string& type_str)
 {
   // Only accept exact matches that start with uppercase (PascalCase)
   if (type_str == "Product")
     return ComponentType::Product;
-  if (type_str == "PhysicalButton")
-    return ComponentType::PhysicalButton;
+  if (type_str == "Button")
+    return ComponentType::Button;
   if (type_str == "VirtualButton")
     return ComponentType::VirtualButton;
   if (type_str == "Touchscreen")

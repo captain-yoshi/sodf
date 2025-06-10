@@ -75,25 +75,6 @@ struct FSMComponent
   FlatMap<std::string, FSM> fsm_map;
 };
 
-struct ActionMapEntry
-{
-  std::string trigger;  // e.g. "press"
-  std::string action;   // e.g. "incubate"
-  std::string component_id;
-  std::string component_type;
-};
-
-struct ActionMap
-{
-  std::string action_id;  // e.g. "btn/incubate"
-  std::vector<ActionMapEntry> mappings;
-};
-
-struct ActionMapComponent
-{
-  FlatMap<std::string /* FSM ID */, ActionMap> action_map;
-};
-
 }  // namespace components
 }  // namespace sodf
 

@@ -6,6 +6,7 @@
 #include <string>
 
 #include <sodf/ecs.h>
+#include <sodf/components/action_map.h>
 #include <sodf/components/finite_state_machine.h>
 
 namespace sodf {

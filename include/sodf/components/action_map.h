@@ -17,8 +17,9 @@ struct ActionMapEntry
   std::string trigger;         // e.g. "press"
   std::string trigger_params;  // empty for simple
   std::string action;          // e.g. "incubate"
-  std::string component_id;    // empty for components without collection, e.g. the Origin component.
+
   ComponentType component_type;
+  std::string component_id;  // empty for components without collection, e.g. the Origin component.
 };
 
 struct ActionMap
