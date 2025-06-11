@@ -133,7 +133,7 @@ struct Joint
 
 struct JointComponent
 {
-  FlatMap<std::string, Joint> map;
+  ElementMap<std::string, Joint> elements;
 };
 
 inline JointType jointTypeFromString(const std::string& s)

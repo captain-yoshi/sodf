@@ -29,7 +29,7 @@ struct ActionMap
 
 struct ActionMapComponent
 {
-  FlatMap<std::string /* Domain specific,e.g. FSM  */, ActionMap> map;
+  ElementMap<std::string /* Domain specific,e.g. FSM  */, ActionMap> elements;
 };
 
 }  // namespace components

@@ -88,12 +88,12 @@ struct VirtualButton
 
 struct ButtonComponent
 {
-  FlatMap<std::string, Button> map;
+  ElementMap<std::string, Button> elements;
 };
 
 struct VirtualButtonComponent
 {
-  FlatMap<std::string, VirtualButton> map;
+  ElementMap<std::string, VirtualButton> elements;
 };
 
 inline std::string buttonTypeToString(Button::Type type)

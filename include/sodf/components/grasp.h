@@ -36,7 +36,7 @@ struct ParallelGrasp
 
 struct ParallelGraspComponent
 {
-  FlatMap<std::string, ParallelGrasp> map;
+  ElementMap<std::string, ParallelGrasp> elements;
 };
 
 inline std::ostream& operator<<(std::ostream& os, ParallelGrasp::ApproachType approach)

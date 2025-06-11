@@ -19,11 +19,11 @@ struct TransformComponent
     origin.dirty = false;
     origin.is_static = true;
 
-    map.emplace_back("root", std::move(origin));
+    elements.emplace_back("root", std::move(origin));
   }
 
   std::optional<EntityID> parent_ent_id;
-  FlatMap<std::string, geometry::TransformNode> map;
+  ElementMap<std::string, geometry::TransformNode> elements;
 };
 
 }  // namespace components

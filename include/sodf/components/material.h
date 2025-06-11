@@ -34,7 +34,7 @@ struct Material
 
 struct MaterialComponent
 {
-  FlatMap<std::string, Material> map;
+  ElementMap<std::string, Material> elements;
 };
 
 }  // namespace components

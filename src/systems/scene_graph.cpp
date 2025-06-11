@@ -24,7 +24,7 @@ Eigen::Isometry3d get_local_to_root(ginseng::database& db, EntityID eid, const s
   if (!tfc)
     throw std::runtime_error("Entity missing TransformComponent.");
 
-  const auto& tmap = tfc->map;
+  const auto& tmap = tfc->elements;
 
   // Helper lambda: find frame index by name
   auto find_frame_index = [&](const std::string& name) -> int {
@@ -71,11 +71,11 @@ Eigen::Isometry3d get_local_to_root(ginseng::database& db, EntityID eid, const s
 void resolve_transform_parent_entities(ginseng::database& db, const ObjectEntityMap& obj_ent_map)
 {
   db.visit([&](ginseng::database::ent_id id, components::TransformComponent& tf) {
-    if (tf.map.empty())
+    if (tf.elements.empty())
       return;
 
     // Assume first entry is always the "root"/origin
-    auto& origin = tf.map[0].second;
+    auto& origin = tf.elements[0].second;
 
     if (origin.parent.empty())
     {
@@ -99,7 +99,7 @@ void resolve_transform_parent_entities(ginseng::database& db, const ObjectEntity
 void align_origin_transforms(ginseng::database& db, const ObjectEntityMap& obj_ent_map)
 {
   db.visit([&](ginseng::database::ent_id id, components::TransformComponent& tf, components::OriginComponent& origin) {
-    if (tf.map.empty())
+    if (tf.elements.empty())
       throw std::runtime_error("Cannot set align Origin component if not transforms exists");
 
     std::visit(
@@ -108,7 +108,7 @@ void align_origin_transforms(ginseng::database& db, const ObjectEntityMap& obj_e
 
           if constexpr (std::is_same_v<T, sodf::geometry::Transform>)
           {
-            auto& origin = tf.map[0].second;
+            auto& origin = tf.elements[0].second;
 
             origin.local = variant.tf;
             origin.parent = variant.parent;
@@ -126,7 +126,7 @@ void align_origin_transforms(ginseng::database& db, const ObjectEntityMap& obj_e
             const auto& src_frame = get_local_to_root(db, id, variant.source_tf);          // stylus/tip
             const auto& tgt_frame = get_local_to_root(db, target_eid, variant.target_tf);  // adapter/stylus
 
-            auto& origin = tf.map[0].second;
+            auto& origin = tf.elements[0].second;
 
             origin.local = tgt_frame.inverse() * src_frame;
             origin.parent = variant.target_id;
@@ -153,7 +153,7 @@ void align_origin_transforms(ginseng::database& db, const ObjectEntityMap& obj_e
                                                         src2_frame,  //
                                                         variant.tolerance);
 
-            auto& origin = tf.map[0].second;
+            auto& origin = tf.elements[0].second;
 
             origin.local = tf_align;
             origin.parent = variant.target_id;
@@ -203,7 +203,7 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
                              size_t frame_idx, std::optional<ginseng::database::ent_id> global_root)
 {
   // FlatMap is vector<pair<string, TransformFrame>>
-  auto& pair = tf.map[frame_idx];
+  auto& pair = tf.elements[frame_idx];
   const std::string& frame_name = pair.first;
   auto& frame = pair.second;
 
@@ -211,33 +211,10 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
   if (!frame.dirty)
     return;
 
-  // Update the local transform from joint if this is NOT the first frame
-  // components::JointComponent* joint_comp = db.get_component<components::JointComponent*>(id);
-  // if (frame_idx != 0 && !frame.is_static && joint_comp)
-  // {
-  //   auto joint_it = std::find_if(joint_comp->joint_map.begin(), joint_comp->joint_map.end(),
-  //                                [&](const auto& joint_pair) { return joint_pair.first == frame_name; });
-  //   if (joint_it != joint_comp->joint_map.end())
-  //   {
-  //     const auto& joint = joint_it->second;
-  //     if (joint.type == components::JointType::REVOLUTE)
-  //     {
-  //       // Revolute: pure rotation about axis
-  //       frame.local = Eigen::Translation3d(0, 0, 0) * Eigen::AngleAxisd(joint.position, joint.axis);
-  //     }
-  //     else if (joint.type == components::JointType::PRISMATIC)
-  //     {
-  //       // Prismatic: pure translation along axis
-  //       frame.local = Eigen::Translation3d(joint.position * joint.axis);
-  //     }
-  //     // else: FIXED, keep as is
-  //   }
-  // }
-
   components::JointComponent* joint_comp = db.get_component<components::JointComponent*>(id);
   if (frame_idx != 0 && !frame.is_static && joint_comp)
   {
-    auto* joint = getComponentElement(joint_comp->map, frame_name);
+    auto* joint = getComponentElement(joint_comp->elements, frame_name);
     if (!joint)
       std::runtime_error("Cannot find joint element: " + frame_name);
 
@@ -312,11 +289,11 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
     {
       // Parent is another entity
       auto* parent_tf = db.get_component<components::TransformComponent*>(*tf.parent_ent_id);
-      if (parent_tf && !parent_tf->map.empty())
+      if (parent_tf && !parent_tf->elements.empty())
       {
         // Ensure parent's first frame is up-to-date
         update_global_transform(db, *tf.parent_ent_id, *parent_tf, 0, global_root);
-        frame.global = parent_tf->map[0].second.global * frame.local;
+        frame.global = parent_tf->elements[0].second.global * frame.local;
       }
       else
       {
@@ -327,10 +304,10 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
     {
       // Parent is the global frame
       auto* root_tf = db.get_component<components::TransformComponent*>(global_root.value());
-      if (root_tf && !root_tf->map.empty())
+      if (root_tf && !root_tf->elements.empty())
       {
         update_global_transform(db, global_root.value(), *root_tf, 0, global_root);
-        frame.global = root_tf->map[0].second.global * frame.local;
+        frame.global = root_tf->elements[0].second.global * frame.local;
       }
       else
       {
@@ -349,10 +326,11 @@ void update_global_transform(ginseng::database& db, ginseng::database::ent_id id
     // Internal frame: parent is another frame in the same entity
     const std::string& parent_name = frame.parent;
 
-    auto parent_it = std::find_if(tf.map.begin(), tf.map.end(), [&](const auto& p) { return p.first == parent_name; });
-    if (parent_it != tf.map.end())
+    auto parent_it =
+        std::find_if(tf.elements.begin(), tf.elements.end(), [&](const auto& p) { return p.first == parent_name; });
+    if (parent_it != tf.elements.end())
     {
-      size_t parent_idx = std::distance(tf.map.begin(), parent_it);
+      size_t parent_idx = std::distance(tf.elements.begin(), parent_it);
       // Recurse: update parent frame first
       update_global_transform(db, id, tf, parent_idx, global_root);
       frame.global = parent_it->second.global * frame.local;
@@ -375,7 +353,7 @@ void update_all_global_transforms(ginseng::database& db)
     auto* root_tf = db.get_component<components::TransformComponent*>(*global_root);
     if (root_tf)
     {
-      for (size_t i = 0; i < root_tf->map.size(); ++i)
+      for (size_t i = 0; i < root_tf->elements.size(); ++i)
         update_global_transform(db, *global_root, *root_tf, i, global_root);
     }
   }
@@ -385,7 +363,7 @@ void update_all_global_transforms(ginseng::database& db)
     if (global_root && id == *global_root)
       return;  // Already done
 
-    for (size_t i = 0; i < tf.map.size(); ++i)
+    for (size_t i = 0; i < tf.elements.size(); ++i)
       update_global_transform(db, id, tf, i, global_root);
   });
 }

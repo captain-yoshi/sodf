@@ -25,7 +25,7 @@ struct DomainShape
 
 struct DomainShapeComponent
 {
-  FlatMap<std::string, DomainShape> map;
+  ElementMap<std::string, DomainShape> elements;
 };
 
 }  // namespace components

@@ -9,7 +9,7 @@ namespace sodf {
 
 /// For storing a collection of components
 template <typename K, typename V>
-using FlatMap = std::vector<std::pair<K, V>>;
+using ElementMap = std::vector<std::pair<K, V>>;
 
 using EntityID = ginseng::database::ent_id;
 
@@ -43,22 +43,22 @@ ComponentT* getOrCreateComponent(ginseng::database& db, EntityID eid)
 }
 
 /**
- * @brief Retrieve an element from a FlatMap (vector of key-value pairs) by key.
+ * @brief Retrieve an element from a ElementMap (vector of key-value pairs) by key.
  *
- * Performs a linear search over the flat map to find the value associated with the given key.
+ * Performs a linear search over the elements to find the value associated with the given key.
  * Works with both custom and standard string keys. Returns a pointer to the value if found,
  * or nullptr if the key does not exist.
  *
  * @tparam Key The key type (e.g., std::string or std::string_view).
  * @tparam Value The value type stored in the map.
- * @param flat_map The flat map (vector of key-value pairs).
+ * @param elements The elements (vector of key-value pairs).
  * @param key The key to search for.
  * @return Pointer to the value if found, or nullptr otherwise.
  */
 template <typename Key, typename Value>
-Value* getComponentElement(std::vector<std::pair<Key, Value>>& flat_map, const Key& key)
+Value* getComponentElement(std::vector<std::pair<Key, Value>>& elements, const Key& key)
 {
-  for (auto& [k, v] : flat_map)
+  for (auto& [k, v] : elements)
   {
     if (k == key)
       return &v;
@@ -67,9 +67,9 @@ Value* getComponentElement(std::vector<std::pair<Key, Value>>& flat_map, const K
 }
 
 template <typename Key, typename Value>
-const Value* getComponentElement(const std::vector<std::pair<Key, Value>>& flat_map, const Key& key)
+const Value* getComponentElement(const std::vector<std::pair<Key, Value>>& elements, const Key& key)
 {
-  for (const auto& [k, v] : flat_map)
+  for (const auto& [k, v] : elements)
   {
     if (k == key)
       return &v;
@@ -78,9 +78,9 @@ const Value* getComponentElement(const std::vector<std::pair<Key, Value>>& flat_
 }
 
 template <typename Value>
-Value* getComponentElement(std::vector<std::pair<std::string, Value>>& flat_map, std::string_view key)
+Value* getComponentElement(std::vector<std::pair<std::string, Value>>& elements, std::string_view key)
 {
-  for (auto& [k, v] : flat_map)
+  for (auto& [k, v] : elements)
   {
     if (k == key)
       return &v;
@@ -89,9 +89,9 @@ Value* getComponentElement(std::vector<std::pair<std::string, Value>>& flat_map,
 }
 
 template <typename Value>
-const Value* getComponentElement(const std::vector<std::pair<std::string, Value>>& flat_map, std::string_view key)
+const Value* getComponentElement(const std::vector<std::pair<std::string, Value>>& elements, std::string_view key)
 {
-  for (const auto& [k, v] : flat_map)
+  for (const auto& [k, v] : elements)
   {
     if (k == key)
       return &v;
@@ -100,13 +100,13 @@ const Value* getComponentElement(const std::vector<std::pair<std::string, Value>
 }
 
 /**
- * @brief Retrieve an element from a component's internal map by key.
+ * @brief Retrieve an element from a component's internal elements by key.
  *
- * Looks up a specific element within a component that exposes a `map` field
- * (typically a FlatMap). Returns a pointer to the value if the component and key exist,
+ * Looks up a specific element within a component that exposes a `elements` field
+ * (typically a ElementMap). Returns a pointer to the value if the component and key exist,
  * or nullptr otherwise.
  *
- * @tparam ComponentT The type of the component (must have a `.map` field).
+ * @tparam ComponentT The type of the component (must have a `.elements` field).
  * @param db The ECS database.
  * @param eid The entity ID owning the component.
  * @param key The lookup key (e.g., string identifier).
@@ -117,9 +117,9 @@ auto* getComponentElement(ginseng::database& db, sodf::EntityID eid, const std::
 {
   ComponentT* comp = db.get_component<ComponentT*>(eid);
   if (!comp)
-    return static_cast<typename decltype(comp->map)::value_type::second_type*>(nullptr);
+    return static_cast<typename decltype(comp->elements)::value_type::second_type*>(nullptr);
 
-  return getComponentElement(comp->map, key);
+  return getComponentElement(comp->elements, key);
 }
 
 template <typename ComponentT>
@@ -127,9 +127,9 @@ auto* getComponentElement(ginseng::database& db, sodf::EntityID eid, std::string
 {
   ComponentT* comp = db.get_component<ComponentT*>(eid);
   if (!comp)
-    return static_cast<typename decltype(comp->map)::value_type::second_type*>(nullptr);
+    return static_cast<typename decltype(comp->elements)::value_type::second_type*>(nullptr);
 
-  return getComponentElement(comp->map, key);
+  return getComponentElement(comp->elements, key);
 }
 
 template <typename ComponentT>
@@ -137,9 +137,9 @@ const auto* getComponentElement(const ginseng::database& db, sodf::EntityID eid,
 {
   const ComponentT* comp = db.get_component<const ComponentT*>(eid);
   if (!comp)
-    return static_cast<const typename decltype(comp->map)::value_type::second_type*>(nullptr);
+    return static_cast<const typename decltype(comp->elements)::value_type::second_type*>(nullptr);
 
-  return getComponentElement(comp->map, key);
+  return getComponentElement(comp->elements, key);
 }
 
 template <typename ComponentT>
@@ -147,9 +147,9 @@ const auto* getComponentElement(const ginseng::database& db, sodf::EntityID eid,
 {
   const ComponentT* comp = db.get_component<const ComponentT*>(eid);
   if (!comp)
-    return static_cast<const typename decltype(comp->map)::value_type::second_type*>(nullptr);
+    return static_cast<const typename decltype(comp->elements)::value_type::second_type*>(nullptr);
 
-  return getComponentElement(comp->map, key);
+  return getComponentElement(comp->elements, key);
 }
 }  // namespace sodf
 
