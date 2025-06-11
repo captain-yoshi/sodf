@@ -21,6 +21,8 @@ Eigen::Matrix3d computeOrientationFromAxes(const Eigen::Vector3d& x_axis, const 
 // --- Helper: build isometry from position/axis ---
 Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis);
 
+Eigen::Vector3d computeOrthogonalAxis(const Eigen::Vector3d& axis);
+
 }  // namespace geometry
 }  // namespace sodf
 

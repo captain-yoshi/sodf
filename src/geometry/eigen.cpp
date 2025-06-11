@@ -49,5 +49,11 @@ Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3
   return iso;
 }
 
+Eigen::Vector3d computeOrthogonalAxis(const Eigen::Vector3d& axis)
+{
+  Eigen::Vector3d fallback = (std::abs(axis.z()) < 0.99) ? Eigen::Vector3d::UnitZ() : Eigen::Vector3d::UnitY();
+  return axis.cross(fallback).normalized();
+}
+
 }  // namespace geometry
 }  // namespace sodf
