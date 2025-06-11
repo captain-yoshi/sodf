@@ -15,7 +15,7 @@ namespace components {
 // Forward declaration
 struct ShapeComponent
 {
-  FlatMap<std::string, geometry::Shape> shape_map;
+  FlatMap<std::string, geometry::Shape> map;
 };
 
 struct StackedShapeEntry
@@ -28,7 +28,7 @@ using StackedShapes = std::vector<StackedShapeEntry>;
 
 struct StackedShapeComponent
 {
-  FlatMap<std::string, StackedShapes> stack_map;
+  FlatMap<std::string, StackedShapes> map;
 };
 
 }  // namespace components

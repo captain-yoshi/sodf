@@ -24,7 +24,7 @@ struct Link
 
 struct LinkComponent
 {
-  FlatMap<std::string, Link> link_map;
+  FlatMap<std::string, Link> map;
 };
 
 }  // namespace components

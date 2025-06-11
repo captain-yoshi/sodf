@@ -22,7 +22,7 @@ struct Container
 
 struct ContainerComponent
 {
-  FlatMap<std::string, Container> container_map;
+  FlatMap<std::string, Container> map;
 };
 
 }  // namespace components

@@ -17,10 +17,10 @@ std::vector<FSMActionStep> simulate_fsm_sequence_strict(const components::FSM& f
   int current = fsm.current_state;
 
   // Try to find the ActionMap for the given FSM id, only once.
-  auto it = std::find_if(map_comp.action_map.begin(), map_comp.action_map.end(),
-                         [&](const auto& pair) { return pair.first == fsm_id; });
+  auto it =
+      std::find_if(map_comp.map.begin(), map_comp.map.end(), [&](const auto& pair) { return pair.first == fsm_id; });
 
-  const components::ActionMap* action_map = (it != map_comp.action_map.end()) ? &it->second : nullptr;
+  const components::ActionMap* action_map = (it != map_comp.map.end()) ? &it->second : nullptr;
 
   for (const auto& label : action_labels)
   {
@@ -113,7 +113,7 @@ void simulate_action_sequence_on_all(ginseng::database& db, const std::string& f
                                      const std::vector<std::string>& actions)
 {
   db.visit([&](const components::FSMComponent& fsm_comp, const components::ActionMapComponent& map_comp) {
-    for (const auto& [fsm_key, fsm] : fsm_comp.fsm_map)
+    for (const auto& [fsm_key, fsm] : fsm_comp.map)
     {
       if (fsm_key != fsm_id)
         continue;

@@ -26,7 +26,7 @@ struct Touchscreen
 
 struct TouchscreenComponent
 {
-  FlatMap<std::string, Touchscreen> touchscreen_map;
+  FlatMap<std::string, Touchscreen> map;
 };
 
 }  // namespace components

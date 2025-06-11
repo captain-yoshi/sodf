@@ -88,12 +88,12 @@ struct VirtualButton
 
 struct ButtonComponent
 {
-  FlatMap<std::string, Button> button_map;
+  FlatMap<std::string, Button> map;
 };
 
 struct VirtualButtonComponent
 {
-  FlatMap<std::string, VirtualButton> button_map;
+  FlatMap<std::string, VirtualButton> map;
 };
 
 inline std::string buttonTypeToString(Button::Type type)
@@ -129,7 +129,6 @@ inline Button::Type buttonTypeFromString(const std::string& str)
     return Button::Type::ANALOG_SPHERICAL;
   throw std::runtime_error("Unknown Button::Type: '" + str + "'");
 }
-
 
 }  // namespace components
 }  // namespace sodf

@@ -72,7 +72,7 @@ struct FSM
 
 struct FSMComponent
 {
-  FlatMap<std::string, FSM> fsm_map;
+  FlatMap<std::string, FSM> map;
 };
 
 }  // namespace components

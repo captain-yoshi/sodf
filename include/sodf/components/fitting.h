@@ -21,7 +21,7 @@ struct FitConstraint
 
 struct FitConstraintComponent
 {
-  FlatMap<std::string, FitConstraint> fitting_map;
+  FlatMap<std::string, FitConstraint> map;
 };
 
 }  // namespace components
