@@ -796,11 +796,18 @@ void parseFitConstraintComponent(const tinyxml2::XMLElement* elem, ginseng::data
                              std::to_string(elem->GetLineNum()));
 
   // --- AxisInsertion (required)
-  const auto* axis = elem->FirstChildElement("AxisInsertion");
-  if (!axis)
+  const auto* axis1 = elem->FirstChildElement("AxisInsertion");
+  if (!axis1)
     throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <AxisInsertion> element at line " +
                              std::to_string(elem->GetLineNum()));
-  fit.axis_insertion = parseUnitVector(axis);
+  fit.axis_insertion = parseUnitVector(axis1);
+
+  // --- AxisReference (required)
+  const auto* axis2 = elem->FirstChildElement("AxisReference");
+  if (!axis2)
+    throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <AxisReference> element at line " +
+                             std::to_string(elem->GetLineNum()));
+  fit.axis_reference = parseUnitVector(axis2);
 
   // --- RotationalSymmetry (required)
   const auto* sym = elem->FirstChildElement("RotationalSymmetry");
