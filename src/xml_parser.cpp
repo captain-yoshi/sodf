@@ -809,6 +809,11 @@ void parseFitConstraintComponent(const tinyxml2::XMLElement* elem, ginseng::data
                              std::to_string(elem->GetLineNum()));
   fit.axis_reference = parseUnitVector(axis2);
 
+  // validate orthonormality
+  if (!areVectorsOrthonormal(fit.axis_insertion, fit.axis_reference, 1e-09))
+    throw std::runtime_error("FitConstraint '" + std::string(id) + "' axis are not orthogonal at line " +
+                             std::to_string(elem->GetLineNum()));
+
   // --- RotationalSymmetry (required)
   const auto* sym = elem->FirstChildElement("RotationalSymmetry");
   if (!sym)
@@ -1336,6 +1341,22 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       throw std::runtime_error("Unknown shape type in parseShapeElement.");
   }
 
+  // validate axes orthonormality
+  if (shape.axes.size() == 1)
+  {
+    if (!isUnitVector(shape.axes[0]))
+      throw std::runtime_error("Shape axis must be a unit vector at line " + std::to_string(elem->GetLineNum()));
+  }
+  else if (shape.axes.size() == 2)
+  {
+    if (!areVectorsOrthonormal(shape.axes[0], shape.axes[1], 1e-09))
+      throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
+  }
+  else if (shape.axes.size() == 3)
+  {
+    if (!areVectorsOrthonormal(shape.axes[0], shape.axes[1], shape.axes[2], 1e-09))
+      throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
+  }
   return shape;
 }
 
@@ -1948,6 +1969,10 @@ VirtualButton parseVirtualButton(const tinyxml2::XMLElement* vb_elem)
                              std::to_string(axis_elem->GetLineNum()));
   vbtn.press_axis = Eigen::Vector3d(x, y, z);
 
+  // validate unit vector
+  if (!isUnitVector(vbtn.press_axis))
+    throw std::runtime_error("Axis element must be a unit vector " + std::to_string(axis_elem->GetLineNum()));
+
   // Optional: <Label text="..."/>
   if (const tinyxml2::XMLElement* label_elem = vb_elem->FirstChildElement("Label"))
   {
@@ -1998,6 +2023,10 @@ Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem)
   queryRequiredDoubleAttribute(axis_elem, "y", &y);
   queryRequiredDoubleAttribute(axis_elem, "z", &z);
   joint.axes.col(0) = Eigen::Vector3d(x, y, z);
+
+  // validate unit vector
+  if (!isUnitVector(joint.axes.col(0)))
+    throw std::runtime_error("Axis element must be a unit vector " + std::to_string(axis_elem->GetLineNum()));
 
   // States
   joint.position(0) = joint_elem->FirstChildElement("Position")->DoubleAttribute("value");
@@ -2088,6 +2117,42 @@ Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
     queryRequiredDoubleAttribute(axis_elem, "y", &y);
     queryRequiredDoubleAttribute(axis_elem, "z", &z);
     joint.axes.col(axis_i) = Eigen::Vector3d(x, y, z);
+  }
+
+  int num_cols = joint.axes.cols();
+  if (num_cols != dof)
+    throw std::runtime_error("There must be " + std::to_string(dof) + " <Axis> tags for a " + type_str +
+                             " joint at line " + std::to_string(axes_elem->GetLineNum()));
+
+  // Validate axes are orthonormal as required for this joint type
+  switch (joint.type)
+  {
+    case JointType::FIXED:
+      // No motion, no axes needed
+      break;
+    case JointType::REVOLUTE:
+    case JointType::PRISMATIC:
+      if (!isUnitVector(joint.axes.col(0)))
+        throw std::runtime_error(std::string("Axis for ") + type_str + " joint must be a unit vector at line " +
+                                 std::to_string(axes_elem->GetLineNum()));
+      break;
+    case JointType::SPHERICAL:
+    case JointType::PLANAR:
+      // Both require 3 axes
+      if (!areVectorsOrthonormal(joint.axes.col(0), joint.axes.col(1), joint.axes.col(2)))
+        throw std::runtime_error(std::string("Axes for ") + type_str + " joint must be mutually orthonormal at line " +
+                                 std::to_string(axes_elem->GetLineNum()));
+      break;
+    case JointType::FLOATING:
+      // 6-DOF check both triplets
+      if (!areVectorsOrthonormal(joint.axes.col(0), joint.axes.col(1), joint.axes.col(2)) ||
+          !areVectorsOrthonormal(joint.axes.col(3), joint.axes.col(4), joint.axes.col(5)))
+        throw std::runtime_error("Axes for FLOATING joint must be two mutually orthonormal triplets at line " +
+                                 std::to_string(axes_elem->GetLineNum()));
+      break;
+    default:
+      throw std::runtime_error("Unknown JointType for axes validation at line " +
+                               std::to_string(axes_elem->GetLineNum()));
   }
 
   // Helper for vector fields
