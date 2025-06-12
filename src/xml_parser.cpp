@@ -74,6 +74,49 @@ double parseRequiredDouble(const tinyxml2::XMLElement* elem, const char* attr_na
   }
 }
 
+// Helper: safely parse XML double attribute, with a default value if missing
+inline double parseDoubleOrDefault(const tinyxml2::XMLElement* elem, const char* attr_name, double default_value)
+{
+  const char* expr = elem->Attribute(attr_name);
+  if (!expr)
+    return default_value;
+
+  try
+  {
+    mu::Parser parser;
+    parser.DefineConst("pi", M_PI);
+    parser.DefineConst("inf", std::numeric_limits<double>::infinity());
+    parser.SetExpr(expr);
+    return parser.Eval();
+  }
+  catch (mu::Parser::exception_type& e)
+  {
+    throw std::runtime_error(std::string("Error parsing expression for attribute '") + attr_name + "': " + e.GetMsg());
+  }
+}
+
+bool queryRequiredDoubleAttribute(const tinyxml2::XMLElement* elem, const char* attr_name, double* out_value)
+{
+  const char* expr = elem->Attribute(attr_name);
+  if (!expr)
+    return false;  // Attribute missing
+
+  try
+  {
+    mu::Parser parser;
+    parser.DefineConst("pi", M_PI);
+    parser.DefineConst("inf", std::numeric_limits<double>::infinity());
+    parser.SetExpr(expr);
+    *out_value = parser.Eval();
+    return true;
+  }
+  catch (mu::Parser::exception_type& e)
+  {
+    throw std::runtime_error(std::string("Error parsing expression for attribute '") + attr_name + "': " + e.GetMsg());
+  }
+  return true;
+}
+
 /// Add only Object tag childrens, e.g. no Transform tag.
 #define SODF_COMPONENT_LIST(X)                                                                                         \
   X(Origin, parseOriginComponent)                                                                                      \
@@ -531,7 +574,7 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
   {
     AlignPairFrames align;
     align.target_id = align_pair_frames_elem->Attribute("with");
-    align.tolerance = align_pair_frames_elem->DoubleAttribute("tolerance", 1e-3);
+    align.tolerance = parseRequiredDouble(align_pair_frames_elem, "tolerance");
 
     int found = 0;
     for (const auto* tag = align_pair_frames_elem->FirstChildElement(); tag; tag = tag->NextSiblingElement())
@@ -724,16 +767,17 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
   if (const auto* inertial = elem->FirstChildElement("Inertial"))
   {
     if (const auto* mass = inertial->FirstChildElement("Mass"))
-      link.dynamics.mass = mass->DoubleAttribute("value");
+      link.dynamics.mass = parseRequiredDouble(mass, "value");
 
     if (const auto* com = inertial->FirstChildElement("CenterOfMass"))
       parsePosition(com, link.dynamics.center_of_mass);
 
     if (const auto* I = inertial->FirstChildElement("InertiaTensor"))
     {
-      link.dynamics.inertia_tensor << I->DoubleAttribute("ixx"), I->DoubleAttribute("ixy"), I->DoubleAttribute("ixz"),
-          I->DoubleAttribute("ixy"), I->DoubleAttribute("iyy"), I->DoubleAttribute("iyz"), I->DoubleAttribute("ixz"),
-          I->DoubleAttribute("iyz"), I->DoubleAttribute("izz");
+      link.dynamics.inertia_tensor << parseRequiredDouble(I, "ixx"), parseRequiredDouble(I, "ixy"),
+          parseRequiredDouble(I, "ixz"), parseRequiredDouble(I, "ixy"), parseRequiredDouble(I, "iyy"),
+          parseRequiredDouble(I, "iyz"), parseRequiredDouble(I, "ixz"), parseRequiredDouble(I, "iyz"),
+          parseRequiredDouble(I, "izz");
     }
   }
 
@@ -770,7 +814,7 @@ void parseFitConstraintComponent(const tinyxml2::XMLElement* elem, ginseng::data
   if (!dist)
     throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <ApproachDistance> element at line " +
                              std::to_string(elem->GetLineNum()));
-  fit.approach_distance = dist->DoubleAttribute("value");
+  fit.approach_distance = parseRequiredDouble(dist, "value");
 
   // store to component
   auto* component = getOrCreateComponent<FitConstraintComponent>(db, eid);
@@ -787,8 +831,8 @@ void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::databa
 
   if (const auto* size = elem->FirstChildElement("Size"))
   {
-    ts.width = size->DoubleAttribute("width");
-    ts.height = size->DoubleAttribute("height");
+    ts.width = parseRequiredDouble(size, "width");
+    ts.height = parseRequiredDouble(size, "height");
   }
 
   if (const auto* normal = elem->FirstChildElement("SurfaceNormal"))
@@ -796,13 +840,13 @@ void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::databa
 
   if (const auto* pressure = elem->FirstChildElement("Pressure"))
   {
-    ts.min_pressure = pressure->DoubleAttribute("min");
-    ts.max_pressure = pressure->DoubleAttribute("max");
+    ts.min_pressure = parseRequiredDouble(pressure, "min");
+    ts.max_pressure = parseRequiredDouble(pressure, "max");
   }
 
   if (const auto* touch = elem->FirstChildElement("Touch"))
   {
-    ts.touch_radius = touch->DoubleAttribute("radius");
+    ts.touch_radius = parseRequiredDouble(touch, "radius");
     ts.multi_touch = touch->BoolAttribute("multi_touch");
     ts.allow_drag = touch->BoolAttribute("allow_drag");
   }
@@ -970,7 +1014,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   {
     if (const char* type = cont->Attribute("type"))
       container.content_type = type;
-    double volume = cont->DoubleAttribute("volume", 0.0);
+    double volume = parseDoubleOrDefault(cont, "volume", 0.0);
     const char* units = cont->Attribute("units");
     container.volume = convertVolumeToSI(volume, units ? units : "m^3");
   }
@@ -1030,8 +1074,8 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Rectangle missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("width"));
-      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "width"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "height"));
       break;
     }
     case ShapeType::Circle:
@@ -1049,7 +1093,7 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Circle missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "radius"));
       break;
     }
     case ShapeType::Triangle:
@@ -1074,7 +1118,7 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       if (!verts)
         throw std::runtime_error("Triangle/Polygon missing <Vertices>");
       for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
-        shape.vertices.emplace_back(v->DoubleAttribute("x"), v->DoubleAttribute("y"), 0.0);
+        shape.vertices.emplace_back(parseRequiredDouble(v, "x"), parseRequiredDouble(v, "y"), 0.0);
       if ((shape.type == ShapeType::Triangle && shape.vertices.size() != 3) ||
           (shape.type == ShapeType::Polygon && shape.vertices.size() < 3))
         throw std::runtime_error("Triangle/Polygon has invalid number of vertices.");
@@ -1099,9 +1143,9 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Box missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("width"));
-      shape.dimensions.push_back(dims->DoubleAttribute("depth"));
-      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "width"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "depth"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "height"));
       break;
     }
     case ShapeType::Cylinder:
@@ -1119,8 +1163,8 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Cylinder missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("radius"));
-      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "height"));
       break;
     }
     case ShapeType::Sphere:
@@ -1128,7 +1172,7 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Sphere missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "radius"));
       break;
     }
     case ShapeType::Cone:
@@ -1146,9 +1190,9 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("Cone missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("base_radius"));
-      shape.dimensions.push_back(dims->DoubleAttribute("top_radius"));
-      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "base_radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "top_radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "height"));
       break;
     }
     case ShapeType::SphericalSegment:
@@ -1166,9 +1210,9 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("SphericalSegment missing <Dimensions>");
-      shape.dimensions.push_back(dims->DoubleAttribute("base_radius"));
-      shape.dimensions.push_back(dims->DoubleAttribute("top_radius"));
-      shape.dimensions.push_back(dims->DoubleAttribute("height"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "base_radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "top_radius"));
+      shape.dimensions.push_back(parseRequiredDouble(dims, "height"));
       break;
     }
     case ShapeType::Plane:
@@ -1189,8 +1233,8 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       shape.axes = { normal, ax, ay };
       if (const auto* dims = elem->FirstChildElement("Dimensions"))
       {
-        shape.dimensions.push_back(dims->DoubleAttribute("width"));
-        shape.dimensions.push_back(dims->DoubleAttribute("height"));
+        shape.dimensions.push_back(parseRequiredDouble(dims, "width"));
+        shape.dimensions.push_back(parseRequiredDouble(dims, "height"));
       }
       break;
     }
@@ -1202,9 +1246,9 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       shape.mesh_path = file->Attribute("path");
       if (const auto* scale = elem->FirstChildElement("Scale"))
       {
-        shape.scale.x() = scale->DoubleAttribute("x", 1.0);
-        shape.scale.y() = scale->DoubleAttribute("y", 1.0);
-        shape.scale.z() = scale->DoubleAttribute("z", 1.0);
+        shape.scale.x() = parseDoubleOrDefault(scale, "x", 1.0);
+        shape.scale.y() = parseDoubleOrDefault(scale, "y", 1.0);
+        shape.scale.z() = parseDoubleOrDefault(scale, "z", 1.0);
       }
       break;
     }
@@ -1230,7 +1274,7 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
         axis = parseUnitVector(axis_elem);
         shape.axes.push_back(axis);
 
-        double length = len_elem->DoubleAttribute("value");
+        double length = parseRequiredDouble(len_elem, "value");
         if (length <= 0)
           throw std::runtime_error("Line: Length must be positive.");
 
@@ -1257,11 +1301,11 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
         std::vector<Eigen::Vector3d> verts;
         for (const auto* v = vtx_elem; v; v = v->NextSiblingElement("Vertex"))
         {
-          double x = v->DoubleAttribute("x");
-          double y = v->DoubleAttribute("y");
+          double x = parseRequiredDouble(v, "x");
+          double y = parseRequiredDouble(v, "y");
           double z = 0.0;
           // If z attribute present, use it (else default to 0.0)
-          v->QueryDoubleAttribute("z", &z);
+          queryRequiredDoubleAttribute(v, "z", &z);
           verts.emplace_back(x, y, z);
         }
         if (verts.size() != 2)
@@ -1349,9 +1393,9 @@ Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsi
 {
   Eigen::Vector3d vec;
 
-  vec.x() = element->DoubleAttribute("x");
-  vec.y() = element->DoubleAttribute("y");
-  vec.z() = element->DoubleAttribute("z");
+  vec.x() = parseRequiredDouble(element, "x");
+  vec.y() = parseRequiredDouble(element, "y");
+  vec.z() = parseRequiredDouble(element, "z");
 
   double norm = vec.norm();
   if (std::abs(norm - 1.0) > epsilon)
@@ -1424,7 +1468,7 @@ ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem, const ShapeCo
 
     // Gap size
     const auto* gap_elem = elem->FirstChildElement("GapSize");
-    grasp.gap_size = gap_elem ? gap_elem->DoubleAttribute("value") : 0.0;
+    grasp.gap_size = gap_elem ? parseRequiredDouble(gap_elem, "value") : 0.0;
 
     // Rotational axis/symmetry
     grasp.axis_of_rotation = parseUnitVector(elem->FirstChildElement("RotationalAxis"));
@@ -1811,7 +1855,7 @@ Button parseButton(const tinyxml2::XMLElement* btn_elem)
   // Optional: <DetentSpacing value="..."/>
   if (const tinyxml2::XMLElement* detent_elem = btn_elem->FirstChildElement("DetentSpacing"))
   {
-    detent_elem->QueryDoubleAttribute("value", &btn.detent_spacing);
+    queryRequiredDoubleAttribute(detent_elem, "value", &btn.detent_spacing);
   }
 
   // Optional: <RestPositions>
@@ -1821,7 +1865,7 @@ Button parseButton(const tinyxml2::XMLElement* btn_elem)
          pos_elem = pos_elem->NextSiblingElement("Position"))
     {
       double val = 0.0;
-      if (pos_elem->QueryDoubleAttribute("value", &val) == tinyxml2::XML_SUCCESS)
+      if (queryRequiredDoubleAttribute(pos_elem, "value", &val))
         btn.rest_positions.push_back(val);
     }
   }
@@ -1833,7 +1877,7 @@ Button parseButton(const tinyxml2::XMLElement* btn_elem)
          s_elem = s_elem->NextSiblingElement("Stiffness"))
     {
       double val = 0.0;
-      if (s_elem->QueryDoubleAttribute("value", &val) == tinyxml2::XML_SUCCESS)
+      if (queryRequiredDoubleAttribute(s_elem, "value", &val))
         btn.stiffness_profile.push_back(val);
     }
   }
@@ -1891,9 +1935,8 @@ VirtualButton parseVirtualButton(const tinyxml2::XMLElement* vb_elem)
   if (!axis_elem)
     throw std::runtime_error("VirtualButton missing <AxisPress> at line " + std::to_string(vb_elem->GetLineNum()));
   double x = 0, y = 0, z = 0;
-  if (axis_elem->QueryDoubleAttribute("x", &x) != tinyxml2::XML_SUCCESS ||
-      axis_elem->QueryDoubleAttribute("y", &y) != tinyxml2::XML_SUCCESS ||
-      axis_elem->QueryDoubleAttribute("z", &z) != tinyxml2::XML_SUCCESS)
+  if (!queryRequiredDoubleAttribute(axis_elem, "x", &x) || !queryRequiredDoubleAttribute(axis_elem, "y", &y) ||
+      !queryRequiredDoubleAttribute(axis_elem, "z", &z))
     throw std::runtime_error("VirtualButton <AxisPress> missing or invalid x/y/z attribute at line " +
                              std::to_string(axis_elem->GetLineNum()));
   vbtn.press_axis = Eigen::Vector3d(x, y, z);
@@ -1944,20 +1987,20 @@ Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem)
   if (!axis_elem)
     throw std::runtime_error("Missing <Axis>");
   double x = 0, y = 0, z = 0;
-  axis_elem->QueryDoubleAttribute("x", &x);
-  axis_elem->QueryDoubleAttribute("y", &y);
-  axis_elem->QueryDoubleAttribute("z", &z);
+  queryRequiredDoubleAttribute(axis_elem, "x", &x);
+  queryRequiredDoubleAttribute(axis_elem, "y", &y);
+  queryRequiredDoubleAttribute(axis_elem, "z", &z);
   joint.axes.col(0) = Eigen::Vector3d(x, y, z);
 
   // States
   joint.position(0) = joint_elem->FirstChildElement("Position")->DoubleAttribute("value");
   // Velocity
   if (const auto* vel_elem = joint_elem->FirstChildElement("Velocity"))
-    joint.velocity(0) = vel_elem->DoubleAttribute("value");
+    joint.velocity(0) = parseRequiredDouble(vel_elem, "value");
 
   // Effort
   if (const auto* eff_elem = joint_elem->FirstChildElement("Effort"))
-    joint.effort(0) = eff_elem->DoubleAttribute("value");
+    joint.effort(0) = parseRequiredDouble(eff_elem, "value");
 
   // Limits
   if (const auto* limit_elem = joint_elem->FirstChildElement("Limit"))
@@ -1965,37 +2008,37 @@ Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem)
     if (const auto* pos = limit_elem->FirstChildElement("Position"))
     {
       if (pos->Attribute("min"))
-        joint.limit.min_position(0) = pos->DoubleAttribute("min");
+        joint.limit.min_position(0) = parseRequiredDouble(pos, "min");
       if (pos->Attribute("max"))
-        joint.limit.max_position(0) = pos->DoubleAttribute("max");
+        joint.limit.max_position(0) = parseRequiredDouble(pos, "max");
     }
     if (const auto* vel = limit_elem->FirstChildElement("Velocity"))
     {
       if (vel->Attribute("min"))
-        joint.limit.min_velocity(0) = vel->DoubleAttribute("min");
+        joint.limit.min_velocity(0) = parseRequiredDouble(vel, "min");
       if (vel->Attribute("max"))
-        joint.limit.max_velocity(0) = vel->DoubleAttribute("max");
+        joint.limit.max_velocity(0) = parseRequiredDouble(vel, "max");
     }
     if (const auto* acc = limit_elem->FirstChildElement("Acceleration"))
     {
       if (acc->Attribute("min"))
-        joint.limit.min_acceleration(0) = acc->DoubleAttribute("min");
+        joint.limit.min_acceleration(0) = parseRequiredDouble(acc, "min");
       if (acc->Attribute("max"))
-        joint.limit.max_acceleration(0) = acc->DoubleAttribute("max");
+        joint.limit.max_acceleration(0) = parseRequiredDouble(acc, "max");
     }
     if (const auto* jerk = limit_elem->FirstChildElement("Jerk"))
     {
       if (jerk->Attribute("min"))
-        joint.limit.min_jerk(0) = jerk->DoubleAttribute("min");
+        joint.limit.min_jerk(0) = parseRequiredDouble(jerk, "min");
       if (jerk->Attribute("max"))
-        joint.limit.max_jerk(0) = jerk->DoubleAttribute("max");
+        joint.limit.max_jerk(0) = parseRequiredDouble(jerk, "max");
     }
     if (const auto* eff = limit_elem->FirstChildElement("Effort"))
     {
       if (eff->Attribute("min"))
-        joint.limit.min_effort(0) = eff->DoubleAttribute("min");
+        joint.limit.min_effort(0) = parseRequiredDouble(eff, "min");
       if (eff->Attribute("max"))
-        joint.limit.max_effort(0) = eff->DoubleAttribute("max");
+        joint.limit.max_effort(0) = parseRequiredDouble(eff, "max");
     }
   }
 
@@ -2003,14 +2046,14 @@ Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem)
   if (const auto* dyn_elem = joint_elem->FirstChildElement("Dynamics"))
   {
     if (const auto* s = dyn_elem->FirstChildElement("Stiffness"))
-      joint.dynamics.stiffness(0) = s->DoubleAttribute("value");
+      joint.dynamics.stiffness(0) = parseRequiredDouble(s, "value");
     if (const auto* d = dyn_elem->FirstChildElement("Damping"))
-      joint.dynamics.damping(0) = d->DoubleAttribute("value");
+      joint.dynamics.damping(0) = parseRequiredDouble(d, "value");
     if (const auto* r = dyn_elem->FirstChildElement("RestPosition"))
       joint.dynamics.rest_position[0] =
-          r->Attribute("value") ? std::optional<double>{ r->DoubleAttribute("value") } : std::nullopt;
+          r->Attribute("value") ? std::optional<double>{ parseRequiredDouble(r, "value") } : std::nullopt;
     if (const auto* i = dyn_elem->FirstChildElement("Inertia"))
-      joint.dynamics.inertia(0) = i->DoubleAttribute("value");
+      joint.dynamics.inertia(0) = parseRequiredDouble(i, "value");
   }
   return joint;
 }
@@ -2034,9 +2077,9 @@ Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
        axis_elem = axis_elem->NextSiblingElement("Axis"), ++axis_i)
   {
     double x = 0, y = 0, z = 0;
-    axis_elem->QueryDoubleAttribute("x", &x);
-    axis_elem->QueryDoubleAttribute("y", &y);
-    axis_elem->QueryDoubleAttribute("z", &z);
+    queryRequiredDoubleAttribute(axis_elem, "x", &x);
+    queryRequiredDoubleAttribute(axis_elem, "y", &y);
+    queryRequiredDoubleAttribute(axis_elem, "z", &z);
     joint.axes.col(axis_i) = Eigen::Vector3d(x, y, z);
   }
 
@@ -2046,7 +2089,7 @@ Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
     for (const auto* elem = parent ? parent->FirstChildElement(child_tag) : nullptr; elem && i < v.size();
          elem = elem->NextSiblingElement(child_tag), ++i)
     {
-      v(i) = elem->DoubleAttribute("value");
+      v(i) = parseRequiredDouble(elem, "value");
     }
   };
 
@@ -2061,8 +2104,8 @@ Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
     for (const auto* elem = limits_elem ? limits_elem->FirstChildElement(tag) : nullptr; elem && i < min_v.size();
          elem = elem->NextSiblingElement(tag), ++i)
     {
-      min_v(i) = elem->DoubleAttribute("min");
-      max_v(i) = elem->DoubleAttribute("max");
+      min_v(i) = parseRequiredDouble(elem, "min");
+      max_v(i) = parseRequiredDouble(elem, "max");
     }
   };
   const auto* limits_elem = joint_elem->FirstChildElement("Limits");
@@ -2081,7 +2124,7 @@ Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
     for (const auto* elem = parent ? parent->FirstChildElement(tag) : nullptr; elem && i < v.size();
          elem = elem->NextSiblingElement(tag), ++i)
     {
-      v(i) = elem->DoubleAttribute("value");
+      v(i) = parseRequiredDouble(elem, "value");
     }
   };
   const auto* dyn_elem = joint_elem->FirstChildElement("Dynamics");
@@ -2094,7 +2137,7 @@ Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
     for (const auto* r_elem = dyn_elem->FirstChildElement("RestPosition");
          r_elem && i < joint.dynamics.rest_position.size(); r_elem = r_elem->NextSiblingElement("RestPosition"), ++i)
     {
-      joint.dynamics.rest_position[i] = r_elem->DoubleAttribute("value");
+      joint.dynamics.rest_position[i] = parseRequiredDouble(r_elem, "value");
     }
   }
 
