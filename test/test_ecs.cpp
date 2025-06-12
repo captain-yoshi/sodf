@@ -3,12 +3,13 @@
 #include <sodf/xml_parser.h>
 
 #include <sodf/components/button.h>
-#include <sodf/components/object.h>
-#include <sodf/components/transform.h>
 #include <sodf/components/joint.h>
 #include <sodf/components/link.h>
-#include <sodf/components/touchscreen.h>
 #include <sodf/components/finite_state_machine.h>
+#include <sodf/components/object.h>
+#include <sodf/components/origin.h>
+#include <sodf/components/touchscreen.h>
+#include <sodf/components/transform.h>
 
 #include <sodf/systems/fsm.h>
 #include <sodf/systems/scene_graph.h>
@@ -54,19 +55,19 @@ TEST(ECS, ParsingSingleObject)
 
   // Transform component validation
   auto& transform = db.get_component<components::TransformComponent>(eid);
-  EXPECT_EQ(transform.transform_map.size(), 60);
+  EXPECT_EQ(transform.elements.size(), 60);
 
   // Link component validation
   auto& link = db.get_component<components::LinkComponent>(eid);
-  EXPECT_EQ(link.link_map.size(), 3);
+  EXPECT_EQ(link.elements.size(), 3);
 
   // Joint component validation
   auto& joint = db.get_component<components::JointComponent>(eid);
-  EXPECT_EQ(joint.joint_map.size(), 2);
+  EXPECT_EQ(joint.elements.size(), 2);
 
   // Button component validation
   auto& button = db.get_component<components::VirtualButtonComponent>(eid);
-  EXPECT_EQ(button.button_map.size(), 51);
+  EXPECT_EQ(button.elements.size(), 51);
 
   // db.visit([](components::FSMComponent& fsm_comp) {
   //   for (auto& [fsm_id, fsm] : fsm_comp.fsm_map)
@@ -215,15 +216,15 @@ TEST(ECS, ParseScene1)
 
     // Transform component validation
     auto& transform = db.get_component<components::TransformComponent>(eid);
-    EXPECT_EQ(transform.transform_map.size(), 58);
+    EXPECT_EQ(transform.elements.size(), 58);
 
     // Link component validation
     auto& link = db.get_component<components::LinkComponent>(eid);
-    EXPECT_EQ(link.link_map.size(), 2);
+    EXPECT_EQ(link.elements.size(), 2);
 
     // Joint component validation
     auto& joint = db.get_component<components::JointComponent>(eid);
-    EXPECT_EQ(joint.joint_map.size(), 2);
+    EXPECT_EQ(joint.elements.size(), 2);
   }
 
   auto obj_ent_map = sodf::systems::make_object_entity_map(db);
@@ -277,15 +278,15 @@ TEST(ECS, ParseScene2)
 
     // Transform component validation
     auto& transform = db.get_component<components::TransformComponent>(eid);
-    EXPECT_EQ(transform.transform_map.size(), 58);
+    EXPECT_EQ(transform.elements.size(), 58);
 
     // Link component validation
     auto& link = db.get_component<components::LinkComponent>(eid);
-    EXPECT_EQ(link.link_map.size(), 2);
+    EXPECT_EQ(link.elements.size(), 2);
 
     // Joint component validation
     auto& joint = db.get_component<components::JointComponent>(eid);
-    EXPECT_EQ(joint.joint_map.size(), 2);
+    EXPECT_EQ(joint.elements.size(), 2);
   }
 }
 

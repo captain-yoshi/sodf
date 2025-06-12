@@ -1,11 +1,11 @@
 #include <cmath>
 #include <sodf/xml_parser.h>
 
-#include <sodf/components/domain_shape.h>
 #include <sodf/components/container.h>
-#include <sodf/components/shape.h>
+#include <sodf/components/domain_shape.h>
 #include <sodf/components/grasp.h>
 #include <sodf/components/object.h>
+#include <sodf/components/shape.h>
 
 #include <gtest/gtest.h>
 
@@ -370,35 +370,11 @@ TEST(XMLParser, FluidDomaineShapeComponent)
     }
   }
 
-  //////////////////////////////////////////////////
-
-  // auto db = ginseng::database{};
-  // auto eid = db.create_entity();
-
-  // // 1. Parse string as XML document
-  // tinyxml2::XMLDocument doc;
-  // ASSERT_EQ(doc.Parse(xml_txt.c_str()), tinyxml2::XML_SUCCESS);
-
-  // // 2. Get root element (here, it's "FluidDomainShape")
-  // const tinyxml2::XMLElement* shape_elem = doc.RootElement();
-  // ASSERT_TRUE(shape_elem);
-
-  // // Parse the XML (replace this with your actual parser)
-  // sodf::parseFluidDomainShapeComponent(shape_elem, db, eid);
-  const auto* stacked_component = db.get_component<sodf::components::StackedShapeComponent*>(eid);
-  ASSERT_NE(stacked_component, nullptr);  // component must exist
-
-  // Check that the shape was registered
-  auto geom_shape = sodf::find_in_flat_map(stacked_component->stack_map, "stacked_shape");
+  auto geom_shape = sodf::getComponentElement<components::StackedShapeComponent>(db, eid, "stacked_shape");
   ASSERT_NE(geom_shape, nullptr);    // shape must exist
   ASSERT_EQ(geom_shape->size(), 4);  // 4 stacked shapes
 
-  const auto* domain_component = db.get_component<sodf::components::DomainShapeComponent*>(eid);
-  ASSERT_NE(domain_component, nullptr);  // component must exist
-
-  // Check that the shape was registered
-  auto fluid_domain_shape = sodf::find_in_flat_map(domain_component->domain_shape_map, "fluid/container");
-
+  auto fluid_domain_shape = sodf::getComponentElement<components::DomainShapeComponent>(db, eid, "fluid/container");
   ASSERT_NE(fluid_domain_shape, nullptr);            // shape must exist
   ASSERT_EQ(fluid_domain_shape->domains.size(), 4);  // 4 stacked shapes
   ASSERT_EQ(fluid_domain_shape->stacked_shape_id, "stacked_shape");
@@ -483,7 +459,8 @@ TEST(XMLParser, ContainerComponent)
         </Transform>
         <Content type="water" volume="0.0" units="uL"/>
         <AxisBottom x="1.0" y="0.0" z="0.0"/>
-        <DomainShape id="fluid/container"/>
+        <AxisReference x="0.0" y="1.0" z="0.0"/>
+        <DomainShapeRef id="fluid/container"/>
         <Material id=""/>
       </Container>
     </root>
@@ -518,29 +495,17 @@ TEST(XMLParser, ContainerComponent)
     }
   }
 
-  // 4. Check FluidDomainShapeComponent as before (use your own asserts above)
+  auto container = sodf::getComponentElement<components::ContainerComponent>(db, eid, "container/A1");
+  ASSERT_NE(container, nullptr);  // shape must exist
+  EXPECT_EQ(container->content_type, "water");
+  EXPECT_NEAR(container->axis_bottom.x(), 1.0, 1e-8);
+  EXPECT_NEAR(container->axis_bottom.y(), 0.0, 1e-8);
+  EXPECT_NEAR(container->axis_bottom.z(), 0.0, 1e-8);
+  EXPECT_EQ(container->domain_shape_id, "fluid/container");
 
-  // 5. Now check the Container component
-  const auto* container_comp = db.get_component<sodf::components::ContainerComponent*>(eid);
-  ASSERT_NE(container_comp, nullptr);
-
-  auto container_it = sodf::find_in_flat_map(container_comp->container_map, std::string("container/A1"));
-  ASSERT_NE(container_it, nullptr);
-
-  const auto& container = *container_it;
-  EXPECT_EQ(container.content_type, "water");
-  // EXPECT_EQ(container.material_type, "polypropylene");
-  EXPECT_NEAR(container.axis_bottom.x(), 1.0, 1e-8);
-  EXPECT_NEAR(container.axis_bottom.y(), 0.0, 1e-8);
-  EXPECT_NEAR(container.axis_bottom.z(), 0.0, 1e-8);
-  EXPECT_EQ(container.domain_shape_id, "fluid/container");
-
-  // Check that the referenced domain shape exists
-  const auto* domain_component = db.get_component<sodf::components::DomainShapeComponent*>(eid);
-  ASSERT_NE(domain_component, nullptr);
-  auto shapes = sodf::find_in_flat_map(domain_component->domain_shape_map, container.domain_shape_id);
-  ASSERT_NE(shapes, nullptr);
-  ASSERT_EQ(shapes->domains.size(), 4);
+  auto domain_shape = sodf::getComponentElement<components::DomainShapeComponent>(db, eid, container->domain_shape_id);
+  ASSERT_NE(domain_shape, nullptr);
+  ASSERT_EQ(domain_shape->domains.size(), 4);
 }
 
 TEST(XMLParser, ParallelGraspDerivedFrom)
@@ -655,34 +620,21 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& sid = id_map.begin()->first;
     auto& eid = id_map.begin()->second;
 
-    ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
-    auto& grasp_component = db.get_component<components::ParallelGraspComponent>(eid);
+    auto grasp = sodf::getComponentElement<components::ParallelGraspComponent>(db, eid, "grasp/handle");
+    auto tf_node = sodf::getComponentElement<components::TransformComponent>(db, eid, "grasp/handle");
+    ASSERT_NE(grasp, nullptr);
+    ASSERT_NE(tf_node, nullptr);
 
-    ASSERT_TRUE(db.has_component<components::TransformComponent>(eid));
-    auto& tf_component = db.get_component<components::TransformComponent>(eid);
-    const auto* tf_ptr = find_in_flat_map(tf_component.transform_map, "grasp/handle");
-    ASSERT_TRUE(tf_ptr);
-
-    const auto* grasp_ptr = find_in_flat_map(grasp_component.grasp_map, "grasp/handle");
-    ASSERT_TRUE(grasp_ptr);
-    const auto& grasp = *grasp_ptr;
-
-    ASSERT_EQ(0.02, grasp.gap_size);
-    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp.approach);
-    ASSERT_EQ(4, grasp.rotational_symmetry);
-    ASSERT_EQ("area/front/handle", grasp.contact_shape_ids[0]);
-    ASSERT_EQ("area/back/handle", grasp.contact_shape_ids[1]);
-
-    std::cout << grasp << std::endl;
-
-    std::cout << tf_ptr->local.matrix() << std::endl;
-    std::cout << (tf_ptr->local.linear() * grasp.axis_of_rotation).matrix() << std::endl;
+    ASSERT_EQ(0.02, grasp->gap_size);
+    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp->approach);
+    ASSERT_EQ(4, grasp->rotational_symmetry);
+    ASSERT_EQ("area/front/handle", grasp->contact_shape_ids[0]);
+    ASSERT_EQ("area/back/handle", grasp->contact_shape_ids[1]);
 
     // ASSERT_TRUE((tf_ptr->local.linear() * grasp.axis_of_rotation).isApprox(Eigen::Vector3d(1, 0, 0)));
-    std::cout << grasp.axis_of_rotation.matrix() << std::endl;
-    ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(grasp->axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
 
-    auto& vshape = grasp.canonical_surface;
+    auto& vshape = grasp->canonical_surface;
     ASSERT_EQ(ShapeType::Rectangle, vshape.type);
     ASSERT_EQ(0.01, vshape.dimensions.at(0));
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
@@ -738,21 +690,19 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& sid = id_map.begin()->first;
     auto& eid = id_map.begin()->second;
 
-    ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
-    auto& component = db.get_component<components::ParallelGraspComponent>(eid);
+    auto grasp = sodf::getComponentElement<components::ParallelGraspComponent>(db, eid, "grasp");
+    auto tf_node = sodf::getComponentElement<components::TransformComponent>(db, eid, "grasp");
+    ASSERT_NE(grasp, nullptr);
+    ASSERT_NE(tf_node, nullptr);
 
-    const auto* grasp_ptr = find_in_flat_map(component.grasp_map, "grasp");
-    ASSERT_TRUE(grasp_ptr);
-    const auto& grasp = *grasp_ptr;
+    ASSERT_EQ(0.02, grasp->gap_size);
+    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp->approach);
+    ASSERT_EQ(4, grasp->rotational_symmetry);
+    ASSERT_EQ(1, grasp->contact_shape_ids.size());
+    ASSERT_EQ("box", grasp->contact_shape_ids[0]);
+    ASSERT_TRUE(grasp->axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
 
-    ASSERT_EQ(0.02, grasp.gap_size);
-    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp.approach);
-    ASSERT_EQ(4, grasp.rotational_symmetry);
-    ASSERT_EQ(1, grasp.contact_shape_ids.size());
-    ASSERT_EQ("box", grasp.contact_shape_ids[0]);
-    ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
-
-    auto& vshape = grasp.canonical_surface;
+    auto& vshape = grasp->canonical_surface;
     ASSERT_EQ(ShapeType::Rectangle, vshape.type);
     ASSERT_EQ(0.02, vshape.dimensions.at(0));
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
@@ -810,21 +760,19 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& sid = id_map.begin()->first;
     auto& eid = id_map.begin()->second;
 
-    ASSERT_TRUE(db.has_component<components::ParallelGraspComponent>(eid));
-    auto& component = db.get_component<components::ParallelGraspComponent>(eid);
+    auto grasp = sodf::getComponentElement<components::ParallelGraspComponent>(db, eid, "grasp");
+    auto tf_node = sodf::getComponentElement<components::TransformComponent>(db, eid, "grasp");
+    ASSERT_NE(grasp, nullptr);
+    ASSERT_NE(tf_node, nullptr);
 
-    const auto* grasp_ptr = find_in_flat_map(component.grasp_map, "grasp");
-    ASSERT_TRUE(grasp_ptr);
-    const auto& grasp = *grasp_ptr;
+    ASSERT_EQ(0.024, grasp->gap_size);
+    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp->approach);
+    ASSERT_EQ(0, grasp->rotational_symmetry);
+    ASSERT_EQ(1, grasp->contact_shape_ids.size());
+    ASSERT_EQ("cylinder", grasp->contact_shape_ids[0]);
+    ASSERT_TRUE(grasp->axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
 
-    ASSERT_EQ(0.024, grasp.gap_size);
-    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp.approach);
-    ASSERT_EQ(0, grasp.rotational_symmetry);
-    ASSERT_EQ(1, grasp.contact_shape_ids.size());
-    ASSERT_EQ("cylinder", grasp.contact_shape_ids[0]);
-    ASSERT_TRUE(grasp.axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
-
-    auto& vshape = grasp.canonical_surface;
+    auto& vshape = grasp->canonical_surface;
     ASSERT_EQ(ShapeType::Line, vshape.type);
     ASSERT_EQ(1, vshape.dimensions.size());
     ASSERT_EQ(0.02, vshape.dimensions.at(0));
