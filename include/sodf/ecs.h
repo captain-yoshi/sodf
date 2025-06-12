@@ -78,7 +78,7 @@ const Value* getComponentElement(const std::vector<std::pair<Key, Value>>& eleme
 }
 
 template <typename Value>
-Value* getComponentElement(std::vector<std::pair<std::string, Value>>& elements, std::string_view key)
+Value* getComponentElement(std::vector<std::pair<std::string, Value>>& elements, const std::string_view key)
 {
   for (auto& [k, v] : elements)
   {
@@ -89,7 +89,7 @@ Value* getComponentElement(std::vector<std::pair<std::string, Value>>& elements,
 }
 
 template <typename Value>
-const Value* getComponentElement(const std::vector<std::pair<std::string, Value>>& elements, std::string_view key)
+const Value* getComponentElement(const std::vector<std::pair<std::string, Value>>& elements, const std::string_view key)
 {
   for (const auto& [k, v] : elements)
   {
@@ -113,7 +113,7 @@ const Value* getComponentElement(const std::vector<std::pair<std::string, Value>
  * @return Pointer to the element value, or nullptr if not found.
  */
 template <typename ComponentT>
-auto* getComponentElement(ginseng::database& db, sodf::EntityID eid, const std::string& key)
+auto* getComponentElement(ginseng::database& db, const sodf::EntityID eid, const std::string& key)
 {
   ComponentT* comp = db.get_component<ComponentT*>(eid);
   if (!comp)
@@ -123,7 +123,7 @@ auto* getComponentElement(ginseng::database& db, sodf::EntityID eid, const std::
 }
 
 template <typename ComponentT>
-auto* getComponentElement(ginseng::database& db, sodf::EntityID eid, std::string_view key)
+auto* getComponentElement(ginseng::database& db, const sodf::EntityID eid, const std::string_view key)
 {
   ComponentT* comp = db.get_component<ComponentT*>(eid);
   if (!comp)
@@ -133,7 +133,13 @@ auto* getComponentElement(ginseng::database& db, sodf::EntityID eid, std::string
 }
 
 template <typename ComponentT>
-const auto* getComponentElement(const ginseng::database& db, sodf::EntityID eid, std::string_view key)
+auto* getComponentElement(ginseng::database& db, const sodf::EntityID eid, const char* key)
+{
+  return getComponentElement<ComponentT>(db, eid, std::string_view(key));
+}
+
+template <typename ComponentT>
+const auto* getComponentElement(const ginseng::database& db, const sodf::EntityID eid, const std::string_view key)
 {
   const ComponentT* comp = db.get_component<const ComponentT*>(eid);
   if (!comp)
@@ -143,7 +149,7 @@ const auto* getComponentElement(const ginseng::database& db, sodf::EntityID eid,
 }
 
 template <typename ComponentT>
-const auto* getComponentElement(const ginseng::database& db, sodf::EntityID eid, const std::string& key)
+const auto* getComponentElement(const ginseng::database& db, const sodf::EntityID eid, const std::string& key)
 {
   const ComponentT* comp = db.get_component<const ComponentT*>(eid);
   if (!comp)
@@ -151,6 +157,13 @@ const auto* getComponentElement(const ginseng::database& db, sodf::EntityID eid,
 
   return getComponentElement(comp->elements, key);
 }
+
+template <typename ComponentT>
+const auto* getComponentElement(const ginseng::database& db, const sodf::EntityID eid, const char* key)
+{
+  return getComponentElement<ComponentT>(db, eid, std::string_view(key));
+}
+
 }  // namespace sodf
 
 #endif  // ECS_H_
