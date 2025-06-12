@@ -1016,10 +1016,15 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   if (const auto* a = elem->FirstChildElement("AxisBottom"))
     container.axis_bottom = parseUnitVector(a);
   else
-    throw std::runtime_error("Container missing AxisBottom.");
+    throw std::runtime_error("Container missing AxisBottom at line " + std::to_string(elem->GetLineNum()));
 
-  // Material
-  // TODO
+  if (const auto* a = elem->FirstChildElement("AxisReference"))
+    container.axis_reference = parseUnitVector(a);
+  else
+    throw std::runtime_error("Container missing AxisReference at line " + std::to_string(elem->GetLineNum()));
+
+  if (!areVectorsOrthonormal(container.axis_bottom, container.axis_reference, 1e-09))
+    throw std::runtime_error("Axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
 
   // Content (first one only)
   if (const auto* cont = elem->FirstChildElement("Content"))
@@ -1032,7 +1037,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   }
 
   // Parse <DomainShapeRef>
-  if (const tinyxml2::XMLElement* domainShapeRefElem = elem->FirstChildElement("DomainShape"))
+  if (const tinyxml2::XMLElement* domainShapeRefElem = elem->FirstChildElement("DomainShapeRef"))
   {
     if (const char* domain_id = domainShapeRefElem->Attribute("id"))
     {
@@ -1040,7 +1045,22 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
     }
     else
     {
-      throw std::runtime_error("Missing id attribute in <DomainShape>");
+      throw std::runtime_error("Missing id attribute in <DomainShapeRef> at line " +
+                               std::to_string(domainShapeRefElem->GetLineNum()));
+    }
+  }
+
+  // Parse <LiquidLevelJointRef>
+  if (const tinyxml2::XMLElement* liquidLevelJointRefElem = elem->FirstChildElement("LiquidLevelJointRef"))
+  {
+    if (const char* joint_id = liquidLevelJointRefElem->Attribute("id"))
+    {
+      container.liquid_level_joint_id = joint_id;
+    }
+    else
+    {
+      throw std::runtime_error("Missing id attribute in <LiquidLevelJointRef> at line " +
+                               std::to_string(liquidLevelJointRefElem->GetLineNum()));
     }
   }
 
