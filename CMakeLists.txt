@@ -78,6 +78,7 @@ add_library(${PROJECT_NAME}
   src/systems/fsm.cpp
   src/systems/scene_graph.cpp
   src/xml_parser.cpp
+  src/xml_for_loop_parser.cpp
 )
 
 # Internal libraries

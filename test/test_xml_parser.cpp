@@ -1,5 +1,6 @@
 #include <cmath>
 #include <sodf/xml_parser.h>
+#include <sodf/xml_for_loop_parser.h>
 
 #include <sodf/components/container.h>
 #include <sodf/components/domain_shape.h>
@@ -786,5 +787,125 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(2, vshape.vertices.size());
     ASSERT_TRUE(vshape.vertices[0].isApprox(Eigen::Vector3d(-0.01, 0, 0)));
     ASSERT_TRUE(vshape.vertices[1].isApprox(Eigen::Vector3d(0.01, 0, 0)));
+  }
+}
+
+TEST(XMLParser, ExpandForLoop)
+{
+  {
+    // Simulate TinyXML2 element creation
+    tinyxml2::XMLDocument doc;
+    auto* forElem = doc.NewElement("ForLoop");
+    forElem->SetAttribute("row_name", "A:C:1");
+    forElem->SetAttribute("row", "1:3:1");
+    forElem->SetAttribute("col", "0:2:1");
+    forElem->SetAttribute("zipped", "[row_name,row]");
+
+    // Use ForLoop expansion to print all variable combinations
+    std::ostringstream oss;
+    expandForLoop(forElem, [&](const std::map<std::string, std::string>& ctx) {
+      oss << "row_name=" << ctx.at("row_name") << ", row=" << ctx.at("row") << ", col=" << ctx.at("col") << "\n";
+    });
+
+    std::string expected = "row_name=A, row=1, col=0\n"
+                           "row_name=A, row=1, col=1\n"
+                           "row_name=A, row=1, col=2\n"
+                           "row_name=B, row=2, col=0\n"
+                           "row_name=B, row=2, col=1\n"
+                           "row_name=B, row=2, col=2\n"
+                           "row_name=C, row=3, col=0\n"
+                           "row_name=C, row=3, col=1\n"
+                           "row_name=C, row=3, col=2\n";
+    ASSERT_EQ(oss.str(), expected);
+  }
+
+  {
+    // Simulate TinyXML2 element creation
+    tinyxml2::XMLDocument doc;
+    auto* forElem = doc.NewElement("ForLoop");
+    forElem->SetAttribute("row_name", "a:e:2");
+    forElem->SetAttribute("row", "1:3:1");
+    forElem->SetAttribute("col", "0:1:1");
+    // No zipped attribute!
+
+    std::ostringstream oss;
+    expandForLoop(forElem, [&](const std::map<std::string, std::string>& ctx) {
+      oss << "row_name=" << ctx.at("row_name") << ", row=" << ctx.at("row") << ", col=" << ctx.at("col") << "\n";
+    });
+
+    // No zipped: Cartesian product (col varies fastest)
+    std::string expected = "row_name=a, row=1, col=0\n"
+                           "row_name=a, row=1, col=1\n"
+                           "row_name=a, row=2, col=0\n"
+                           "row_name=a, row=2, col=1\n"
+                           "row_name=a, row=3, col=0\n"
+                           "row_name=a, row=3, col=1\n"
+                           "row_name=c, row=1, col=0\n"
+                           "row_name=c, row=1, col=1\n"
+                           "row_name=c, row=2, col=0\n"
+                           "row_name=c, row=2, col=1\n"
+                           "row_name=c, row=3, col=0\n"
+                           "row_name=c, row=3, col=1\n"
+                           "row_name=e, row=1, col=0\n"
+                           "row_name=e, row=1, col=1\n"
+                           "row_name=e, row=2, col=0\n"
+                           "row_name=e, row=2, col=1\n"
+                           "row_name=e, row=3, col=0\n"
+                           "row_name=e, row=3, col=1\n";
+    ASSERT_EQ(oss.str(), expected);
+  }
+
+  std::cout << "Yolo" << std::endl;
+
+  {
+    tinyxml2::XMLDocument doc;
+    auto* forElem = doc.NewElement("ForLoop");
+    forElem->SetAttribute("row_name", "a:e:2:aa:ba:2:A:E:2:AA:BA:2");
+
+    std::ostringstream oss;
+    expandForLoop(forElem, [&](const std::map<std::string, std::string>& ctx) {
+      oss << "row_name=" << ctx.at("row_name") << "\n";
+    });
+
+    std::string expected =
+        // a:e:2
+        "row_name=a\n"
+        "row_name=c\n"
+        "row_name=e\n"
+        // aa:ba:2
+        "row_name=aa\n"
+        "row_name=ac\n"
+        "row_name=ae\n"
+        "row_name=ag\n"
+        "row_name=ai\n"
+        "row_name=ak\n"
+        "row_name=am\n"
+        "row_name=ao\n"
+        "row_name=aq\n"
+        "row_name=as\n"
+        "row_name=au\n"
+        "row_name=aw\n"
+        "row_name=ay\n"
+        "row_name=ba\n"
+        // A:E:2
+        "row_name=A\n"
+        "row_name=C\n"
+        "row_name=E\n"
+        // AA:BA:2
+        "row_name=AA\n"
+        "row_name=AC\n"
+        "row_name=AE\n"
+        "row_name=AG\n"
+        "row_name=AI\n"
+        "row_name=AK\n"
+        "row_name=AM\n"
+        "row_name=AO\n"
+        "row_name=AQ\n"
+        "row_name=AS\n"
+        "row_name=AU\n"
+        "row_name=AW\n"
+        "row_name=AY\n"
+        "row_name=BA\n";
+    ASSERT_EQ(oss.str(), expected);
   }
 }
