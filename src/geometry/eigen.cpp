@@ -55,5 +55,50 @@ Eigen::Vector3d computeOrthogonalAxis(const Eigen::Vector3d& axis)
   return axis.cross(fallback).normalized();
 }
 
+bool isUnitVector(const Eigen::Vector3d& v, double tol)
+{
+  return std::abs(v.norm() - 1.0) < tol;
+}
+
+bool areVectorsOrthogonal(const Eigen::Vector3d& a, const Eigen::Vector3d& b, double tol)
+{
+  // Optional: Validate input vectors are unit length (within a tolerance)
+  if (std::abs(a.norm() - 1.0) > tol || std::abs(b.norm() - 1.0) > tol)
+    return false;
+
+  // Orthogonality: dot product should be zero (within tolerance)
+  return std::abs(a.dot(b)) < tol;
+}
+
+bool areVectorsOrthonormal(const Eigen::Vector3d& a, const Eigen::Vector3d& b, double tol)
+{
+  // Check unit length
+  if (std::abs(a.norm() - 1.0) > tol || std::abs(b.norm() - 1.0) > tol)
+    return false;
+
+  // Check orthogonality
+  if (std::abs(a.dot(b)) > tol)
+    return false;
+
+  return true;
+}
+
+bool areVectorsOrthonormal(const Eigen::Vector3d& a, const Eigen::Vector3d& b, const Eigen::Vector3d& c, double tol)
+{
+  // Check all are unit length
+  if (std::abs(a.norm() - 1.0) > tol || std::abs(b.norm() - 1.0) > tol || std::abs(c.norm() - 1.0) > tol)
+    return false;
+
+  // Check pairwise orthogonality
+  if (std::abs(a.dot(b)) > tol)
+    return false;
+  if (std::abs(a.dot(c)) > tol)
+    return false;
+  if (std::abs(b.dot(c)) > tol)
+    return false;
+
+  return true;
+}
+
 }  // namespace geometry
 }  // namespace sodf

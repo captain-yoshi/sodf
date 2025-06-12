@@ -23,6 +23,15 @@ Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3
 
 Eigen::Vector3d computeOrthogonalAxis(const Eigen::Vector3d& axis);
 
+bool isUnitVector(const Eigen::Vector3d& v, double tol = 1e-9);
+
+bool areVectorsOrthogonal(const Eigen::Vector3d& a, const Eigen::Vector3d& b, double tol = 1e-9);
+
+// Returns true if all axes are mutually orthogonal and unit length (within tol)
+bool areVectorsOrthonormal(const Eigen::Vector3d& a, const Eigen::Vector3d& b, double tol = 1e-9);
+bool areVectorsOrthonormal(const Eigen::Vector3d& a, const Eigen::Vector3d& b, const Eigen::Vector3d& c,
+                           double tol = 1e-9);
+
 }  // namespace geometry
 }  // namespace sodf
 
