@@ -855,8 +855,6 @@ TEST(XMLParser, ExpandForLoop)
     ASSERT_EQ(oss.str(), expected);
   }
 
-  std::cout << "Yolo" << std::endl;
-
   {
     tinyxml2::XMLDocument doc;
     auto* forElem = doc.NewElement("ForLoop");
@@ -907,5 +905,89 @@ TEST(XMLParser, ExpandForLoop)
         "row_name=AY\n"
         "row_name=BA\n";
     ASSERT_EQ(oss.str(), expected);
+  }
+}
+
+TEST(XMLParser, ComponentsForLoop)
+{
+  // Example: Create a 2x3 (for simplicity in test), but you can do A:H and 1:12 for 96 wells
+  std::string xml_txt = R"(
+    <root>
+      <Object id="plate">
+
+        <StackedShape id="stacked_shape">
+          <Shape type="SphericalSegment">
+            <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+            <AxisReference x="1.0" y="0.0" z="0.0"/>
+            <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
+          </Shape>
+
+          <Shape type="Cone">
+            <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+            <AxisReference x="1.0" y="0.0" z="0.0"/>
+            <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
+          </Shape>
+
+          <Shape type="Cone">
+            <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+            <AxisReference x="1.0" y="0.0" z="0.0"/>
+            <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
+          </Shape>
+
+          <Shape type="Cylinder">
+            <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+            <AxisReference x="1.0" y="0.0" z="0.0"/>
+            <Dimensions radius="0.00275" height="0.0040"/>
+          </Shape>
+        </StackedShape>
+
+        <FluidDomainShape id="fluid/container">
+          <StackedShape id="stacked_shape"/>
+        </FluidDomainShape>)
+
+
+        <ForLoop row_name="A:B:1" row="1:2:1" col="1:3:1" zipped="[row_name,row]">
+          <Container id="container/{row_name}{col}">
+            <Transform parent="root">
+              <Position x="{col}.1" y="{row}.2" z="0.0008"/>
+              <Orientation roll="0.0" pitch="1.57079632679" yaw="0.0"/>
+            </Transform>
+            <Material type="polypropylene"/>
+            <Content type="empty" volume="0.0" units="uL"/>
+            <AxisBottom x="1.0" y="0.0" z="0.0"/>
+            <AxisReference x="0.0" y="1.0" z="0.0"/>
+            <DomainShapeRef id="fluid/well_250ul"/>
+            <LiquidLevelJointRef id="container/{row_name}{col}/liquid_level"/>
+          </Container>
+        </ForLoop>
+      </Object>
+    </root>
+    )";
+
+  XMLParser parser;
+  auto db = ginseng::database{};
+  parser.loadEntitiesFromText(xml_txt, db);
+
+  // Find the object entity
+  std::unordered_map<std::string, ginseng::database::ent_id> id_map;
+  db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+    id_map.insert({ object.id, id });
+  });
+
+  ASSERT_TRUE(!id_map.empty());
+  ASSERT_EQ(1u, id_map.size());
+
+  const auto& eid = id_map.begin()->second;
+
+  std::vector<std::string> expected_ids = { "container/A1", "container/A2", "container/A3",
+                                            "container/B1", "container/B2", "container/B3" };
+
+  for (const auto& cid : expected_ids)
+  {
+    auto* cont = sodf::getComponentElement<components::ContainerComponent>(db, eid, cid);
+    ASSERT_NE(cont, nullptr) << "Missing container: " << cid;
+    ASSERT_EQ(cont->volume, 0.0);
+    ASSERT_EQ(cont->domain_shape_id, "fluid/well_250ul");
+    ASSERT_EQ(cont->liquid_level_joint_id, cid + "/liquid_level");
   }
 }
