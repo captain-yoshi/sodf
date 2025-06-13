@@ -1,12 +1,15 @@
 #include <cmath>
-#include <sodf/xml_parser.h>
-#include <sodf/xml_for_loop_parser.h>
+#include <sodf/xml/entity_parser.h>
+#include <sodf/xml/element_parser.h>
+#include <sodf/xml/component_parser.h>
+#include <sodf/xml/for_loop_parser.h>
 
 #include <sodf/components/container.h>
 #include <sodf/components/domain_shape.h>
 #include <sodf/components/grasp.h>
 #include <sodf/components/object.h>
 #include <sodf/components/shape.h>
+#include <sodf/components/transform.h>
 
 #include <gtest/gtest.h>
 
@@ -29,7 +32,7 @@ TEST(XMLParser, ParseRectangleShape)
   const tinyxml2::XMLElement* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Rectangle);
   EXPECT_DOUBLE_EQ(shape.dimensions[0], 0.05);
@@ -53,7 +56,7 @@ TEST(XMLParser, ParseCircleShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Circle);
   EXPECT_DOUBLE_EQ(shape.dimensions[0], 0.025);
@@ -81,7 +84,7 @@ TEST(XMLParser, ParseTriangleShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Triangle);
   ASSERT_EQ(shape.vertices.size(), 3);
@@ -111,7 +114,7 @@ TEST(XMLParser, ParsePolygonShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Polygon);
   ASSERT_EQ(shape.vertices.size(), 4);
@@ -136,7 +139,7 @@ TEST(XMLParser, ParseBoxShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Box);
   ASSERT_EQ(shape.axes.size(), 3);
@@ -159,7 +162,7 @@ TEST(XMLParser, ParseCylinderShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Cylinder);
   ASSERT_EQ(shape.axes.size(), 2);
@@ -179,7 +182,7 @@ TEST(XMLParser, ParseSphereShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Sphere);
   // Spheres often have no axis, but you could assert shape.axes.size() == 0
@@ -197,7 +200,7 @@ TEST(XMLParser, ParseMeshShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Mesh);
 }
@@ -217,7 +220,7 @@ TEST(XMLParser, ParsePlaneShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Plane);
   ASSERT_EQ(shape.axes.size(), 3);
@@ -240,7 +243,7 @@ TEST(XMLParser, ParseConeShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Cone);
   ASSERT_EQ(shape.axes.size(), 2);
@@ -261,7 +264,7 @@ TEST(XMLParser, ParseLineShapeAnchor)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 1);
@@ -281,7 +284,7 @@ TEST(XMLParser, ParseLine2DShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
@@ -300,7 +303,7 @@ TEST(XMLParser, ParseLine3DShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = sodf::parseShape(elem);
+  Shape shape = xml::parseShape(elem);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
@@ -363,11 +366,11 @@ TEST(XMLParser, FluidDomaineShapeComponent)
     std::string tag = child->Name();
     if (tag == "StackedShape")
     {
-      sodf::parseStackedShapeComponent(child, db, eid);
+      xml::parseStackedShapeComponent(child, db, eid);
     }
     else if (tag == "FluidDomainShape")
     {
-      sodf::parseFluidDomainShapeComponent(child, db, eid);
+      xml::parseFluidDomainShapeComponent(child, db, eid);
     }
   }
 
@@ -484,15 +487,15 @@ TEST(XMLParser, ContainerComponent)
     std::string tag = child->Name();
     if (tag == "StackedShape")
     {
-      sodf::parseStackedShapeComponent(child, db, eid);
+      xml::parseStackedShapeComponent(child, db, eid);
     }
     else if (tag == "FluidDomainShape")
     {
-      sodf::parseFluidDomainShapeComponent(child, db, eid);
+      xml::parseFluidDomainShapeComponent(child, db, eid);
     }
     else if (tag == "Container")
     {
-      sodf::parseContainerComponent(child, db, eid);
+      xml::parseContainerComponent(child, db, eid);
     }
   }
 
@@ -532,7 +535,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
    </root>
   )";
 
-    XMLParser parser;
+    xml::EntityParser parser;
     auto db = ginseng::database{};
     ASSERT_ANY_THROW(parser.loadEntitiesFromText(xml_txt, db));
   }
@@ -607,7 +610,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     </root>
     )";
 
-    XMLParser parser;
+    xml::EntityParser parser;
     auto db = ginseng::database{};
     parser.loadEntitiesFromText(xml_txt, db);
 
@@ -677,7 +680,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     </root>
     )";
 
-    XMLParser parser;
+    xml::EntityParser parser;
     auto db = ginseng::database{};
     parser.loadEntitiesFromText(xml_txt, db);
 
@@ -747,7 +750,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     </root>
     )";
 
-    XMLParser parser;
+    xml::EntityParser parser;
     auto db = ginseng::database{};
     parser.loadEntitiesFromText(xml_txt, db);
 
@@ -803,7 +806,7 @@ TEST(XMLParser, ExpandForLoop)
 
     // Use ForLoop expansion to print all variable combinations
     std::ostringstream oss;
-    expandForLoop(forElem, [&](const std::map<std::string, std::string>& ctx) {
+    xml::expandForLoop(forElem, [&](const std::unordered_map<std::string, std::string>& ctx) {
       oss << "row_name=" << ctx.at("row_name") << ", row=" << ctx.at("row") << ", col=" << ctx.at("col") << "\n";
     });
 
@@ -829,7 +832,7 @@ TEST(XMLParser, ExpandForLoop)
     // No zipped attribute!
 
     std::ostringstream oss;
-    expandForLoop(forElem, [&](const std::map<std::string, std::string>& ctx) {
+    xml::expandForLoop(forElem, [&](const std::unordered_map<std::string, std::string>& ctx) {
       oss << "row_name=" << ctx.at("row_name") << ", row=" << ctx.at("row") << ", col=" << ctx.at("col") << "\n";
     });
 
@@ -861,7 +864,7 @@ TEST(XMLParser, ExpandForLoop)
     forElem->SetAttribute("row_name", "a:e:2:aa:ba:2:A:E:2:AA:BA:2");
 
     std::ostringstream oss;
-    expandForLoop(forElem, [&](const std::map<std::string, std::string>& ctx) {
+    xml::expandForLoop(forElem, [&](const std::unordered_map<std::string, std::string>& ctx) {
       oss << "row_name=" << ctx.at("row_name") << "\n";
     });
 
@@ -964,7 +967,7 @@ TEST(XMLParser, ComponentsForLoop)
     </root>
     )";
 
-  XMLParser parser;
+  xml::EntityParser parser;
   auto db = ginseng::database{};
   parser.loadEntitiesFromText(xml_txt, db);
 

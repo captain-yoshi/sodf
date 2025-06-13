@@ -1,25 +1,21 @@
 #ifndef SODF_XML_FOR_LOOP_PARSER_H_
 #define SODF_XML_FOR_LOOP_PARSER_H_
 
-#include <iostream>
+#include <functional>
+#include <tinyxml2.h>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
-#include <functional>
-#include <sstream>
-#include <algorithm>
-#include <cctype>
-#include <tinyxml2.h>
 
 namespace sodf {
-
-// --- Helpers ---
+namespace xml {
 
 // Split string (by single char delimiter)
 std::vector<std::string> split(const std::string& s, char sep);
 
 // Trim leading/trailing whitespace
 std::string trim(const std::string& s);
+
 // --- Loop variable specification ---
 struct LoopVarSpec
 {
@@ -41,20 +37,22 @@ LoopVarSpec parseLoopVarSpec(const std::string& name, const std::string& val);
 std::vector<std::string> parseZipped(const std::string& zipped_val);
 
 // Recursively expand non-zipped vars
-void expandCartesian(const std::vector<LoopVarSpec>& vars, size_t idx, std::map<std::string, std::string>& ctx,
-                     const std::function<void(const std::map<std::string, std::string>&)>& body);
+void expandCartesian(const std::vector<LoopVarSpec>& vars, size_t idx,
+                     std::unordered_map<std::string, std::string>& ctx,
+                     const std::function<void(const std::unordered_map<std::string, std::string>&)>& body);
 
 // Top-level ForLoop handler
 void expandForLoop(const tinyxml2::XMLElement* forElem,
-                   const std::function<void(const std::map<std::string, std::string>&)>& body);
+                   const std::function<void(const std::unordered_map<std::string, std::string>&)>& body);
 
 // Substitute {var} in input string with values from ctx map
-std::string substituteVars(const std::string& input, const std::map<std::string, std::string>& ctx);
+std::string substituteVars(const std::string& input, const std::unordered_map<std::string, std::string>& ctx);
 
 // Clone an element and substitute {vars} in all attributes/children
 tinyxml2::XMLElement* cloneAndSubstitute(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc,
-                                         const std::map<std::string, std::string>& ctx);
+                                         const std::unordered_map<std::string, std::string>& ctx);
 
+}  // namespace xml
 }  // namespace sodf
 
 #endif  // SODF_XML_FOR_LOOP_PARSER_H_

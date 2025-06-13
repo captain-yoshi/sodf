@@ -77,8 +77,11 @@ add_library(${PROJECT_NAME}
   src/physics/fluid_domain_shape.cpp
   src/systems/fsm.cpp
   src/systems/scene_graph.cpp
-  src/xml_parser.cpp
-  src/xml_for_loop_parser.cpp
+  src/xml/component_parser.cpp
+  src/xml/element_parser.cpp
+  src/xml/entity_parser.cpp
+  src/xml/expression_parser.cpp
+  src/xml/for_loop_parser.cpp
 )
 
 # Internal libraries

@@ -1,6 +1,6 @@
 
 #include <sodf/ecs.h>
-#include <sodf/xml_parser.h>
+#include <sodf/xml/entity_parser.h>
 
 #include <sodf/components/button.h>
 #include <sodf/components/joint.h>
@@ -22,7 +22,7 @@ TEST(ECS, ParsingSingleObject)
 {
   std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/biorad/thermocycler_t100.xml";
 
-  XMLParser parser;
+  xml::EntityParser parser;
   auto db = ginseng::database{};
   parser.loadEntitiesFromFile(filename, db);
 
@@ -174,7 +174,7 @@ TEST(ECS, ParseScene1)
 {
   std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/scene.xml";
 
-  XMLParser parser;
+  xml::EntityParser parser;
   auto db = ginseng::database{};
   parser.loadEntitiesFromFile(filename, db);
 
@@ -237,7 +237,7 @@ TEST(ECS, ParseScene2)
 {
   std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/scene2.xml";
 
-  XMLParser parser;
+  xml::EntityParser parser;
   auto db = ginseng::database{};
   parser.loadEntitiesFromFile(filename, db);
 

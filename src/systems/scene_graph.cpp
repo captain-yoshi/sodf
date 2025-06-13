@@ -376,7 +376,7 @@ void update_all_global_transforms(ginseng::database& db)
  * @param frame_name The name of the frame (e.g. "top", "button/power").
  * @return           The Eigen::Isometry3d global pose of the frame.
  */
-inline Eigen::Isometry3d get_global_transform(ginseng::database& db, EntityID eid, const std::string& frame_name)
+Eigen::Isometry3d get_global_transform(ginseng::database& db, EntityID eid, const std::string& frame_name)
 {
   auto* tf = getComponentElement<components::TransformComponent>(db, eid, frame_name);
   if (!tf)
@@ -393,7 +393,7 @@ inline Eigen::Isometry3d get_global_transform(ginseng::database& db, EntityID ei
  * @param abs_path   Absolute path string: "/objectid/framename"
  * @return           The Eigen::Isometry3d global pose of the frame.
  */
-inline Eigen::Isometry3d get_global_transform(ginseng::database& db, const std::string& abs_path)
+Eigen::Isometry3d get_global_transform(ginseng::database& db, const std::string& abs_path)
 {
   // Remove leading slash and split at the next slash
   if (abs_path.empty() || abs_path[0] != '/')

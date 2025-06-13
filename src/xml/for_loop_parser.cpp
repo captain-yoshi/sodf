@@ -1,7 +1,11 @@
-#include <sodf/xml_for_loop_parser.h>
+#include <sodf/xml/for_loop_parser.h>
 #include <cctype>
 
+#include <sstream>
+#include <exception>
+
 namespace sodf {
+namespace xml {
 
 std::vector<std::string> split(const std::string& s, char sep)
 {
@@ -73,7 +77,7 @@ std::vector<std::string> expandCharTriplet(const std::string& start, const std::
 std::vector<std::string> parseCharMultiTriplet(const std::string& val)
 {
   std::vector<std::string> values;
-  auto tokens = sodf::split(val, ':');
+  auto tokens = split(val, ':');
   if (tokens.size() % 3 != 0)
     throw std::runtime_error("parseCharMultiTriplet: Must have triplets of start:end:step.");
   for (size_t i = 0; i < tokens.size(); i += 3)
@@ -121,8 +125,9 @@ std::vector<std::string> parseZipped(const std::string& zipped_val)
   return vars;
 }
 
-void expandCartesian(const std::vector<LoopVarSpec>& vars, size_t idx, std::map<std::string, std::string>& ctx,
-                     const std::function<void(const std::map<std::string, std::string>&)>& body)
+void expandCartesian(const std::vector<LoopVarSpec>& vars, size_t idx,
+                     std::unordered_map<std::string, std::string>& ctx,
+                     const std::function<void(const std::unordered_map<std::string, std::string>&)>& body)
 {
   if (idx == vars.size())
   {
@@ -138,7 +143,7 @@ void expandCartesian(const std::vector<LoopVarSpec>& vars, size_t idx, std::map<
 }
 
 void expandForLoop(const tinyxml2::XMLElement* forElem,
-                   const std::function<void(const std::map<std::string, std::string>&)>& body)
+                   const std::function<void(const std::unordered_map<std::string, std::string>&)>& body)
 {
   // 1. Ordered variable specs
   std::vector<LoopVarSpec> vars;
@@ -185,7 +190,7 @@ void expandForLoop(const tinyxml2::XMLElement* forElem,
     // Loop over zipped
     for (size_t i = 0; i < zipLen; ++i)
     {
-      std::map<std::string, std::string> ctx;
+      std::unordered_map<std::string, std::string> ctx;
       // Fill zipped values
       for (size_t j = 0; j < zippedIndices.size(); ++j)
         ctx[vars[zippedIndices[j]].name] = vars[zippedIndices[j]].values[i];
@@ -203,11 +208,11 @@ void expandForLoop(const tinyxml2::XMLElement* forElem,
   else
   {
     // No zipped: expand all combinations
-    std::map<std::string, std::string> ctx;
+    std::unordered_map<std::string, std::string> ctx;
     expandCartesian(vars, 0, ctx, body);
   }
 }
-std::string substituteVars(const std::string& input, const std::map<std::string, std::string>& ctx)
+std::string substituteVars(const std::string& input, const std::unordered_map<std::string, std::string>& ctx)
 {
   std::string result = input;
   size_t pos = 0;
@@ -232,7 +237,7 @@ std::string substituteVars(const std::string& input, const std::map<std::string,
 }
 
 tinyxml2::XMLElement* cloneAndSubstitute(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc,
-                                         const std::map<std::string, std::string>& ctx)
+                                         const std::unordered_map<std::string, std::string>& ctx)
 {
   auto* cloned = doc->NewElement(elem->Name());
   // Copy and substitute attributes
@@ -256,4 +261,5 @@ tinyxml2::XMLElement* cloneAndSubstitute(const tinyxml2::XMLElement* elem, tinyx
   return cloned;
 }
 
+}  // namespace xml
 }  // namespace sodf

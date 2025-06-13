@@ -1,5 +1,5 @@
-#ifndef SODF_XML_MACRO_H_
-#define SODF_XML_MACRO_H_
+#ifndef SODF_XML_MACROS_H_
+#define SODF_XML_MACROS_H_
 
 #include <string>
 #include <functional>
@@ -9,6 +9,7 @@
 #include <sodf/ecs.h>
 
 namespace sodf {
+namespace xml {
 
 // forward declaration
 void parseActionMapComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
@@ -107,6 +108,7 @@ static const std::vector<SubParseFunc> subParseFuncs = {
 #undef X
 };
 
+}  // namespace xml
 }  // namespace sodf
 
-#endif  // SODF_XML_MACRO_H_
+#endif  // SODF_XML_MACROS_H_
