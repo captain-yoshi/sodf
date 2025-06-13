@@ -4,6 +4,7 @@
 
 #include <sodf/xml_macro.h>
 #include <sodf/xml_parser.h>
+#include <sodf/xml_for_loop_parser.h>
 
 #include <sodf/component_type.h>
 #include <sodf/components/action_map.h>
@@ -386,6 +387,46 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, const ObjectIndex& obje
   }
 }
 
+void parseComponentSubElements(const tinyxml2::XMLElement* parent, ginseng::database& db, EntityID eid)
+{
+  // Call every registered subcomponent parser with the parent element itself.
+  for (const auto& subParseFunc : sodf::subParseFuncs)
+  {
+    subParseFunc(parent, db, eid);
+  }
+}
+
+void parseComponentOrFor(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, ginseng::database& db,
+                         EntityID eid, size_t parseFuncIdx)
+{
+  if (parseFuncIdx == ForLoopIndex)
+  {
+    // Expand and parse each child for each ForLoop iteration
+    sodf::expandForLoop(elem, [&](const std::map<std::string, std::string>& ctx) {
+      for (const tinyxml2::XMLElement* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
+      {
+        tinyxml2::XMLElement* clone = cloneAndSubstitute(child, doc, ctx);
+
+        // Determine the type index of the expanded child
+        std::string child_tag = clone->Name();
+        auto opt_type = sodf::sceneComponentTypeFromString(child_tag);
+        if (!opt_type)
+          throw std::runtime_error("Unknown component type in ForLoop: <" + child_tag + ">");
+        size_t child_idx = static_cast<size_t>(*opt_type);
+
+        // Recursively handle, so nested ForLoops also work!
+        parseComponentOrFor(clone, doc, db, eid, child_idx);
+      }
+    });
+  }
+  else
+  {
+    // Standard component: parse and handle subcomponents
+    parseFuncs[parseFuncIdx](elem, db, eid);
+    parseComponentSubElements(elem, db, eid);
+  }
+}
+
 // Constructor to initialize filename
 XMLParser::XMLParser()
 {
@@ -438,9 +479,8 @@ bool XMLParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base
       size_t index = static_cast<size_t>(comp.type);
       if (index >= parseFuncs.size())
         throw std::runtime_error("No parse function for component id: " + comp.id);
-      parseFuncs[index](comp.xml, db, eid);
-      parseTransformComponent(comp.xml, db, eid);
-      parseActionMapComponent(comp.xml, db, eid);
+
+      parseComponentOrFor(comp.xml, doc, db, eid, index);
     }
   }
   return true;
@@ -1597,8 +1637,6 @@ ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem, const ShapeCo
       transform.local.linear() = rot;
       transform.local.translation() = ref_centroid;
 
-      std::cout << "tf = \n" << transform.local.matrix() << std::endl;
-
       grasp.axis_of_rotation = axis_rotational_grasp;
       // grasp.axis_of_rotation =
       //     rot * axis_rotational_grasp.normalized();  // Always the X axis in the grasp canonical frame
@@ -1623,9 +1661,6 @@ ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem, const ShapeCo
           ref_centroid -
           (getComponentElement(transform_component.elements, shape_ids[0])->local * getShapeCentroid(*shape_ptrs[0]));
       Eigen::Vector3d normal = rot.col(2);
-
-      std::cout << "to_virtual: " << to_virtual.transpose() << "  normal: " << normal.transpose()
-                << "  dot: " << to_virtual.dot(normal) << std::endl;
 
       auto tf0 = getComponentElement(transform_component.elements, shape_ids[0]);
       Eigen::Vector3d normal_contact = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[0]);
