@@ -2,6 +2,7 @@
 #include <iostream>
 #include <set>
 
+#include <sodf/xml_macro.h>
 #include <sodf/xml_parser.h>
 
 #include <sodf/component_type.h>
@@ -116,49 +117,6 @@ bool queryRequiredDoubleAttribute(const tinyxml2::XMLElement* elem, const char* 
   }
   return true;
 }
-
-/// Add only Object tag childrens, e.g. no Transform tag.
-#define SODF_COMPONENT_LIST(X)                                                                                         \
-  X(Origin, parseOriginComponent)                                                                                      \
-  X(Link, parseLinkComponent)                                                                                          \
-  X(Joint, parseJointComponent)                                                                                        \
-  X(FitConstraint, parseFitConstraintComponent)                                                                        \
-  X(Product, parseProductComponent)                                                                                    \
-  X(Touchscreen, parseTouchscreenComponent)                                                                            \
-  X(FSM, parseFSMComponent)                                                                                            \
-  X(Button, parseButtonComponent)                                                                                      \
-  X(VirtualButton, parseVirtualButtonComponent)                                                                        \
-  X(FluidDomainShape, parseFluidDomainShapeComponent)                                                                  \
-  X(Shape, parseShapeComponent)                                                                                        \
-  X(StackedShape, parseStackedShapeComponent)                                                                          \
-  X(ParallelGrasp, parseParallelGraspComponent)                                                                        \
-  X(Container, parseContainerComponent)
-
-enum class SceneComponentType
-{
-#define X(name, func) name,
-  SODF_COMPONENT_LIST(X)
-#undef X
-      COUNT
-};
-
-SceneComponentType sceneComponentTypeFromString(const std::string& name)
-{
-#define X(tag, func)                                                                                                   \
-  if (name == #tag)                                                                                                    \
-    return SceneComponentType::tag;
-  SODF_COMPONENT_LIST(X)
-#undef X
-  throw std::runtime_error("Unknown ComponentType string: " + name);
-}
-
-using ParseFunc = std::function<void(const tinyxml2::XMLElement*, ginseng::database&, sodf::EntityID)>;
-
-static const std::vector<ParseFunc> parseFuncs = {
-#define X(name, func) func,
-  SODF_COMPONENT_LIST(X)
-#undef X
-};
 
 // Stores all object elements with fully-qualified id
 // using ObjectIndex = std::unordered_map<std::string, const tinyxml2::XMLElement*>;
@@ -312,7 +270,10 @@ SceneObject composeObject(const tinyxml2::XMLElement* elem, const ObjectIndex& o
         for (const auto* comp = child->FirstChildElement(); comp; comp = comp->NextSiblingElement())
         {
           std::string comp_type_str = comp->Name();
-          SceneComponentType comp_type = sceneComponentTypeFromString(comp_type_str);
+          auto opt_type = sceneComponentTypeFromString(comp_type_str);
+          if (!opt_type)
+            throw std::runtime_error("Unknown ComponentType string: " + comp_type_str);
+          SceneComponentType comp_type = *opt_type;
           std::string comp_id = comp->Attribute("id") ? comp->Attribute("id") : "";
 
           auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
@@ -378,7 +339,12 @@ SceneObject composeObject(const tinyxml2::XMLElement* elem, const ObjectIndex& o
       }
       // Direct children act as upsert (default overlay)
       std::string comp_type_str = tag;
-      SceneComponentType comp_type = sceneComponentTypeFromString(comp_type_str);
+
+      auto opt_type = sceneComponentTypeFromString(comp_type_str);
+      if (!opt_type)
+        throw std::runtime_error("Unknown ComponentType string: " + comp_type_str);
+      SceneComponentType comp_type = *opt_type;
+
       std::string comp_id = child->Attribute("id") ? child->Attribute("id") : "";
 
       auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
