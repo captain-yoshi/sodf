@@ -656,82 +656,85 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
 
     TransformNode frame = parseTransformNode(transform_elem);
 
-    // store to component
-    if (std::strcmp(elem->Name(), "Container") == 0)
-    {
-      // Add bottom transform
-      std::string bottom_id = id_str + "/bottom";
-      auto* transform_component = getOrCreateComponent<TransformComponent>(db, eid);
-      transform_component->elements.emplace_back(bottom_id, frame);
+    auto* component = getOrCreateComponent<TransformComponent>(db, eid);
+    component->elements.emplace_back(id_str, std::move(frame));
 
-      auto* container_component = db.get_component<ContainerComponent*>(eid);
-      if (!container_component)
-        throw std::runtime_error("No ContainerComponent found for Container '" + id_str + "'");
+    // // store to component
+    // if (std::strcmp(elem->Name(), "Container") == 0)
+    // {
+    //   // Add bottom transform
+    //   std::string bottom_id = id_str + "/bottom";
+    //   auto* transform_component = getOrCreateComponent<TransformComponent>(db, eid);
+    //   transform_component->elements.emplace_back(bottom_id, frame);
 
-      auto container = getComponentElement(container_component->elements, id_str);
-      if (!container)
-        throw std::runtime_error("No Container entry found for '" + id_str + "' in ContainerComponent");
+    //   auto* container_component = db.get_component<ContainerComponent*>(eid);
+    //   if (!container_component)
+    //     throw std::runtime_error("No ContainerComponent found for Container '" + id_str + "'");
 
-      // TODO retrieve from geometrical shape or domain shape
-      auto* domain_component = db.get_component<DomainShapeComponent*>(eid);
-      if (!domain_component)
-        throw std::runtime_error("No DomainShapeComponent found for Container '" + id_str + "'");
+    //   auto container = getComponentElement(container_component->elements, id_str);
+    //   if (!container)
+    //     throw std::runtime_error("No Container entry found for '" + id_str + "' in ContainerComponent");
 
-      const auto domain_shapes = getComponentElement(domain_component->elements, container->domain_shape_id);
-      if (!domain_shapes)
-        throw std::runtime_error("DomainShapeComponent is empty");
+    //   // TODO retrieve from geometrical shape or domain shape
+    //   auto* domain_component = db.get_component<DomainShapeComponent*>(eid);
+    //   if (!domain_component)
+    //     throw std::runtime_error("No DomainShapeComponent found for Container '" + id_str + "'");
 
-      // // Add surface transform
-      // {
-      //   std::string surface_id = id_str + "/surface";
-      //   double current_height = physics::getFillHeight(*domain_shapes, container->volume, 10e-04);
+    //   const auto domain_shapes = getComponentElement(domain_component->elements, container->domain_shape_id);
+    //   if (!domain_shapes)
+    //     throw std::runtime_error("DomainShapeComponent is empty");
 
-      //   // Add virtual joint
-      //   auto joint = components::Joint{};
-      //   joint.type = components::JointType::PRISMATIC;
-      //   joint.actuation = components::JointActuation::VIRTUAL;
-      //   joint.position = -current_height;
-      //   joint.axis = container->axis_bottom;
+    //   // // Add surface transform
+    //   // {
+    //   //   std::string surface_id = id_str + "/surface";
+    //   //   double current_height = physics::getFillHeight(*domain_shapes, container->volume, 10e-04);
 
-      //   auto* joint_component = getOrCreateComponent<components::JointComponent>(db, eid);
-      //   joint_component->joint_map.emplace_back("joint/" + bottom_id, std::move(joint));
+    //   //   // Add virtual joint
+    //   //   auto joint = components::Joint{};
+    //   //   joint.type = components::JointType::PRISMATIC;
+    //   //   joint.actuation = components::JointActuation::VIRTUAL;
+    //   //   joint.position = -current_height;
+    //   //   joint.axis = container->axis_bottom;
 
-      //   // Add virtual joint transform
-      //   TransformNode joint_frame;
-      //   joint_frame.is_static = false;  // virtual prismatic joint to simulate liquid height
-      //   joint_frame.parent = bottom_id;
+    //   //   auto* joint_component = getOrCreateComponent<components::JointComponent>(db, eid);
+    //   //   joint_component->joint_map.emplace_back("joint/" + bottom_id, std::move(joint));
 
-      //   transform_component->transform_map.emplace_back("joint/" + bottom_id, std::move(joint_frame));
+    //   //   // Add virtual joint transform
+    //   //   TransformNode joint_frame;
+    //   //   joint_frame.is_static = false;  // virtual prismatic joint to simulate liquid height
+    //   //   joint_frame.parent = bottom_id;
 
-      //   // Add surface transform
-      //   TransformNode surface_frame;
-      //   surface_frame.is_static = true;  // virtual prismatic joint to simulate liquid height
-      //   surface_frame.parent = "joint/" + bottom_id;
+    //   //   transform_component->transform_map.emplace_back("joint/" + bottom_id, std::move(joint_frame));
 
-      //   transform_component->transform_map.emplace_back(surface_id, std::move(surface_frame));
-      // }
+    //   //   // Add surface transform
+    //   //   TransformNode surface_frame;
+    //   //   surface_frame.is_static = true;  // virtual prismatic joint to simulate liquid height
+    //   //   surface_frame.parent = "joint/" + bottom_id;
 
-      // // Add top transform
-      // {
-      //   double max_height = physics::getMaxFillHeight(*domain_shapes);
+    //   //   transform_component->transform_map.emplace_back(surface_id, std::move(surface_frame));
+    //   // }
 
-      //   // The axis points towards the bottom
-      //   Eigen::Vector3d top_offset = -container->axis_bottom.normalized() * max_height;
-      //   TransformNode top_frame = frame;
+    //   // // Add top transform
+    //   // {
+    //   //   double max_height = physics::getMaxFillHeight(*domain_shapes);
 
-      //   top_frame.local.translation().x() += top_offset.x();
-      //   top_frame.local.translation().y() += top_offset.y();
-      //   top_frame.local.translation().z() += top_offset.z();
+    //   //   // The axis points towards the bottom
+    //   //   Eigen::Vector3d top_offset = -container->axis_bottom.normalized() * max_height;
+    //   //   TransformNode top_frame = frame;
 
-      //   std::string top_id = id_str + "/top";
-      //   transform_component->transform_map.emplace_back(top_id, std::move(top_frame));
-      // }
-    }
-    else
-    {
-      auto* component = getOrCreateComponent<TransformComponent>(db, eid);
-      component->elements.emplace_back(id_str, std::move(frame));
-    }
+    //   //   top_frame.local.translation().x() += top_offset.x();
+    //   //   top_frame.local.translation().y() += top_offset.y();
+    //   //   top_frame.local.translation().z() += top_offset.z();
+
+    //   //   std::string top_id = id_str + "/top";
+    //   //   transform_component->transform_map.emplace_back(top_id, std::move(top_frame));
+    //   // }
+    // }
+    // else
+    // {
+    //   auto* component = getOrCreateComponent<TransformComponent>(db, eid);
+    //   component->elements.emplace_back(id_str, std::move(frame));
+    // }
   }
 }
 
