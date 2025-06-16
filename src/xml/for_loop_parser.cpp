@@ -181,9 +181,10 @@ void expandForLoop(const tinyxml2::XMLElement* forElem,
     {
       if (vars[idx].values.size() != zipLen)
       {
-        throw std::runtime_error("Zipped groups must be same length! Attribute '" + vars[idx].name + "' has " +
-                                 std::to_string(vars[idx].values.size()) + " values, expected " +
-                                 std::to_string(zipLen));
+        std::ostringstream oss;
+        oss << "Zipped groups must be same length! Attribute '" << vars[idx].name << "' has " << vars[idx].values.size()
+            << " values, expected " << zipLen << " at line " << forElem->GetLineNum();
+        throw std::runtime_error(oss.str());
       }
     }
 

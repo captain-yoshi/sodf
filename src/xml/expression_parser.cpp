@@ -5,6 +5,11 @@
 namespace sodf {
 namespace xml {
 
+std::string parseText(const tinyxml2::XMLElement* elem)
+{
+  return elem && elem->GetText() ? elem->GetText() : "";
+}
+
 double parseExpression(const char* expr)
 {
   if (!expr)

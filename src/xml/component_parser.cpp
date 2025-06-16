@@ -614,13 +614,13 @@ void parseProductComponent(const tinyxml2::XMLElement* elem, ginseng::database& 
   auto* component = getOrCreateComponent<ObjectComponent>(db, eid);
 
   if (auto* name = elem->FirstChildElement("Name"))
-    component->name = name->GetText();
+    component->name = parseText(name);
   if (auto* model = elem->FirstChildElement("Model"))
-    component->model = model->GetText();
+    component->model = parseText(model);
   if (auto* sn = elem->FirstChildElement("SerialNumber"))
-    component->serial_number = sn->GetText();
+    component->serial_number = parseText(sn);
   if (auto* vendor = elem->FirstChildElement("Vendor"))
-    component->vendor = vendor->GetText();
+    component->vendor = parseText(vendor);
 }
 
 void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
