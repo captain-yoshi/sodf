@@ -452,6 +452,62 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
     }
   }
 
+  auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
+
+  auto* domain_shape = getComponentElement<components::DomainShapeComponent>(db, eid, container.domain_shape_id);
+  if (!domain_shape)
+    throw std::runtime_error("DomainShape id '" + container.domain_shape_id + "' not found in component");
+
+  // Create bottom transform
+  {
+    geometry::TransformNode tf_node;
+    tf_node.parent = id;
+    tf_component->elements.emplace_back(std::string(id) + "/bottom", std::move(tf_node));
+  }
+
+  // Retrieve max fill height from domain shape
+  double max_height = getMaxFillHeight(domain_shape->domains);
+  double curr_height = getFillHeight(domain_shape->domains, container.volume, 1e-09);
+  auto upward_axis = -container.axis_bottom;
+
+  // Create virtual prismatic joint
+  if (!container.liquid_level_joint_id.empty())
+  {
+    auto* joint_component = getOrCreateComponent<JointComponent>(db, eid);
+    components::Joint joint;
+    joint.type = components::JointType::PRISMATIC;
+    joint.actuation = components::JointActuation::VIRTUAL;
+    joint.initialize_for_type();  // 1 DOF
+    joint.axes.col(0) = upward_axis;
+    joint.position[0] = curr_height;
+    joint.limit.min_position[0] = 0.0;
+    joint.limit.max_position[0] = max_height;
+
+    joint_component->elements.emplace_back("joint/" + std::string(id), std::move(joint));
+
+    // Add TransformNode under the joint
+    geometry::TransformNode joint_tf;
+    joint_tf.parent = std::string(id) + "/bottom";
+    joint_tf.local = Eigen::Isometry3d::Identity();
+    joint_tf.is_static = false;
+    tf_component->elements.emplace_back("joint/" + std::string(id), std::move(joint_tf));
+
+    // Add TransformNode under the joint
+    geometry::TransformNode liquid_tf;
+    liquid_tf.parent = "joint/" + std::string(id);
+    liquid_tf.local = Eigen::Isometry3d::Identity();
+    tf_component->elements.emplace_back(std::string(id) + "/liquid_level", std::move(liquid_tf));
+  }
+
+  // Add top TransformNode
+  {
+    geometry::TransformNode top_node;
+    top_node.parent = std::string(id) + "/bottom";
+    top_node.local.linear() = Eigen::Matrix3d::Identity();
+    top_node.local.translation() = upward_axis * max_height;
+    tf_component->elements.emplace_back(std::string(id) + "/top", std::move(top_node));
+  }
+
   // store to component
   auto* component = getOrCreateComponent<ContainerComponent>(db, eid);
   component->elements.emplace_back(id, std::move(container));
