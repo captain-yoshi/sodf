@@ -946,7 +946,7 @@ TEST(XMLParser, ComponentsForLoop)
 
         <FluidDomainShape id="fluid/container">
           <StackedShape id="stacked_shape"/>
-        </FluidDomainShape>)
+        </FluidDomainShape>
 
 
         <ForLoop row_name="A:B:1" row="1:2:1" col="1:3:1" zipped="[row_name,row]">
