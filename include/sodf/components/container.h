@@ -15,7 +15,8 @@ struct Container
   std::string content_type;
   std::string material_id;
 
-  Eigen::Vector3d axis_bottom;  // Unit normal vector of the bottom surface, pointing into (toward) the container bottom.
+  Eigen::Vector3d
+      axis_insertion;  // Unit normal vector of the bottom surface, pointing into (toward) the container bottom.
   Eigen::Vector3d axis_reference;  // Unit vector in the bottom plane
 
   std::string domain_shape_id;  // geometric + physics shape
