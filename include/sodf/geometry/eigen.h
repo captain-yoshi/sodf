@@ -19,7 +19,13 @@ Eigen::Matrix3d computeOrientationFromAxes(const Eigen::Vector3d& x_axis, const 
                                            const Eigen::Vector3d& z_axis);
 
 // --- Helper: build isometry from position/axis ---
-Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis);
+Eigen::Isometry3d buildIsometryFromZAxis(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis);
+Eigen::Isometry3d buildIsometryFromZXAxes(const Eigen::Vector3d& pos, const Eigen::Vector3d& z_axis,
+                                          const Eigen::Vector3d& x_axis);
+
+// Builds a rotation matrix that transforms from a local (shape) frame to a target (stack) frame
+Eigen::Matrix3d buildAxisAlignment(const Eigen::Vector3d& z_shape, const Eigen::Vector3d& x_shape,
+                                   const Eigen::Vector3d& z_stack, const Eigen::Vector3d& x_stack);
 
 Eigen::Vector3d computeOrthogonalAxis(const Eigen::Vector3d& axis);
 

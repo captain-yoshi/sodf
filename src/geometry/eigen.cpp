@@ -30,7 +30,7 @@ Eigen::Matrix3d computeOrientationFromAxes(const Eigen::Vector3d& x_axis, const 
 }
 
 // --- Helper: build isometry from position/axis ---
-Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis)
+Eigen::Isometry3d buildIsometryFromZAxis(const Eigen::Vector3d& pos, const Eigen::Vector3d& axis)
 {
   // Align +Z to axis (for most shapes)
   Eigen::Vector3d z = axis.normalized();
@@ -47,6 +47,45 @@ Eigen::Isometry3d buildIsometry(const Eigen::Vector3d& pos, const Eigen::Vector3
   iso.linear() = rot;
   iso.translation() = pos;
   return iso;
+}
+
+Eigen::Isometry3d buildIsometryFromZXAxes(const Eigen::Vector3d& pos, const Eigen::Vector3d& z_axis,
+                                          const Eigen::Vector3d& x_axis)
+{
+  Eigen::Vector3d z = z_axis.normalized();
+  Eigen::Vector3d x = x_axis.normalized();
+  Eigen::Vector3d y = z.cross(x).normalized();
+  x = y.cross(z).normalized();
+
+  Eigen::Matrix3d rot = computeOrientationFromAxes(x, y, z);
+
+  Eigen::Isometry3d iso = Eigen::Isometry3d::Identity();
+  iso.linear() = rot;
+  iso.translation() = pos;
+  return iso;
+}
+// Builds a rotation matrix that transforms from a local (shape) frame to a target (stack) frame
+Eigen::Matrix3d buildAxisAlignment(const Eigen::Vector3d& z_shape, const Eigen::Vector3d& x_shape,
+                                   const Eigen::Vector3d& z_stack, const Eigen::Vector3d& x_stack)
+{
+  // Build orthonormal frames
+  Eigen::Vector3d y_shape = z_shape.cross(x_shape).normalized();
+  Eigen::Vector3d x_shape_orth = y_shape.cross(z_shape).normalized();
+
+  Eigen::Matrix3d shape_frame;
+  shape_frame.col(0) = x_shape_orth;
+  shape_frame.col(1) = y_shape;
+  shape_frame.col(2) = z_shape;
+
+  Eigen::Vector3d y_stack = z_stack.cross(x_stack).normalized();
+  Eigen::Vector3d x_stack_orth = y_stack.cross(z_stack).normalized();
+
+  Eigen::Matrix3d stack_frame;
+  stack_frame.col(0) = x_stack_orth;
+  stack_frame.col(1) = y_stack;
+  stack_frame.col(2) = z_stack;
+
+  return stack_frame * shape_frame.transpose();  // R = target * source⁻¹
 }
 
 Eigen::Vector3d computeOrthogonalAxis(const Eigen::Vector3d& axis)
