@@ -75,7 +75,7 @@ void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ginseng::datab
                              std::to_string(elem->GetLineNum()));
 
   auto stack = parseStackedShape(elem);
-  if (stack.empty())
+  if (stack.shapes.empty())
     throw std::runtime_error("StackedShape '" + std::string(id) + "' is empty at line " +
                              std::to_string(elem->GetLineNum()));
 
@@ -401,8 +401,8 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   if (!id)
     throw std::runtime_error("Container element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
 
-  if (const auto* a = elem->FirstChildElement("AxisBottom"))
-    container.axis_bottom = parseUnitVector(a);
+  if (const auto* a = elem->FirstChildElement("AxisInsertion"))
+    container.axis_insertion = parseUnitVector(a);
   else
     throw std::runtime_error("Container missing AxisBottom at line " + std::to_string(elem->GetLineNum()));
 
@@ -411,7 +411,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   else
     throw std::runtime_error("Container missing AxisReference at line " + std::to_string(elem->GetLineNum()));
 
-  if (!geometry::areVectorsOrthonormal(container.axis_bottom, container.axis_reference, 1e-09))
+  if (!geometry::areVectorsOrthonormal(container.axis_insertion, container.axis_reference, 1e-09))
     throw std::runtime_error("Axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
 
   // Content (first one only)
@@ -468,7 +468,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   // Retrieve max fill height from domain shape
   double max_height = getMaxFillHeight(domain_shape->domains);
   double curr_height = getFillHeight(domain_shape->domains, container.volume, 1e-09);
-  auto upward_axis = -container.axis_bottom;
+  auto upward_axis = -container.axis_insertion;
 
   // Create virtual prismatic joint
   if (!container.liquid_level_joint_id.empty())
@@ -605,7 +605,7 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ginse
                              "' in StackedShapeComponent");
 
   // For each shape in the stack
-  for (const StackedShapeEntry& entry : *stacked_shapes_ptr)
+  for (const StackedShapeEntry& entry : (*stacked_shapes_ptr).shapes)
   {
     // if (entry.shape.shape_map.empty())
     //   throw std::runtime_error("ShapeComponent for stack entry is empty!");

@@ -21,7 +21,7 @@ Eigen::Isometry3d parseIsometry3D(const tinyxml2::XMLElement* transform_elem);
 
 geometry::Shape parseShape(const tinyxml2::XMLElement* elem);
 geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform_elem);
-components::StackedShapes parseStackedShape(const tinyxml2::XMLElement* stacked_elem);
+components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_elem);
 components::Button parseButton(const tinyxml2::XMLElement* btn_elem);
 components::VirtualButton parseVirtualButton(const tinyxml2::XMLElement* vb_elem);
 components::Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem);

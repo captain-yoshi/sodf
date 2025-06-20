@@ -24,11 +24,17 @@ struct StackedShapeEntry
   Eigen::Isometry3d relative_transform;  // relative to previous shape base
 };
 
-using StackedShapes = std::vector<StackedShapeEntry>;
+struct StackedShape
+{
+  std::vector<StackedShapeEntry> shapes;
+
+  Eigen::Vector3d axis_stack_direction;
+  Eigen::Vector3d axis_stack_reference;
+};
 
 struct StackedShapeComponent
 {
-  ElementMap<std::string, StackedShapes> elements;
+  ElementMap<std::string, StackedShape> elements;
 };
 
 }  // namespace components

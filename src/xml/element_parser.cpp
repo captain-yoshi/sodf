@@ -426,12 +426,30 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
   return shape;
 }
 
-components::StackedShapes parseStackedShape(const tinyxml2::XMLElement* stacked_elem)
+components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_elem)
 {
-  components::StackedShapes stack;
+  components::StackedShape stack;
+
+  const tinyxml2::XMLElement* dir_elem = stacked_elem->FirstChildElement("AxisStackDirection");
+  if (!dir_elem)
+    throw std::runtime_error("<StackedShape> missing <AxisStackDirection> element at line " +
+                             std::to_string(stacked_elem->GetLineNum()));
+  stack.axis_stack_direction = parseUnitVector(dir_elem);
+  stack.axis_stack_direction.normalize();
+
+  const tinyxml2::XMLElement* ref_elem = stacked_elem->FirstChildElement("AxisStackReference");
+  if (!ref_elem)
+    throw std::runtime_error("<StackedShape> missing <AxisStackReference> element at line " +
+                             std::to_string(stacked_elem->GetLineNum()));
+  stack.axis_stack_reference = parseUnitVector(ref_elem);
+  stack.axis_stack_reference.normalize();
+
+  if (!geometry::areVectorsOrthonormal(stack.axis_stack_direction, stack.axis_stack_reference))
+    throw std::runtime_error(std::string("Axes for StackedShape must be mutually orthonormal at line ") +
+                             std::to_string(stacked_elem->GetLineNum()));
+
   Eigen::Vector3d stack_point = Eigen::Vector3d::Zero();  // Current stacking position
   Eigen::Vector3d stack_axis = Eigen::Vector3d::UnitZ();  // Default stacking axis (may be set per shape)
-  bool first_shape = true;
 
   for (const tinyxml2::XMLElement* shape_elem = stacked_elem->FirstChildElement("Shape"); shape_elem;
        shape_elem = shape_elem->NextSiblingElement("Shape"))
@@ -450,31 +468,20 @@ components::StackedShapes parseStackedShape(const tinyxml2::XMLElement* stacked_
     else
     {
       // Automatic stacking
-      Eigen::Vector3d axis = getShapeSymmetryAxis(shape);
+      const Eigen::Vector3d& axis_sym = getShapeSymmetryAxis(shape);
+      const Eigen::Vector3d& axis_ref = getShapeReferenceAxis(shape);
 
-      if (first_shape)
-      {
-        // Place base at origin
-        local_tf.translation() = Eigen::Vector3d::Zero();
-        local_tf.linear() = geometry::buildIsometry(Eigen::Vector3d::Zero(), axis).linear();
-        // Next stack point: base + axis * height
-        stack_point = axis * shapeHeight(shape);
-        stack_axis = axis;
-        first_shape = false;
-      }
-      else
-      {
-        // Place base at current stack_point
-        local_tf.translation() = stack_point;
-        local_tf.linear() = geometry::buildIsometry(stack_point, axis).linear();
-        // Update stack point for next shape
-        stack_point = stack_point + axis * shapeHeight(shape);
-        stack_axis = axis;
-      }
+      // Place base at current stack_point
+      local_tf.translation() = stack_point;
+      local_tf.linear() = geometry::buildIsometryFromZXAxes(Eigen::Vector3d::Zero(), axis_sym, axis_ref).linear();
+      // Update stack point for next shape
+      // stack_point = stack_point + axis * shapeHeight(shape);
+      stack_point = axis_sym * shapeHeight(shape);
+      stack_axis = axis_sym;
     }
 
     // Add shape to stack
-    stack.push_back({ shape, local_tf });
+    stack.shapes.push_back({ shape, local_tf });
   }
 
   return stack;
