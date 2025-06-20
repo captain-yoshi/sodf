@@ -250,13 +250,47 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
         ref = parseUnitVector(a);
       else
         throw std::runtime_error("SphericalSegment missing AxisReference.");
+
       shape.axes = { symmetry, ref };
+
       const auto* dims = elem->FirstChildElement("Dimensions");
       if (!dims)
         throw std::runtime_error("SphericalSegment missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "base_radius"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "top_radius"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
+
+      bool has_r1 = dims->Attribute("base_radius");
+      bool has_r2 = dims->Attribute("top_radius");
+      bool has_h = dims->Attribute("height");
+
+      int count = static_cast<int>(has_r1) + static_cast<int>(has_r2) + static_cast<int>(has_h);
+      if (count < 2)
+        throw std::runtime_error(
+            "SphericalSegment <Dimensions> must specify at least two of: base_radius, top_radius, height");
+
+      double r1 = has_r1 ? parseRequiredDoubleExpression(dims, "base_radius") : 0.0;
+      double r2 = has_r2 ? parseRequiredDoubleExpression(dims, "top_radius") : 0.0;
+      double h = has_h ? parseRequiredDoubleExpression(dims, "height") : 0.0;
+
+      if (count == 2)
+      {
+        if (!has_h)
+          h = geometry::inferSegmentHeightFromRadii(r1, r2);
+        else if (!has_r2)
+          r2 = geometry::inferTopRadiusFromHeight(r1, h);
+        else if (!has_r1)
+          r1 = geometry::inferTopRadiusFromHeight(r2, h);  // reversed assumption
+      }
+      else
+      {
+        std::cout << "=== Validating Spherical Segment ===" << std::endl;
+        std::cout << "base_radius (r1): " << r1 << std::endl;
+        std::cout << "top_radius  (r2): " << r2 << std::endl;
+        std::cout << "height (h):       " << h << std::endl;
+
+        if (!geometry::isValidSegment(r1, r2, h))
+          throw std::runtime_error("SphericalSegment dimensions are incompatible: no valid sphere exists.");
+      }
+
+      shape.dimensions = { r1, r2, h };
       break;
     }
     case ShapeType::Plane:

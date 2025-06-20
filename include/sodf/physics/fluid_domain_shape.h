@@ -111,6 +111,10 @@ public:
   const double top_radius_;   // radius at the top (z = max_fill_height)
 };
 
+FluidSphericalSegmentShape FromBaseTop(double r1, double r2);
+FluidSphericalSegmentShape FromBaseHeight(double r1, double h);
+FluidSphericalSegmentShape FromBaseSphereRadius(double r1, double R);
+
 }  // namespace physics
 }  // namespace sodf
 

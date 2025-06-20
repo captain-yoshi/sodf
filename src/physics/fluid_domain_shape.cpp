@@ -3,6 +3,8 @@
 #include <cmath>
 #include <PolynomialRoots.hh>
 
+#include <sodf/geometry/shape.h>
+
 namespace sodf {
 namespace physics {
 
@@ -192,6 +194,17 @@ double FluidConeShape::getFillVolume(double height) const
 FluidSphericalSegmentShape::FluidSphericalSegmentShape(double base_radius, double top_radius, double height)
   : base_radius_(base_radius), top_radius_(top_radius), DomainShape(height)
 {
+  if (!geometry::isValidSegment(base_radius, top_radius, height))
+  {
+    std::ostringstream oss;
+    oss << "Incompatible spherical segment dimensions: "
+        << "base_radius = " << base_radius << ", "
+        << "top_radius = " << top_radius << ", "
+        << "height = " << height << ". "
+        << "No valid sphere exists for these values.";
+    throw std::invalid_argument(oss.str());
+  }
+
   max_fill_volume_ = physics::getFillVolume(*this, height);
 }
 
@@ -204,5 +217,30 @@ double FluidSphericalSegmentShape::getFillVolume(double height) const
 {
   return physics::getFillVolume(*this, height);
 }
+
+FluidSphericalSegmentShape fromBaseTop(double r1, double r2)
+{
+  double h = geometry::inferSegmentHeightFromRadii(r1, r2);
+  return FluidSphericalSegmentShape(r1, r2, h);
+}
+
+FluidSphericalSegmentShape fromBaseHeight(double r1, double h)
+{
+  double r2 = geometry::inferTopRadiusFromHeight(r1, h);
+  return FluidSphericalSegmentShape(r1, r2, h);
+}
+
+FluidSphericalSegmentShape fromBaseSphereRadius(double r1, double R)
+{
+  if (R <= r1)
+    throw std::invalid_argument("Sphere radius must be greater than base radius");
+
+  double theta = std::asin(r1 / R);
+  double h = R * std::cos(theta);
+  double r2 = R * std::sin(theta + h / R);  // or recompute more directly
+
+  return FluidSphericalSegmentShape(r1, r2, h);
+}
+
 }  // namespace physics
 }  // namespace sodf
