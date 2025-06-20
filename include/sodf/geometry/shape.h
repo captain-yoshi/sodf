@@ -61,8 +61,62 @@ struct Shape
 
 bool is2DShape(const Shape& shape);
 double shapeHeight(const Shape& shape);
-Eigen::Vector3d getShapeNormalAxis(const Shape& shape);
-Eigen::Vector3d getShapeSymmetryAxis(const Shape& shape);
+
+double shapeBaseRadius(const geometry::Shape& shape);
+double shapeTopRadius(const geometry::Shape& shape);
+double shapeMaxRadius(const geometry::Shape& shape);
+
+const Eigen::Vector3d& getShapeNormalAxis(const Shape& shape);
+const Eigen::Vector3d& getShapeReferenceAxis(const Shape& shape);
+const Eigen::Vector3d& getShapeSymmetryAxis(const Shape& shape);
+
+geometry::Shape truncateShapeToHeight(const geometry::Shape& shape, double new_height);
+
+static bool isValidSegment(double r1, double r2, double h, double epsilon = 1e-12)
+{
+  if (r1 < 0 || r2 < 0 || h <= 0)
+    return false;
+
+  return true;
+}
+
+inline double inferSegmentHeightFromRadii(double r1, double r2)
+{
+  if (r1 < 0 || r2 < 0)
+    throw std::invalid_argument("Radii must be non-negative");
+
+  if (r1 == r2)
+    throw std::invalid_argument("Radii are equal: height is undefined for flat spherical cap");
+
+  // Solve for h such that sphere exists
+  // R = (r2² + h² - r1²) / (2h)
+  // Rearranged into: 2Rh = r2² + h² - r1² ⇒ Quadratic in h
+
+  double num = r2 * r2 - r1 * r1;
+  double den = 2 * std::sqrt((r1 * r1 + r2 * r2) / 2.0);  // Safe initial guess for R
+  double h = std::abs(num / den);                         // Approximate; could refine if needed
+
+  // Or: Solve directly via full expression
+  return (r2 * r2 - r1 * r1) / (2 * std::sqrt(std::max(r1 * r1, r2 * r2)));
+}
+
+inline double inferTopRadiusFromHeight(double r1, double h)
+{
+  if (r1 < 0 || h <= 0)
+    throw std::invalid_argument("Base radius must be non-negative and height > 0");
+
+  // From: R = (r2² + h² - r1²) / (2h) ⇒ isolate r2
+  // Assume same sphere used for both ends
+  double R = (r1 * r1 + h * h) / (2 * h);
+
+  if (R <= 0 || !std::isfinite(R))
+    throw std::invalid_argument("Invalid curvature derived from base radius and height");
+
+  double theta = std::asin(r1 / R);
+  double phi = theta + h / R;
+  return R * std::sin(phi);
+}
+
 Eigen::Vector3d getShapeCentroid(const Shape& shape);
 ShapeType shapeTypeFromString(const std::string& str);
 std::string shapeTypeToString(ShapeType type);

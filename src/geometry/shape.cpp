@@ -1,5 +1,7 @@
 #include <sodf/geometry/shape.h>
 
+#include <iostream>
+
 namespace sodf {
 namespace geometry {
 
@@ -22,38 +24,6 @@ bool is2DShape(const Shape& shape)
       return true;
     default:
       return false;
-  }
-}
-
-Eigen::Vector3d getShapeNormalAxis(const Shape& shape)
-{
-  switch (shape.type)
-  {
-    case ShapeType::Line:
-    case ShapeType::Rectangle:
-    case ShapeType::Circle:
-    case ShapeType::Triangle:
-    case ShapeType::Polygon:
-    case ShapeType::Plane:
-      // 2D shapes and planes: normal is stored in axes[0]
-      return shape.axes.at(0).normalized();
-
-    case ShapeType::Box:
-    case ShapeType::Mesh:
-      // No single "normal", but for a box you might pick +Z of the box, or require a face index
-      throw std::runtime_error("getNormal() not defined for Box/Mesh without additional info.");
-
-    case ShapeType::Cylinder:
-    case ShapeType::Cone:
-    case ShapeType::SphericalSegment:
-      // "Normal" usually refers to symmetry axis (axes[0])
-      return shape.axes.at(0).normalized();
-
-    case ShapeType::Sphere:
-      throw std::runtime_error("getNormal() not defined for Sphere (normal depends on query point).");
-
-    default:
-      throw std::runtime_error("getNormal() not implemented for this ShapeType.");
   }
 }
 
@@ -141,12 +111,213 @@ double shapeHeight(const Shape& shape)
   }
 }
 
-// --- Helper: extract symmetry axis from axes vector (index 0 per convention) ---
-Eigen::Vector3d getShapeSymmetryAxis(const Shape& shape)
+double shapeBaseRadius(const geometry::Shape& shape)
 {
-  if (shape.axes.empty())
-    throw std::runtime_error("Shape missing axes info for stacking");
-  return shape.axes[0].normalized();
+  using geometry::ShapeType;
+
+  switch (shape.type)
+  {
+    case ShapeType::Cylinder:
+    case ShapeType::Sphere:
+    case ShapeType::Circle:
+      // Single radius shapes: use "radius"
+      return shape.dimensions.at(0);
+
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      // Use base_radius if defined, else fallback to radius
+      return shape.dimensions.at(0);
+
+    case ShapeType::Box:
+      return 0.5 * std::max({ shape.dimensions.at(0), shape.dimensions.at(1) });
+
+    default:
+      return 0.0;
+  }
+}
+
+double shapeTopRadius(const geometry::Shape& shape)
+{
+  using geometry::ShapeType;
+
+  switch (shape.type)
+  {
+    case ShapeType::Cylinder:
+    case ShapeType::Sphere:
+    case ShapeType::Circle:
+      // Single radius shapes: use "radius"
+      return shape.dimensions.at(0);
+
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      // Use top_radius if defined, else fallback to radius
+      return shape.dimensions.at(1);
+
+    case ShapeType::Box:
+      return 0.5 * std::max({ shape.dimensions.at(0), shape.dimensions.at(1) });
+
+    default:
+      return 0.0;
+  }
+}
+
+double shapeMaxRadius(const geometry::Shape& shape)
+{
+  using geometry::ShapeType;
+
+  switch (shape.type)
+  {
+    case ShapeType::Cylinder:
+    case ShapeType::Sphere:
+    case ShapeType::Circle:
+      return shape.dimensions.at(0);  // radius
+
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      return std::max(shape.dimensions.at(0), shape.dimensions.at(1));  // base_radius, top_radius
+
+    case ShapeType::Box:
+      return 0.5 * std::max({ shape.dimensions.at(0), shape.dimensions.at(1) });  // width, depth
+
+    default:
+      return 0.0;
+  }
+}
+
+const Eigen::Vector3d& getShapeNormalAxis(const Shape& shape)
+{
+  switch (shape.type)
+  {
+    case ShapeType::Line:
+    case ShapeType::Rectangle:
+    case ShapeType::Circle:
+    case ShapeType::Triangle:
+    case ShapeType::Polygon:
+    case ShapeType::Plane:
+      // 2D shapes and planes: normal is stored in axes[0]
+      return shape.axes.at(0);
+
+    case ShapeType::Box:
+    case ShapeType::Mesh:
+      // No single "normal", but for a box you might pick +Z of the box, or require a face index
+      throw std::runtime_error("getNormal() not defined for Box/Mesh without additional info.");
+
+    case ShapeType::Cylinder:
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      // "Normal" usually refers to symmetry axis (axes[0])
+      return shape.axes.at(0);
+
+    case ShapeType::Sphere:
+      throw std::runtime_error("getNormal() not defined for Sphere (normal depends on query point).");
+
+    default:
+      throw std::runtime_error("getNormal() not implemented for this ShapeType.");
+  }
+}
+
+const Eigen::Vector3d& getShapeReferenceAxis(const geometry::Shape& shape)
+{
+  using ShapeType = geometry::ShapeType;
+  switch (shape.type)
+  {
+    case ShapeType::Cylinder:
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      if (shape.axes.size() < 2)
+        throw std::runtime_error("Shape requires reference axis (axes[1]) but not found.");
+      return shape.axes[1];
+
+    default:
+      throw std::runtime_error("getShapeReferenceAxis() is only valid for shapes that define a base plane.");
+  }
+}
+
+const Eigen::Vector3d& getShapeSymmetryAxis(const geometry::Shape& shape)
+{
+  using ShapeType = geometry::ShapeType;
+  switch (shape.type)
+  {
+    case ShapeType::Cylinder:
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      if (shape.axes.size() < 1)
+        throw std::runtime_error("Shape requires symmetry axis (axes[0]) but none provided.");
+      return shape.axes[0];
+
+    default:
+      throw std::runtime_error("getShapeSymmetryAxis() is only valid for axisymmetric 3D shapes.");
+  }
+}
+
+double getTopRadiusAtHeight(double base_radius, double top_radius, double total_height, double fill_height)
+{
+  if (fill_height <= 0.0 || fill_height > total_height)
+    return 0.0;
+
+  // Compute z0 (sphere center relative to base)
+  double z0 =
+      (top_radius * top_radius - base_radius * base_radius + total_height * total_height) / (2.0 * total_height);
+  double R = std::sqrt(base_radius * base_radius + z0 * z0);
+
+  // Compute radial distance at given fill height
+  double dz = z0 - fill_height;
+  double top_r = std::sqrt(std::max(0.0, R * R - dz * dz));
+
+  return top_r;
+}
+
+geometry::Shape truncateShapeToHeight(const geometry::Shape& shape, double new_height)
+{
+  geometry::Shape result = shape;
+
+  switch (shape.type)
+  {
+    case geometry::ShapeType::Cylinder:
+      result.dimensions.at(1) = new_height;
+      break;
+
+    case geometry::ShapeType::Cone:
+    {
+      double h = shape.dimensions.at(2);
+      double base_r = shape.dimensions.at(0);
+      double top_r = shape.dimensions.at(1);
+
+      double t = new_height / h;
+      double new_r = base_r + (top_r - base_r) * t;
+
+      result.dimensions.at(1) = new_r;       // new top_radius
+      result.dimensions.at(2) = new_height;  // new height
+      break;
+    }
+
+    case geometry::ShapeType::SphericalSegment:
+    {
+      double h = shape.dimensions.at(2);
+      double base_r = shape.dimensions.at(0);
+      double top_r = shape.dimensions.at(1);
+
+      double clipped_r = getTopRadiusAtHeight(base_r, top_r, h, new_height);
+
+      result.dimensions.at(0) = base_r;
+      result.dimensions.at(1) = clipped_r;
+      result.dimensions.at(2) = new_height;
+
+      std::cout << "[SphericalSegment Truncation]" << std::endl;
+      std::cout << "  base_r     = " << base_r << std::endl;
+      std::cout << "  top_r      = " << top_r << std::endl;
+      std::cout << "  h          = " << h << std::endl;
+      std::cout << "  new_height = " << new_height << std::endl;
+      std::cout << "  new_r      = " << clipped_r << std::endl;
+      break;
+    }
+
+    default:
+      result.dimensions.clear();  // mark invalid if not supported
+      break;
+  }
+
+  return result;
 }
 
 ShapeType shapeTypeFromString(const std::string& str)
