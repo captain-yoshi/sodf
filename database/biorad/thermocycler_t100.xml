@@ -79,9 +79,9 @@
     </Joint>
 
     <Link id="link/lid">
-      <Transform parent="root">
-        <Position x="0.0" y="0.0" z="0.0"/>
-        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      <Transform parent="joint/lid">
+        <Position x="0.170119" y="0.0" z="-0.212675"/>
+        <Orientation roll="0" pitch="0" yaw="pi"/>
       </Transform>
 
       <Visual>
@@ -112,8 +112,8 @@
     <Joint id="joint/handle">
       <Type value="REVOLUTE"/>
       <Actuation value="PASSIVE"/>
-      <Transform parent="root">
-        <Position x="0.08556154884" y="0.0" z="-0.0015419616"/>
+      <Transform parent="joint/lid">
+        <Position x="0.08455783108" y="0.0" z="0.0"/>
         <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
       </Transform>
       <Position value="0.0" />
@@ -126,9 +126,9 @@
 
 
     <Link id="link/handle">
-      <Transform parent="joint/lid">
-        <Position x="0.0" y="0.0" z="0.0"/>
-        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      <Transform parent="joint/handle">
+        <Position x="0.08556117" y="0.0" z="-0.212675"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="3.14159265359"/>
       </Transform>
 
       <Visual>
