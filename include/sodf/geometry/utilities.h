@@ -123,9 +123,6 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
 
   wTx = wTa * align_rotation * xTc.inverse();
 
-  std::cout << "norm between point a & c = " << computeDistance(wTa, wTx * xTc) << std::endl;
-  std::cout << "norm between point b & d = " << computeDistance(wTb, wTx * xTd) << std::endl;
-
   // adjust vector CD at the center of vector AB
   if (distance_ab != distance_cd)
   {
@@ -137,7 +134,6 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
     Eigen::Isometry3d aTxaxis = wTa.inverse() * wTa_xaxis;
 
     axis_angle = computeAngle(aTxaxis.translation(), aTb.translation());
-    std::cout << "axis angle = " << axis_angle << std::endl;
 
     s = computeShortestAxisOfRotation(aTxaxis.translation(), aTb.translation());
     if (s.x() == 0.0 && s.y() == 0.0 && s.z() == 0.0)
@@ -157,8 +153,6 @@ Eigen::Isometry3d alignCenterFrames(const Eigen::Isometry3d& wTa, const Eigen::I
     // update frame translation
     wTx.pretranslate(wTa_offset.translation() - wTa.translation());
   }
-  std::cout << "norm between point a & c = " << computeDistance(wTa, wTx * xTc) << std::endl;
-  std::cout << "norm between point b & d = " << computeDistance(wTb, wTx * xTd) << std::endl;
 
   return wTx;
 }

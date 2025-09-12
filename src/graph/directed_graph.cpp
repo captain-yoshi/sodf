@@ -66,7 +66,7 @@ bool DirectedGraph::findShortestPath(int start, int end, std::deque<int>& path)
 
   try
   {
-    std::cout << "Searching from #" << start_vertex << " to #" << end_vertex << "...\n";
+    // std::cout << "Searching from #" << start_vertex << " to #" << end_vertex << "...\n";
     boost::dijkstra_shortest_paths(g, start_vertex,
                                    boost::visitor(vis)
                                        .color_map(colors->data())
@@ -74,18 +74,18 @@ bool DirectedGraph::findShortestPath(int start, int end, std::deque<int>& path)
                                        .predecessor_map(predmap)
                                        .weight_map(weightmap));
 
-    std::cout << "No path found\n";
+    // std::cout << "No path found\n";
     return false;
   }
   catch (my_visitor::done const&)
   {
-    std::cout << visited << std::endl;
-    std::cout << num_vertices(g) << std::endl;
-    std::cout << "Percentage skipped: " << (100.0 * (num_vertices(g) - visited) / num_vertices(g)) << "%\n";
+    // std::cout << visited << std::endl;
+    // std::cout << num_vertices(g) << std::endl;
+    // std::cout << "Percentage skipped: " << (100.0 * (num_vertices(g) - visited) / num_vertices(g)) << "%\n";
   }
 
   size_t distance = distmap[end_vertex];
-  std::cout << "Distance from #" << start_vertex << " to #" << end_vertex << ": " << distance << "\n";
+  // std::cout << "Distance from #" << start_vertex << " to #" << end_vertex << ": " << distance << "\n";
 
   if (distance != size_t(-1))
   {
@@ -97,12 +97,12 @@ bool DirectedGraph::findShortestPath(int start, int end, std::deque<int>& path)
       current = predmap[current];
     }
 
-    std::cout << "Path from #" << start_vertex << " to #" << end_vertex << ": ";
+    // std::cout << "Path from #" << start_vertex << " to #" << end_vertex << ": ";
     // std::copy(path.begin(), path.end(), std::ostream_iterator<V>(std::cout, ", "));
 
-    for (const auto& p : path)
-      std::cout << p << ", ";
-    std::cout << std::endl;
+    // for (const auto& p : path)
+    //   std::cout << p << ", ";
+    // std::cout << std::endl;
 
     return true;
   }
