@@ -1,4 +1,4 @@
-#include <sodf/geometry/utilities.h>
+#include <sodf/geometry/alignment.h>
 #include <sodf/conversion.h>
 
 #include <gtest/gtest.h>

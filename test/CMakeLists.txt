@@ -37,6 +37,6 @@ if (CATKIN_ENABLE_TESTING)
     sodf_add_gtest(test_object.cpp)
     sodf_add_gtest(test_graph.cpp)
     sodf_add_gtest(test_state.cpp)
-    sodf_add_gtest(test_utilities.cpp)
+    sodf_add_gtest(test_alignment.cpp)
 
 endif()

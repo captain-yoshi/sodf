@@ -57,6 +57,7 @@ add_library(${PROJECT_NAME}
   src/elements/touchscreen.cpp
   src/elements/button.cpp
 
+  src/geometry/alignment.cpp
   src/geometry/volume.cpp
   src/geometry/transform.cpp
 
