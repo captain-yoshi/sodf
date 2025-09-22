@@ -1,45 +1,46 @@
-#ifndef TRANSFORM_H_
-#define TRANSFORM_H_
+#ifndef SODF_GEOMETRY_TRANSFORM_H_
+#define SODF_GEOMETRY_TRANSFORM_H_
 
-#include <Eigen/Geometry>
-#include <kdl/frames.hpp>
-
-#include <geometry_msgs/TransformStamped.h>
-#include <geometry_msgs/Pose.h>
+#include <sodf/geometry/eigen.h>
 
 namespace sodf {
 namespace geometry {
 
-class Transform
+struct Transform
 {
-public:
-  Transform(const KDL::Frame& frame, const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const KDL::Vector& position, const KDL::Rotation& rotation, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(const Eigen::Isometry3d& frame, const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const Eigen::Vector3d& position, const Eigen::Quaterniond& rotation, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(double px, double py, double pz, double qx, double qy, double qz, double qw, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::TransformStamped& frame, const std::string& frame_id,
-            const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::Vector3& position, const geometry_msgs::Quaternion& rotation,
-            const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::Pose& frame, const std::string& frame_id, const std::string& ref_frame_id = "root");
-  Transform(const geometry_msgs::Point& position, const geometry_msgs::Quaternion& rotation,
-            const std::string& frame_id, const std::string& ref_frame_id = "root");
+  std::string parent;                                    // frame ID of parent
+  Eigen::Isometry3d tf = Eigen::Isometry3d::Identity();  // local relative to parent
+};
 
-  const KDL::Frame& frame() const;
-  const std::string& frameId() const;
-  const std::string& refFrameId() const;
+struct TransformNode
+{
+  std::string parent;                                        // frame ID of parent
+  Eigen::Isometry3d local = Eigen::Isometry3d::Identity();   // local relative to parent
+  Eigen::Isometry3d global = Eigen::Isometry3d::Identity();  // world-space
+  bool dirty = true;
 
-private:
-  KDL::Frame frame_;
-  std::string frame_id_;      // this frame actual id
-  std::string ref_frame_id_;  // parent/reference frame id
+  bool is_static = true;  // false if motion driven by a joint
+};
+
+struct AlignFrames
+{
+  std::string target_id;  // e.g. "table" (from with="table")
+
+  std::string source_tf;  // local transform name (from <Source name="..."/>)
+  std::string target_tf;  // target entity transform name (from <Target name="..."/>)
+};
+
+struct AlignPairFrames
+{
+  std::string target_id;               // e.g. "table"
+                                       // of vectors (source2 - source1) and (target2 - target1)
+  std::string source_tf1, source_tf2;  // local transform names from this entity
+  std::string target_tf1, target_tf2;  // local transform names from target entity (target_id)
+
+  double tolerance;  // maximum allowed difference [m] between alignement
 };
 
 }  // namespace geometry
 }  // namespace sodf
 
-#endif  // TRANSFORM_H_
+#endif  // SODF_GEOMETRY_TRANSFORM_H_
