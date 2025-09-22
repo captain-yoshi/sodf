@@ -401,7 +401,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   if (!id)
     throw std::runtime_error("Container element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
 
-  if (const auto* a = elem->FirstChildElement("AxisInsertion"))
+  if (const auto* a = elem->FirstChildElement("AxisBottom"))
     container.axis_insertion = parseUnitVector(a);
   else
     throw std::runtime_error("Container missing AxisBottom at line " + std::to_string(elem->GetLineNum()));

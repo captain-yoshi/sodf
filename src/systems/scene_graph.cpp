@@ -5,7 +5,7 @@
 #include <sodf/components/origin.h>
 #include <sodf/components/tag.h>
 #include <sodf/components/transform.h>
-#include <sodf/geometry/utilities.h>
+#include <sodf/geometry/alignment.h>
 
 namespace sodf {
 namespace systems {
