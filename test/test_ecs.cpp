@@ -20,7 +20,7 @@ using namespace sodf;
 
 TEST(ECS, ParsingSingleObject)
 {
-  std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/biorad/thermocycler_t100.xml";
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/biorad-t100-thermal-cycler.xml";
 
   xml::EntityParser parser;
   auto db = ginseng::database{};
@@ -170,9 +170,9 @@ TEST(ECS, ParsingSingleObject)
 // ASSERT_EQ(jc_component.joint_map[0].second.joint_position, M_PI);
 // }
 
-TEST(ECS, ParseScene1)
+TEST(ECS, ParseSceneA)
 {
-  std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/scene.xml";
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/scene-a.xml";
 
   xml::EntityParser parser;
   auto db = ginseng::database{};
@@ -193,8 +193,12 @@ TEST(ECS, ParseScene1)
   // update: root
 
   {
-    auto& sid = ids[0].first;
-    auto& eid = ids[0].second;
+    auto it = std::find_if(ids.begin(), ids.end(), [](const auto& pair) { return pair.first == "pcr1"; });
+
+    ASSERT_NE(it, ids.end()) << "Entity with id='pcr1' not found";
+
+    auto& sid = it->first;
+    auto& eid = it->second;
 
     ASSERT_TRUE(db.has_component<components::ObjectComponent>(eid));
     ASSERT_TRUE(db.has_component<components::TransformComponent>(eid));
@@ -209,10 +213,10 @@ TEST(ECS, ParseScene1)
     // Object component validation
     auto& object = db.get_component<components::ObjectComponent>(eid);
     EXPECT_EQ(object.id, "pcr1");
-    EXPECT_EQ(object.name, "Thermal Cycler");
+    EXPECT_EQ(object.name, "T100 Thermal Cycler");
     EXPECT_EQ(object.model, "T100");
-    EXPECT_EQ(object.serial_number, "SN-ABC123456");
-    EXPECT_EQ(object.vendor, "BioRad");
+    EXPECT_EQ(object.serial_number, "");
+    EXPECT_EQ(object.vendor, "Bio-Rad");
 
     // Transform component validation
     auto& transform = db.get_component<components::TransformComponent>(eid);
@@ -233,9 +237,9 @@ TEST(ECS, ParseScene1)
   sodf::systems::update_all_global_transforms(db);
 }
 
-TEST(ECS, ParseScene2)
+TEST(ECS, ParseSceneB)
 {
-  std::string filename = std::string(SODF_TEST_FOLDER) + "/../database/scene2.xml";
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/scene-b.xml";
 
   xml::EntityParser parser;
   auto db = ginseng::database{};

@@ -138,30 +138,30 @@ struct JointComponent
 
 inline JointType jointTypeFromString(const std::string& s)
 {
-  if (s == "FIXED")
+  if (s == "Fixed")
     return JointType::FIXED;
-  if (s == "REVOLUTE")
+  if (s == "Revolute")
     return JointType::REVOLUTE;
-  if (s == "PRISMATIC")
+  if (s == "Prismatic")
     return JointType::PRISMATIC;
-  if (s == "SPHERICAL")
+  if (s == "Spherical")
     return JointType::SPHERICAL;
-  if (s == "PLANAR")
+  if (s == "Planar")
     return JointType::PLANAR;
-  if (s == "FLOATING")
+  if (s == "Floating")
     return JointType::FLOATING;
   throw std::runtime_error("Unknown JointType: " + s);
 }
 
 inline JointActuation jointActuationFromString(const std::string& s)
 {
-  if (s == "FIXED")
+  if (s == "Fixed")
     return JointActuation::FIXED;
-  if (s == "ACTUATED")
+  if (s == "Actuated")
     return JointActuation::ACTUATED;
-  if (s == "PASSIVE")
+  if (s == "Passive")
     return JointActuation::PASSIVE;
-  if (s == "VIRTUAL")
+  if (s == "Virtual")
     return JointActuation::VIRTUAL;
   throw std::runtime_error("Unknown JointActuation: " + s);
 }
@@ -171,19 +171,19 @@ inline std::string jointTypeToString(JointType type)
   switch (type)
   {
     case JointType::FIXED:
-      return "FIXED";
+      return "Fixed";
     case JointType::REVOLUTE:
-      return "REVOLUTE";
+      return "Revolute";
     case JointType::PRISMATIC:
-      return "PRISMATIC";
+      return "Prismatic";
     case JointType::SPHERICAL:
-      return "SPHERICAL";
+      return "Spherical";
     case JointType::PLANAR:
-      return "PLANAR";
+      return "Planar";
     case JointType::FLOATING:
-      return "FLOATING";
+      return "Floating";
     default:
-      return "UNKNOWN";
+      return "Unknown";
   }
 }
 
@@ -192,15 +192,15 @@ inline std::string jointActuationToString(JointActuation actuation)
   switch (actuation)
   {
     case JointActuation::FIXED:
-      return "FIXED";
+      return "Fixed";
     case JointActuation::ACTUATED:
-      return "ACTUATED";
+      return "Actuated";
     case JointActuation::PASSIVE:
-      return "PASSIVE";
+      return "Passive";
     case JointActuation::VIRTUAL:
-      return "VIRTUAL";
+      return "Virtual";
     default:
-      return "UNKNOWN";
+      return "Unkwown";
   }
 }
 

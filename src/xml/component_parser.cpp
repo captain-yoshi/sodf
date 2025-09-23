@@ -159,7 +159,7 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
     if (const auto* com = inertial->FirstChildElement("CenterOfMass"))
       parsePosition(com, link.dynamics.center_of_mass);
 
-    if (const auto* I = inertial->FirstChildElement("InertiaTensor"))
+    if (const auto* I = inertial->FirstChildElement("Tensor"))
     {
       link.dynamics.inertia_tensor << parseRequiredDoubleExpression(I, "ixx"), parseRequiredDoubleExpression(I, "ixy"),
           parseRequiredDoubleExpression(I, "ixz"), parseRequiredDoubleExpression(I, "ixy"),
@@ -402,7 +402,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
     throw std::runtime_error("Container element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
 
   if (const auto* a = elem->FirstChildElement("AxisBottom"))
-    container.axis_insertion = parseUnitVector(a);
+    container.axis_bottom = parseUnitVector(a);
   else
     throw std::runtime_error("Container missing AxisBottom at line " + std::to_string(elem->GetLineNum()));
 
@@ -411,7 +411,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   else
     throw std::runtime_error("Container missing AxisReference at line " + std::to_string(elem->GetLineNum()));
 
-  if (!geometry::areVectorsOrthonormal(container.axis_insertion, container.axis_reference, 1e-09))
+  if (!geometry::areVectorsOrthonormal(container.axis_bottom, container.axis_reference, 1e-09))
     throw std::runtime_error("Axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
 
   // Content (first one only)
@@ -468,7 +468,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   // Retrieve max fill height from domain shape
   double max_height = getMaxFillHeight(domain_shape->domains);
   double curr_height = getFillHeight(domain_shape->domains, container.volume, 1e-09);
-  auto upward_axis = -container.axis_insertion;
+  auto upward_axis = -container.axis_bottom;
 
   // Create virtual prismatic joint
   if (!container.liquid_level_joint_id.empty())
@@ -523,7 +523,7 @@ void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
 
   // validate link + joint exists in database
   {
-    auto component = db.get_component<LinkComponent*>(eid);
+    auto component = db.get_component<components::LinkComponent*>(eid);
     if (!component)
       throw std::runtime_error("LinkComponent does not exists, required by ButtonComponent");
 
@@ -532,7 +532,7 @@ void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
       throw std::runtime_error("No Link entry found for '" + btn.link_id + "' in LinkComponent");
   }
   {
-    auto component = db.get_component<JointComponent*>(eid);
+    auto component = db.get_component<components::JointComponent*>(eid);
     if (!component)
       throw std::runtime_error("JointComponent does not exists, required by ButtonComponent");
 
@@ -572,7 +572,7 @@ void parseJointComponent(const tinyxml2::XMLElement* elem, ginseng::database& db
 
 void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ginseng::database& db, EntityID eid)
 {
-  auto* stack_component = db.get_component<StackedShapeComponent*>(eid);
+  auto* stack_component = db.get_component<components::StackedShapeComponent*>(eid);
   if (!stack_component)
     throw std::runtime_error("StackedShapeComponent missing from entity!");
 
@@ -834,7 +834,7 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
 
     geometry::TransformNode frame = parseTransformNode(transform_elem);
 
-    auto* component = getOrCreateComponent<TransformComponent>(db, eid);
+    auto* component = getOrCreateComponent<components::TransformComponent>(db, eid);
     component->elements.emplace_back(id_str, std::move(frame));
   }
 }
@@ -851,11 +851,11 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     throw std::runtime_error(parent->Name() + std::string(" missing 'id' attribute at line ") +
                              std::to_string(parent->GetLineNum()));
 
-  auto shape_component = db.get_component<ShapeComponent*>(eid);
+  auto shape_component = db.get_component<components::ShapeComponent*>(eid);
   if (!shape_component)
     throw std::runtime_error(std::string("ShapeComponent does not exists, required by ") + derived_elem->Name());
 
-  auto transform_component = db.get_component<TransformComponent*>(eid);
+  auto transform_component = db.get_component<components::TransformComponent*>(eid);
   if (!transform_component)
     throw std::runtime_error(std::string("TransformComponent does not exists, required by ") + derived_elem->Name());
 

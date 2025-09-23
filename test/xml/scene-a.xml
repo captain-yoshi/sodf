@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root sodf_version="0.0.7">
+  <!-- make available to import/clone -->
+  <Include path="./bio-rad-t100-thermal-cycler.xml" ns="allo"/>
+  <Include path="./bio-rad-t100-thermal-cycler.hmi-overlay.xml"/>
+  <!-- clone instance -->
+  <Object id="pcr1" clone="allo:bio-rad:t100-thermal-cycler">
+    <Overlay id="hmi-fw-2.4.3" slot="hmi"/>
+    <Remove>
+      <Link id="link/base"/>
+      <VirtualButton id="btn/incubate" type="virtual"/>
+      <FSM id="fsm/touchscreen"/>
+    </Remove>
+  </Object>
+  <!-- create new instance -->
+  <Object id="pcr2"/>
+</Root>

@@ -1,0 +1,778 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root sodf_version="0.0.7">
+  <Overlay id="hmi-fw-2.4.3" slot="hmi" target="bio-rad:t100-thermal-cycler">
+    <FSM id="fsm/touchscreen">
+      <StartState name="home"/>
+      <States>
+        <State name="home"/>
+        <State name="incubate"/>
+        <State name="saved_protocols"/>
+        <State name="incubate_bloc_temperature_keyboard"/>
+        <State name="incubate_hold_time_keyboard"/>
+        <State name="incubate_lid_temperature_keyboard"/>
+        <State name="run"/>
+        <State name="run_cancelled"/>
+        <State name="popup_before_canceling_run"/>
+        <State name="popup_set_run_volume"/>
+        <State name="popup_set_run_volume_keyboard"/>
+      </States>
+      <Actions>
+        <Action name="incubate"/>
+        <Action name="saved_protocols"/>
+        <Action name="home"/>
+        <Action name="view_clock"/>
+        <Action name="pause"/>
+        <Action name="skip_step"/>
+        <Action name="run"/>
+        <Action name="cancel_run"/>
+        <Action name="yes"/>
+        <Action name="no"/>
+        <Action name="folder_options"/>
+        <Action name="file_options"/>
+        <Action name="edit"/>
+        <Action name="folder_up"/>
+        <Action name="folder_down"/>
+        <Action name="recent_folders"/>
+        <Action name="main_folder"/>
+        <Action name="folder_1"/>
+        <Action name="folder_2"/>
+        <Action name="folder_3"/>
+        <Action name="folder_4"/>
+        <Action name="folder_5"/>
+        <Action name="file_up"/>
+        <Action name="file_down"/>
+        <Action name="file_1"/>
+        <Action name="file_2"/>
+        <Action name="file_3"/>
+        <Action name="file_4"/>
+        <Action name="file_5"/>
+        <Action name="zero"/>
+        <Action name="one"/>
+        <Action name="two"/>
+        <Action name="three"/>
+        <Action name="four"/>
+        <Action name="five"/>
+        <Action name="six"/>
+        <Action name="seven"/>
+        <Action name="eight"/>
+        <Action name="nine"/>
+        <Action name="dot"/>
+        <Action name="infinity"/>
+        <Action name="backspace"/>
+        <Action name="off"/>
+        <Action name="ok"/>
+        <Action name="cancel"/>
+        <Action name="volume"/>
+        <Action name="ok_popup"/>
+        <Action name="cancel_popup"/>
+        <Action name="bloc_temperature"/>
+        <Action name="hold_time"/>
+        <Action name="lid_temperature"/>
+      </Actions>
+      <Transitions>
+        <!-- home -->
+        <Transition from="home" action="incubate" to="incubate"/>
+        <Transition from="home" action="saved_protocols" to="saved_protocols"/>
+        <!-- incubate -->
+        <Transition from="incubate" action="bloc_temperature" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate" action="hold_time" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate" action="lid_temperature" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate" action="run" to="run"/>
+        <!-- incubate_bloc_temperature_keyboard -->
+        <Transition from="incubate_bloc_temperature_keyboard" action="zero" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="one" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="two" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="three" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="four" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="five" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="six" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="seven" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="eight" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="nine" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="dot" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="backspace" to="incubate_bloc_temperature_keyboard"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="ok" to="incubate"/>
+        <Transition from="incubate_bloc_temperature_keyboard" action="cancel" to="incubate"/>
+        <!-- incubate_hold_time_keyboard -->
+        <Transition from="incubate_hold_time_keyboard" action="zero" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="one" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="two" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="three" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="four" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="five" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="six" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="seven" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="eight" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="nine" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="infinity" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="backspace" to="incubate_hold_time_keyboard"/>
+        <Transition from="incubate_hold_time_keyboard" action="ok" to="incubate"/>
+        <Transition from="incubate_hold_time_keyboard" action="cancel" to="incubate"/>
+        <!-- incubate_lid_temperature_keyboard -->
+        <Transition from="incubate_lid_temperature_keyboard" action="zero" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="one" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="two" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="three" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="four" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="five" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="six" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="seven" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="eight" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="nine" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="off" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="backspace" to="incubate_lid_temperature_keyboard"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="ok" to="incubate"/>
+        <Transition from="incubate_lid_temperature_keyboard" action="cancel" to="incubate"/>
+        <!-- run -->
+        <Transition from="run" action="cancel_run" to="popup_before_canceling_run"/>
+        <!-- popup before cancelling run -->
+        <Transition from="popup_before_canceling_run" action="yes" to="run_cancelled"/>
+        <Transition from="popup_before_canceling_run" action="no" to="popup_before_canceling_run"/>
+        <!-- run cancelled -->
+        <Transition from="run_cancelled" action="home" to="home"/>
+        <!-- saved_protocols -->
+        <Transition from="saved_protocols" action="home" to="home"/>
+        <Transition from="saved_protocols" action="main_folder" to="saved_protocols"/>
+        <Transition from="saved_protocols" action="file_1" to="saved_protocols"/>
+        <Transition from="saved_protocols" action="run" to="popup_set_run_volume"/>
+        <!-- popup_set_run_volume -->
+        <Transition from="popup_set_run_volume" action="volume" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume" action="ok_popup" to="run"/>
+        <Transition from="popup_set_run_volume" action="cancel_popup" to="saved_protocols"/>
+        <Transition from="popup_set_run_volume" action="run" to="popup_set_run_volume"/>
+        <!-- popup_set_run_volume_keyboard -->
+        <Transition from="popup_set_run_volume_keyboard" action="zero" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="one" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="two" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="three" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="four" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="five" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="six" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="seven" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="eight" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="nine" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="backspace" to="popup_set_run_volume_keyboard"/>
+        <Transition from="popup_set_run_volume_keyboard" action="ok" to="popup_set_run_volume"/>
+        <Transition from="popup_set_run_volume_keyboard" action="cancel" to="saved_protocols"/>
+      </Transitions>
+    </FSM>
+    <Shape id="shape/ui_button" type="Rectangle">
+      <AxisNormal x="1.0" y="0.0" z="0.0"/>
+      <AxisWidth x="0.0" y="1.0" z="0.0"/>
+      <AxisHeight x="0.0" y="0.0" z="1.0"/>
+      <Dimensions width="0.05" height="0.01"/>
+    </Shape>
+    <VirtualButton id="btn/incubate">
+      <Shape id="shape/ui_button"/>
+      <Label text="incubate"/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01425" z="-0.0026"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="incubate"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/saved_protocols">
+      <Shape id="shape/ui_button"/>
+      <Label text="saved protocols"/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01325" z="-0.0026"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="saved_protocols"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/home">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.04580" z="-0.03794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="home"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/view_clock">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.02230" z="-0.03794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="view_clock"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/pause">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00070" z="-0.03794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="pause"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/skip_step">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.02370" z="-0.03794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="skip_step"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/run">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.04670" z="-0.03794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="run"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/cancel_run">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.04670" z="-0.03794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="cancel_run"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/yes">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01080" z="-0.01094"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="yes"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/no">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01220" z="-0.01094"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="no"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/zero">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00020" z="-0.01994"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="zero"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/one">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01180" z="0.01606"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="one"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/two">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00020" z="0.01606"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="two"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/three">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01220" z="0.01606"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="three"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/four">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01180" z="0.00406"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="four"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/five">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00020" z="0.00406"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="five"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/six">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01220" z="0.00406"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="six"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/seven">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01180" z="-0.00794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="seven"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/eight">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00020" z="-0.00794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="eight"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/nine">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01220" z="-0.00794"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="nine"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/dot">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01180" z="-0.01994"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="dot"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/backspace">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01220" z="-0.01994"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="backspace"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/infinity">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01180" z="-0.01994"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="infinity"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/off">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01180" z="-0.01994"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="off"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/ok">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01130" z="-0.03194"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="ok"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/cancel">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.03194"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="cancel"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/bloc_temperature">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01670" z="0.01156"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="bloc_temperature"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/hold_time">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01670" z="0.00106"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="hold_time"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/lid_temperature">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01670" z="-0.00944"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="lid_temperature"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/volume">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00620" z="0.00006"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="volume"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/ok_popup">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01130" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="ok_popup"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/cancel_popup">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="cancel_popup"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_options">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00620" z="0.00006"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_options"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_options">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.01130" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_options"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/edit">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="edit"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_up">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_up"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_down">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_down"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/recent_folders">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="recent_folders"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/main_folder">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="0.03630" z="0.01306"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="main_folder"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_1">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_1"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_2">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_2"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_3">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_3"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_4">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_4"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/folder_5">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="folder_5"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_up">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_up"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_down">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_down"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_1">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.00170" z="0.02256"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_1"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_2">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_2"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_3">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_3"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_4">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_4"/>
+      </ActionMap>
+    </VirtualButton>
+    <VirtualButton id="btn/file_5">
+      <Shape id="shape/ui_button"/>
+      <Label text=""/>
+      <Image uri=""/>
+      <Transform parent="touchscreen">
+        <Position x="0.0" y="-0.01270" z="-0.01444"/>
+      </Transform>
+      <AxisPress x="1.0" y="0.0" z="0.0"/>
+      <ActionMap fsm="fsm/touchscreen">
+        <Map trigger="press" action="file_5"/>
+      </ActionMap>
+    </VirtualButton>
+  </Overlay>
+</Root>

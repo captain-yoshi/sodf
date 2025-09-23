@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root sodf_version="0.0.7">
+  <Object id="bio-rad:t100-thermal-cycler">
+    <Product>
+      <Name>T100 Thermal Cycler</Name>
+      <Model>T100</Model>
+      <SerialNumber/>
+      <Vendor>Bio-Rad</Vendor>
+    </Product>
+    <Origin id="root">
+      <Transform parent="">
+        <Position x="0.0" y="0.0" z="0.0"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      </Transform>
+    </Origin>
+    <Link id="link/base">
+      <Transform parent="root">
+        <Position x="0.0" y="0.0" z="0.0"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      </Transform>
+      <Visual>
+        <Shape type="Mesh">
+          <Resource uri="sodf://bio-rad/t100-thermal-cycler/visual/base_161k.dae"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
+      <Collision>
+        <Shape type="Mesh">
+          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/base_161k.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Collision>
+      <Inertial>
+        <Mass value="0.250"/>
+        <CenterOfMass x="0.0" y="0.0" z="0.0"/>
+        <Tensor ixx="0.001" ixy="0.000" ixz="0.000" iyy="0.001" iyz="0.000" izz="0.001"/>
+      </Inertial>
+    </Link>
+    <Joint id="joint/lid">
+      <Type value="Revolute"/>
+      <Actuation value="Passive"/>
+      <Transform parent="root">
+        <Position x="0.17011937992" y="0.0" z="0.21267464676"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="3.14159265359"/>
+      </Transform>
+      <Position value="0.0"/>
+      <Axis x="0.0" y="1.0" z="0.0"/>
+      <NamedPositions>
+        <Position name="close" value="0.0"/>
+        <Position name="open" value="-1.74532925199"/>
+      </NamedPositions>
+    </Joint>
+    <Link id="link/lid">
+      <Transform parent="joint/lid">
+        <Position x="0.170119" y="0.0" z="-0.212675"/>
+        <Orientation roll="0" pitch="0" yaw="pi"/>
+      </Transform>
+      <Visual>
+        <Shape type="Mesh">
+          <Resource uri="sodf://bio-rad/t100-thermal-cycler/visual/lid_34k.dae"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
+      <Collision>
+        <Shape type="Mesh">
+          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/lid_25k.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Collision>
+      <Inertial>
+        <Mass value="0.250"/>
+        <CenterOfMass x="0.0" y="0.0" z="0.0"/>
+        <Tensor ixx="0.001" ixy="0.000" ixz="0.000" iyy="0.001" iyz="0.000" izz="0.001"/>
+      </Inertial>
+    </Link>
+    <Joint id="joint/handle">
+      <Type value="Revolute"/>
+      <Actuation value="Passive"/>
+      <Transform parent="joint/lid">
+        <Position x="0.08455783108" y="0.0" z="0.0"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      </Transform>
+      <Position value="0.0"/>
+      <Axis x="0.0" y="1.0" z="0.0"/>
+      <NamedPositions>
+        <Position name="close" value="0.0"/>
+        <Position name="open" value="-0.78539816339"/>
+      </NamedPositions>
+    </Joint>
+    <Link id="link/handle">
+      <Transform parent="joint/handle">
+        <Position x="0.08556117" y="0.0" z="-0.212675"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="3.14159265359"/>
+      </Transform>
+      <Visual>
+        <Shape type="Mesh">
+          <Resource uri="sodf://bio-rad/t100-thermal-cycler/handle_32k.dae"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
+      <Collision>
+        <Shape type="Mesh">
+          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/handle_22k.stl"/>
+          <scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Collision>
+      <Inertial>
+        <Mass value="0.250"/>
+        <CenterOfMass x="0.0" y="0.0" z="0.0"/>
+        <Tensor ixx="0.001" ixy="0.000" ixz="0.000" iyy="0.001" iyz="0.000" izz="0.001"/>
+      </Inertial>
+    </Link>
+    <FitConstraint id="fit/pcr/rx">
+      <Transform parent="root">
+        <Position x="0.08436" y="0.16794261249" z="0.0"/>
+        <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+      </Transform>
+      <AxisInsertion x="1.0" y="0.0" z="0.0"/>
+      <AxisReference x="0.0" y="1.0" z="0.0"/>
+      <RotationalSymmetry value="2"/>
+      <ApproachDistance value="0.0"/>
+    </FitConstraint>
+    <FitConstraint id="fit/central_footpad/tx">
+      <Transform parent="root">
+        <Position x="0.08436" y="0.16794261249" z="0.0"/>
+        <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+      </Transform>
+      <AxisInsertion x="1.0" y="0.0" z="0.0"/>
+      <AxisReference x="0.0" y="1.0" z="0.0"/>
+      <RotationalSymmetry value="2"/>
+      <ApproachDistance value="0.0"/>
+    </FitConstraint>
+    <Touchscreen id="touchscreen">
+      <Transform parent="root">
+        <Position x="-0.10357994592" y="0.0" z="0.1385657087"/>
+        <Quaternion x="0.0" y="0.4146932" z="0.0" w="0.9099613"/>
+      </Transform>
+      <Size width="0.05" height="0.05"/>
+      <SurfaceNormal x="0" y="0" z="1"/>
+      <Pressure min="0.0" max="5.0"/>
+      <Touch radius="0.01" multi_touch="false" allow_drag="true"/>
+      <Metadata>
+        <Model>ts-5r-100</Model>
+        <Version>v2.1.4</Version>
+        <Driver>fts_i2c</Driver>
+      </Metadata>
+    </Touchscreen>
+    <Overlay slot="hmi"/>
+  </Object>
+</Root>
