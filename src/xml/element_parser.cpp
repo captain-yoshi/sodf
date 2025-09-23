@@ -318,10 +318,10 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
     }
     case ShapeType::Mesh:
     {
-      const auto* file = elem->FirstChildElement("File");
-      if (!file || !file->Attribute("path"))
-        throw std::runtime_error("Mesh missing <File path=...>");
-      shape.mesh_path = file->Attribute("path");
+      const auto* file = elem->FirstChildElement("Resource");
+      if (!file || !file->Attribute("uri"))
+        throw std::runtime_error("Mesh missing <Resource uri=...>");
+      shape.mesh_uri = file->Attribute("uri");
       if (const auto* scale = elem->FirstChildElement("Scale"))
       {
         shape.scale.x() = parseDoubleExpression(scale, "x", 1.0);

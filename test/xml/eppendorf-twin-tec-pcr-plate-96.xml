@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root sodf_version="0.0.7">
+
+  <Object id="eppendorf:twin-tec-pcr-plate-96">
+
+    <Product>
+      <Name>PCR Plate</Name>
+      <Model></Model>
+      <SerialNumber></SerialNumber>
+      <Vendor>Eppendorf</Vendor>
+    </Product>
+
+    <Origin id="root">
+      <Transform parent="">
+        <Position x="0.0" y="0.0" z="0.0"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      </Transform>
+    </Origin>
+
+    <Link id="link/gilson_pcr_plate_96_semi_skirted_250">
+      <Transform parent="root">
+        <Position x="0.0" y="0.0" z="0.0"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      </Transform>
+      <Visual>
+        <Shape type="Mesh">
+          <Resource uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
+      <Collision>
+        <Shape type="Mesh">
+          <Resource uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Collision>
+    </Link>
+
+    <StackedShape id="stacked_shape">
+      <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
+      <AxisStackReference x="0.0" y="1.0" z="0.0"/>
+      <Shape type="SphericalSegment">
+        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+        <AxisReference x="1.0" y="0.0" z="0.0"/>
+        <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
+      </Shape>
+      <Shape type="Cone">
+        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+        <AxisReference x="1.0" y="0.0" z="0.0"/>
+        <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
+      </Shape>
+      <Shape type="Cone">
+        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+        <AxisReference x="1.0" y="0.0" z="0.0"/>
+        <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
+      </Shape>
+      <Shape type="Cylinder">
+        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
+        <AxisReference x="1.0" y="0.0" z="0.0"/>
+        <Dimensions radius="0.00275" height="0.0040"/>
+      </Shape>
+    </StackedShape>
+
+    <FluidDomainShape id="fluid/well_200ul">
+      <StackedShape id="stacked_shape"/>
+    </FluidDomainShape>
+
+    <ForLoop row_name="A:H:1" row="1:8:1" col="1:12:1" zipped="[row_name,row]">
+      <Container id="container/{row_name}{col}">
+        <Transform parent="root">
+          <Position x="0.0315 - (({row}-1)*0.009)" y="0.0495 - (({col}-1)*0.009)" z="0.0008"/>
+          <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+        </Transform>
+        <!-- <MaterialRef id="polypropylene"/> -->
+        <Content type="" volume="100.0" units="uL"/>
+        <AxisBottom x="1.0" y="0.0" z="0.0"/>
+        <AxisReference x="0.0" y="1.0" z="0.0"/>
+        <DomainShapeRef id="fluid/well_200ul"/>
+        <LiquidLevelJointRef id="container/{row_name}{col}/liquid_level"/>
+      </Container>
+    </ForLoop>
+
+  </Object>
+
+</Root>

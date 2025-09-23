@@ -192,7 +192,7 @@ TEST(XMLParser, ParseMeshShape)
 {
   std::string xml_txt = R"(
     <Shape type="Mesh">
-      <File path="package://some/path/mesh.stl"/>
+      <Resource uri="package://some/path/mesh.stl"/>
     </Shape>)";
 
   tinyxml2::XMLDocument doc;
@@ -314,34 +314,30 @@ TEST(XMLParser, FluidDomaineShapeComponent)
   std::string xml_txt = R"(
 
     <root>
-
-
       <StackedShape id="stacked_shape">
+        <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
+        <AxisStackReference x="0.0" y="1.0" z="0.0"/>
         <Shape type="SphericalSegment">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
         </Shape>
-
         <Shape type="Cone">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
         </Shape>
-
         <Shape type="Cone">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
         </Shape>
-
         <Shape type="Cylinder">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions radius="0.00275" height="0.0040"/>
         </Shape>
       </StackedShape>
-
 
       <FluidDomainShape id="fluid/container">
         <StackedShape id="stacked_shape"/>
@@ -375,8 +371,8 @@ TEST(XMLParser, FluidDomaineShapeComponent)
   }
 
   auto geom_shape = sodf::getComponentElement<components::StackedShapeComponent>(db, eid, "stacked_shape");
-  ASSERT_NE(geom_shape, nullptr);    // shape must exist
-  ASSERT_EQ(geom_shape->size(), 4);  // 4 stacked shapes
+  ASSERT_NE(geom_shape, nullptr);           // shape must exist
+  ASSERT_EQ(geom_shape->shapes.size(), 4);  // 4 stacked shapes
 
   auto fluid_domain_shape = sodf::getComponentElement<components::DomainShapeComponent>(db, eid, "fluid/container");
   ASSERT_NE(fluid_domain_shape, nullptr);            // shape must exist
@@ -425,26 +421,24 @@ TEST(XMLParser, ContainerComponent)
 {
   std::string xml_txt = R"(
     <root>
-
       <StackedShape id="stacked_shape">
+        <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
+        <AxisStackReference x="0.0" y="1.0" z="0.0"/>
         <Shape type="SphericalSegment">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
         </Shape>
-
         <Shape type="Cone">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
         </Shape>
-
         <Shape type="Cone">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
         </Shape>
-
         <Shape type="Cylinder">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
@@ -644,7 +638,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
     ASSERT_TRUE(vshape.vertices.empty());
     ASSERT_EQ(3, vshape.axes.size());
-    ASSERT_TRUE(vshape.mesh_path.empty());
+    ASSERT_TRUE(vshape.mesh_uri.empty());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, -1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, -1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
@@ -714,7 +708,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     // ASSERT_TRUE(vshape.vertices.empty());
     std::cout << grasp << std::endl;
 
-    ASSERT_TRUE(vshape.mesh_path.empty());
+    ASSERT_TRUE(vshape.mesh_uri.empty());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, 1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
@@ -732,7 +726,6 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
           </Transform>
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
-
           <Dimensions radius="0.012" height="0.020"/>
         </Shape>
 
@@ -786,7 +779,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(2, vshape.axes.size());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 0, 1)));
-    ASSERT_TRUE(vshape.mesh_path.empty());
+    ASSERT_TRUE(vshape.mesh_uri.empty());
     ASSERT_EQ(2, vshape.vertices.size());
     ASSERT_TRUE(vshape.vertices[0].isApprox(Eigen::Vector3d(-0.01, 0, 0)));
     ASSERT_TRUE(vshape.vertices[1].isApprox(Eigen::Vector3d(0.01, 0, 0)));
@@ -919,24 +912,23 @@ TEST(XMLParser, ComponentsForLoop)
       <Object id="plate">
 
         <StackedShape id="stacked_shape">
+          <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
+          <AxisStackReference x="0.0" y="1.0" z="0.0"/>
           <Shape type="SphericalSegment">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
           </Shape>
-
           <Shape type="Cone">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
           </Shape>
-
           <Shape type="Cone">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
           </Shape>
-
           <Shape type="Cylinder">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
@@ -947,7 +939,6 @@ TEST(XMLParser, ComponentsForLoop)
         <FluidDomainShape id="fluid/container">
           <StackedShape id="stacked_shape"/>
         </FluidDomainShape>
-
 
         <ForLoop row_name="A:B:1" row="1:2:1" col="1:3:1" zipped="[row_name,row]">
           <Container id="container/{row_name}{col}">

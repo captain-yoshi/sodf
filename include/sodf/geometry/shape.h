@@ -22,7 +22,7 @@ namespace geometry {
 | Cone              | base_radius, top_radius, height | symmetry, ref base plane   |            | Frustum if top_radius > 0, cone if = 0.                    |
 | SphericalSegment  | base_radius, top_radius, height | symmetry, ref base plane   |            | Cap if one radius = 0, segment if both > 0.                |
 | Plane             | width, height (optional)        | normal, in-plane x-y       |            | Bounded plane if width & height > 0, infinite if = 0.      |
-| Mesh              | (none)                          | (none, defined in file)    | mesh_path  |                                                            |
+| Mesh              | (none)                          | (none, defined in file)    | mesh_uri   |                                                            |
 */
 // clang-format on
 
@@ -55,7 +55,7 @@ struct Shape
   // Optional: additional data (e.g., list of points for polygons)
   std::vector<Eigen::Vector3d> vertices;
   // Optional: mesh reference, etc.
-  std::string mesh_path;
+  std::string mesh_uri;
   Eigen::Vector3d scale = { 1.0, 1.0, 1.0 };
 };
 
@@ -149,7 +149,7 @@ inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
     if (i + 1 < shape.vertices.size())
       os << ", ";
   }
-  os << "], mesh_path='" << shape.mesh_path << "'";
+  os << "], mesh_uri='" << shape.mesh_uri << "'";
   os << ", scale=" << shape.scale.transpose() << ")";
   return os;
 }

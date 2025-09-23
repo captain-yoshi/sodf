@@ -45,8 +45,9 @@ void parseVirtualButtonComponent(const tinyxml2::XMLElement* obj_elem, ginseng::
   X(StackedShape, parseStackedShapeComponent)                                                                          \
   X(ParallelGrasp, parseParallelGraspComponent)                                                                        \
   X(Container, parseContainerComponent)                                                                                \
-  /* Special: ForLoop is a control tag, not a true component. The handler does nothing. */                             \
-  X(ForLoop, [](const tinyxml2::XMLElement*, ginseng::database&, sodf::EntityID) {})
+  /* Special: Control tags, not a true components. The handler does nothing. */                                        \
+  X(ForLoop, [](const tinyxml2::XMLElement*, ginseng::database&, sodf::EntityID) {})                                   \
+  X(Overlay, [](const tinyxml2::XMLElement*, ginseng::database&, sodf::EntityID) {})
 
 /// Only valid as nested subcomponents, never directly under <Object>
 #define SODF_XML_SUBCOMPONENT_PARSERS(X)                                                                               \
