@@ -20,7 +20,7 @@ using namespace sodf;
 
 TEST(ECS, ParsingSingleObject)
 {
-  std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/biorad-t100-thermal-cycler.xml";
+  std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/bio-rad-t100-thermal-cycler.no-overlay.xml";
 
   xml::EntityParser parser;
   auto db = ginseng::database{};
@@ -47,11 +47,11 @@ TEST(ECS, ParsingSingleObject)
 
   // Object component validation
   auto& object = db.get_component<components::ObjectComponent>(eid);
-  EXPECT_EQ(object.id, "biorad_thermal_cycler_t100");
-  EXPECT_EQ(object.name, "Thermal Cycler");
+  EXPECT_EQ(object.id, "bio-rad:t100-thermal-cycler");
+  EXPECT_EQ(object.name, "T100 Thermal Cycler");
   EXPECT_EQ(object.model, "T100");
-  EXPECT_EQ(object.serial_number, "SN-ABC123456");
-  EXPECT_EQ(object.vendor, "BioRad");
+  EXPECT_EQ(object.serial_number, "");
+  EXPECT_EQ(object.vendor, "Bio-Rad");
 
   // Transform component validation
   auto& transform = db.get_component<components::TransformComponent>(eid);
@@ -69,106 +69,9 @@ TEST(ECS, ParsingSingleObject)
   auto& button = db.get_component<components::VirtualButtonComponent>(eid);
   EXPECT_EQ(button.elements.size(), 51);
 
-  // db.visit([](components::FSMComponent& fsm_comp) {
-  //   for (auto& [fsm_id, fsm] : fsm_comp.fsm_map)
-  //   {
-  //     const std::string action = "incubate";  // example
-
-  //     std::cout << "FSM current state: " << fsm.state_labels.to_string(fsm.current_state) << "\n";
-  //     std::cout << "Has 'incubate'? " << fsm.action_labels.has_label("incubate") << "\n";
-
-  //     if (!fsm.action_labels.has_label(action))
-  //       continue;
-
-  //     int action_id = fsm.action_labels.to_id(action);
-  //     int current = fsm.current_state;
-
-  //     if (current < fsm.transitions.size() && action_id < fsm.transitions[current].size())
-  //     {
-  //       int next = fsm.transitions[current][action_id];
-  //       if (next >= 0)
-  //       {
-  //         std::cout << "FSM " << fsm_id << ": " << current << " → " << next << "\n";
-  //         fsm.current_state = next;
-  //       }
-  //     }
-  //   }
-  // });
-
   // system::simulate_action_sequence_on_all(db, "fsm/touchscreen", { "incubate", "bloc_temperature", "ok" });
-  system::simulate_action_sequence_on_all(db, "fsm/touchscreen", { "incubate", "bloc_temperature", "ok", "zero" });
+  // system::simulate_action_sequence_on_all(db, "fsm/touchscreen", { "incubate", "bloc_temperature", "ok", "zero" });
 }
-
-// TEST(ECS, Entity)
-// {
-// auto db = ginseng::database{};
-
-// // entity
-// auto pcr = db.create_entity();
-
-// // component: id
-// db.add_component(pcr, components::ID{ "pcr" });
-
-// // component: constraint
-// db.add_component(pcr, components::Constraint{ "root", "root" });
-
-// // component: joint
-// {
-//   components::JointCollection joints;
-
-//   joints.joint_map.emplace_back("joint1", components::Joint{ KDL::Joint(KDL::Joint::RotX), "root", 0.0 });
-
-//   db.add_component(pcr, joints);
-// }
-
-// // component: relative transforms
-// {
-//   std::vector<geometry::Transform> transforms;
-
-//   transforms.push_back(geometry::Transform{ "root", "container/A1" });
-
-//   db.add_component(pcr, components::RelativeTransforms{ transforms });
-// }
-
-// // component: container
-// {
-//   auto containers = components::ContainerCollection{};
-//   std::vector<geometry::BaseVolumePtr> shape;
-//   shape.emplace_back(std::make_shared<geometry::SphericalCapVolume>(0.00142, 0.00167));
-//   shape.emplace_back(std::make_shared<geometry::TruncatedConeVolume>(0.00142, 0.00256, 0.00765));
-//   shape.emplace_back(std::make_shared<geometry::TruncatedConeVolume>(0.00256, 0.00275, 0.00478));
-//   shape.emplace_back(std::make_shared<geometry::CylinderVolume>(0.00275, 0.0040));
-
-//   auto container = components::Container{ 0.0, shape };
-//   containers.container_map.emplace_back("container/A1", container);
-
-//   db.add_component(pcr, containers);
-// }
-
-// // system: scene graph
-// systems::SceneGraph scene_graph(db);
-
-// scene_graph.displayInObjectRoot("pcr", "container/A1");
-
-// // test diffs
-// auto db1 = ginseng::database{};
-// auto pcr2 = db1.create_entity();
-
-// db1.add_component(pcr2, pcr);
-
-// auto& jc_component = db.get_component<components::JointCollection>(pcr);
-
-// auto new_component = jc_component;
-// new_component.joint_map[0].second.joint_position = M_PI;
-
-// db1.add_component(pcr2, new_component);
-
-// ASSERT_EQ(jc_component.joint_map[0].second.joint_position, 0.0);
-
-// db.add_component(pcr, new_component);
-
-// ASSERT_EQ(jc_component.joint_map[0].second.joint_position, M_PI);
-// }
 
 TEST(ECS, ParseSceneA)
 {
@@ -274,11 +177,11 @@ TEST(ECS, ParseSceneB)
 
     // Object component validation
     auto& object = db.get_component<components::ObjectComponent>(eid);
-    EXPECT_EQ(object.id, "pcr2");
-    EXPECT_EQ(object.name, "Thermal Cycler");
+    EXPECT_EQ(object.id, "pcr3");
+    EXPECT_EQ(object.name, "T100 Thermal Cycler");
     EXPECT_EQ(object.model, "T100");
-    EXPECT_EQ(object.serial_number, "SN-ABC123456");
-    EXPECT_EQ(object.vendor, "BioRad");
+    EXPECT_EQ(object.serial_number, "");
+    EXPECT_EQ(object.vendor, "Bio-Rad");
 
     // Transform component validation
     auto& transform = db.get_component<components::TransformComponent>(eid);

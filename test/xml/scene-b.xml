@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root sodf_version="0.0.7">
+  <!-- make available to import/clone -->
+  <Import path="./scene-a.xml"/>
+  <!-- clone instance -->
+  <Object id="pcr3" model="pcr1"/>
+</Root>

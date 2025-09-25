@@ -313,7 +313,7 @@ void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, 
   {
     fsm.transitions = buildTransitionTableFromXML(transitions_elem, fsm.state_labels, fsm.action_labels);
 
-    std::cout << "fsm transitions size = " << fsm.transitions.size() << std::endl;
+    // std::cout << "fsm transitions size = " << fsm.transitions.size() << std::endl;
     for (int s = 0; s < fsm.transitions.size(); ++s)
     {
       for (int a = 0; a < fsm.transitions[s].size(); ++a)
