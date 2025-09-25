@@ -281,10 +281,10 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
       }
       else
       {
-        std::cout << "=== Validating Spherical Segment ===" << std::endl;
-        std::cout << "base_radius (r1): " << r1 << std::endl;
-        std::cout << "top_radius  (r2): " << r2 << std::endl;
-        std::cout << "height (h):       " << h << std::endl;
+        // std::cout << "=== Validating Spherical Segment ===" << std::endl;
+        // std::cout << "base_radius (r1): " << r1 << std::endl;
+        // std::cout << "top_radius  (r2): " << r2 << std::endl;
+        // std::cout << "height (h):       " << h << std::endl;
 
         if (!geometry::isValidSegment(r1, r2, h))
           throw std::runtime_error("SphericalSegment dimensions are incompatible: no valid sphere exists.");

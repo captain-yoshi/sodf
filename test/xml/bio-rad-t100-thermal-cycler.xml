@@ -7,12 +7,14 @@
       <SerialNumber/>
       <Vendor>Bio-Rad</Vendor>
     </Product>
+
     <Origin id="root">
       <Transform parent="">
         <Position x="0.0" y="0.0" z="0.0"/>
         <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
       </Transform>
     </Origin>
+
     <Link id="link/base">
       <Transform parent="root">
         <Position x="0.0" y="0.0" z="0.0"/>
@@ -36,6 +38,7 @@
         <Tensor ixx="0.001" ixy="0.000" ixz="0.000" iyy="0.001" iyz="0.000" izz="0.001"/>
       </Inertial>
     </Link>
+
     <Joint id="joint/lid">
       <Type value="Revolute"/>
       <Actuation value="Passive"/>
@@ -50,6 +53,7 @@
         <Position name="open" value="-1.74532925199"/>
       </NamedPositions>
     </Joint>
+
     <Link id="link/lid">
       <Transform parent="joint/lid">
         <Position x="0.170119" y="0.0" z="-0.212675"/>
@@ -73,6 +77,7 @@
         <Tensor ixx="0.001" ixy="0.000" ixz="0.000" iyy="0.001" iyz="0.000" izz="0.001"/>
       </Inertial>
     </Link>
+
     <Joint id="joint/handle">
       <Type value="Revolute"/>
       <Actuation value="Passive"/>
@@ -87,6 +92,7 @@
         <Position name="open" value="-0.78539816339"/>
       </NamedPositions>
     </Joint>
+
     <Link id="link/handle">
       <Transform parent="joint/handle">
         <Position x="0.08556117" y="0.0" z="-0.212675"/>
@@ -110,6 +116,7 @@
         <Tensor ixx="0.001" ixy="0.000" ixz="0.000" iyy="0.001" iyz="0.000" izz="0.001"/>
       </Inertial>
     </Link>
+
     <FitConstraint id="fit/pcr/rx">
       <Transform parent="root">
         <Position x="0.08436" y="0.16794261249" z="0.0"/>
@@ -120,6 +127,7 @@
       <RotationalSymmetry value="2"/>
       <ApproachDistance value="0.0"/>
     </FitConstraint>
+
     <FitConstraint id="fit/central_footpad/tx">
       <Transform parent="root">
         <Position x="0.08436" y="0.16794261249" z="0.0"/>
@@ -130,6 +138,7 @@
       <RotationalSymmetry value="2"/>
       <ApproachDistance value="0.0"/>
     </FitConstraint>
+
     <Touchscreen id="touchscreen">
       <Transform parent="root">
         <Position x="-0.10357994592" y="0.0" z="0.1385657087"/>
@@ -145,6 +154,10 @@
         <Driver>fts_i2c</Driver>
       </Metadata>
     </Touchscreen>
+
+    <!-- This <Overlay slot="hmi"/> is a requirement marker (no id here).
+     Instances choose the concrete HMI overlay (e.g., id="hmi-fw-2.4.3"). -->
     <Overlay slot="hmi"/>
+
   </Object>
 </Root>

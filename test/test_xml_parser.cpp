@@ -1,4 +1,7 @@
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+
 #include <sodf/xml/entity_parser.h>
 #include <sodf/xml/element_parser.h>
 #include <sodf/xml/component_parser.h>
@@ -16,6 +19,349 @@
 using namespace sodf;
 using namespace sodf::components;
 using namespace sodf::geometry;
+namespace fs = std::filesystem;
+
+static std::string writeTempFile(const std::string& filename, const std::string& contents)
+{
+  fs::path dir = fs::temp_directory_path() / "sodf_min_xml_tests";
+  fs::create_directories(dir);
+  fs::path p = dir / filename;
+  std::ofstream(p.string()) << contents;
+  return p.string();
+}
+
+static std::vector<std::string> collectObjectIds(ginseng::database& db)
+{
+  std::vector<std::string> ids;
+  db.visit([&](ginseng::database::ent_id, ObjectComponent& obj) { ids.push_back(obj.id); });
+  return ids;
+}
+
+TEST(XMLParser, IncludeMissingFile)
+{
+  const std::string scene_xml = R"(
+    <Root>
+      <Include path="__does_not_exist__.xml"/>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_include_missing.xml", scene_xml);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, ImportMissingPath)
+{
+  const std::string scene_xml = R"(
+    <Root>
+      <Import/>
+    </Root>)";
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromText(scene_xml, db, /*base_dir=*/""));
+}
+
+TEST(XMLParser, DuplicateObjectIdAcrossIncludes)
+{
+  const std::string libA = R"(<Root><Object id="base"/></Root>)";
+  const std::string libB = R"(<Root><Object id="base"/></Root>)";
+  writeTempFile("dup_A.xml", libA);
+  writeTempFile("dup_B.xml", libB);
+
+  const std::string scene = R"(
+    <Root>
+      <Include path="dup_A.xml"/>
+      <Include path="dup_B.xml"/>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_dup.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, OverlaySlotCollision)
+{
+  const std::string lib = R"(<?xml version="1.0"?>
+    <Root>
+      <Object id="device"/>
+      <Overlay id="v1" slot="hmi" target="device"/>
+      <Overlay id="v2" slot="hmi" target="device"/>
+    </Root>)";
+  writeTempFile("overlay_collision.xml", lib);
+
+  const std::string scene = R"(<?xml version="1.0"?>
+    <Root>
+      <Include path="overlay_collision.xml"/>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_overlay_collision.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, OverlayExactDuplicate)
+{
+  const std::string objDoc = R"(
+    <Root>
+      <Object id="device_dup"/>
+    </Root>)";
+  const std::string ovA = R"(
+    <Root>
+      <Overlay id="fw" slot="hmi" target="device_dup"/>
+    </Root>)";
+  const std::string ovB = R"(
+    <Root>
+      <Overlay id="fw" slot="hmi" target="device_dup"/>
+    </Root>)";
+
+  writeTempFile("device_dup.xml", objDoc);
+  writeTempFile("ovA.xml", ovA);
+  writeTempFile("ovB.xml", ovB);
+
+  const std::string scene = R"(
+    <Root>
+      <Include path="device_dup.xml"/>
+      <Include path="ovA.xml"/>
+      <Include path="ovB.xml"/>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_overlay_dup.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, CloneSourceNotFound)
+{
+  const std::string scene = R"(
+<Root>
+  <Object id="x" model="missing_model"/>
+</Root>)";
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromText(scene, db, /*base_dir=*/""));
+}
+
+TEST(XMLParser, ImportWithNS_UnqualifiedModelRef)
+{
+  const std::string lib = R"(
+    <Root>
+      <Object id="base"/>
+    </Root>)";
+  writeTempFile("lib_ns.xml", lib);
+
+  const std::string scene = R"(
+    <Root>
+      <Import path="lib_ns.xml" ns="foo"/>
+      <Object id="inst" model="base"/> <!-- should be model="foo:base" -->
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_import_ns_bad.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, InvalidChildInClone)
+{
+  const std::string lib = R"(
+    <Root>
+      <Object id="base"></Object>
+    </Root>)";
+  writeTempFile("lib_bad_child.xml", lib);
+
+  const std::string scene = R"(
+    <Root>
+      <Include path="lib_bad_child.xml"/>
+      <Object id="inst" model="base">
+        <Origin id="extra"/> <!-- illegal under model="..." -->
+      </Object>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_bad_child.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, OverlayRemoveMissingComponent)
+{
+  const std::string lib = R"(
+    <Root>
+      <Object id="base_remove"/>
+      <Overlay id="ov1" slot="hmi" target="base_remove">
+        <Remove>
+          <Link id="L1"/>
+        </Remove>
+      </Overlay>
+    </Root>)";
+  writeTempFile("lib_remove_missing.xml", lib);
+
+  const std::string scene = R"(
+    <Root>
+      <Include path="lib_remove_missing.xml"/>
+      <Object id="inst" model="base_remove">
+        <Overlay slot="hmi" id="ov1"/>
+      </Object>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_remove_missing.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, ContractModelUnsatisfied)
+{
+  const std::string lib = R"(
+    <Root>
+      <Object id="device_contract">
+        <Overlay slot="hmi"/> <!-- required by default -->
+      </Object>
+    </Root>)";
+  writeTempFile("lib_contract.xml", lib);
+
+  const std::string scene = R"(
+    <Root>
+      <Include path="lib_contract.xml"/>
+      <Object id="inst" model="device_contract"/>
+    </Root>)";
+  const std::string scene_path = writeTempFile("scene_contract_bad.xml", scene);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
+}
+
+TEST(XMLParser, IncludePublishesModelForClone)
+{
+  // A simple model file with a plain model (no overlays/requirements)
+  const std::string models_xml = R"(
+    <Root>
+       <Object id="base"/>
+    </Root>)";
+
+  // Scene that includes the model file, then clones it
+  const std::string scene_xml = R"(
+    <Root>
+      <Include path="models_include.xml"/>
+      <Object id="inst" model="base"/>
+    </Root>)";
+
+  const std::string models_path = writeTempFile("models_include.xml", models_xml);
+  const std::string scene_path = writeTempFile("scene_include.xml", scene_xml);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
+
+  auto ids = collectObjectIds(db);
+  ASSERT_EQ(ids.size(), 1u);
+  EXPECT_EQ(ids[0], "inst");
+}
+
+TEST(XMLParser, ImportPublishesModelForClone)
+{
+  // Imported file defines a plain model (no overlays)
+  const std::string models_xml = R"(
+    <Root>
+      <Object id="base_import"/>
+    </Root>)";
+
+  // Scene imports the file, then clones the imported model
+  const std::string scene_xml = R"(
+    <Root>
+      <Import path="models_import.xml"/>
+      <Object id="inst2" model="base_import"/>
+    </Root>)";
+
+  const std::string models_path = writeTempFile("models_import.xml", models_xml);
+  const std::string scene_path = writeTempFile("scene_import.xml", scene_xml);
+
+  xml::EntityParser parser;
+  ginseng::database db;
+  ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
+
+  auto ids = collectObjectIds(db);
+  ASSERT_EQ(ids.size(), 1u);
+  EXPECT_EQ(ids[0], "inst2");
+}
+
+TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
+{
+  // A contract model: declares a required overlay slot (no id => required by default)
+  const std::string model_xml = R"(
+    <Root>
+      <Object id="needs_hmi">
+        <Overlay slot="hmi"/>
+      </Object>
+
+      <!-- Provide an overlay library entry for the slot -->
+      <Overlay id="fw1" slot="hmi" target="needs_hmi">
+        <!-- could add components here; not necessary for this minimal test -->
+        <Add>
+          <Product/>
+        </Add>
+      </Overlay>
+    </Root>)";
+  const std::string model_path = writeTempFile("overlay_contract.xml", model_xml);
+
+  // A) Scene that clones but does NOT satisfy the required slot -> MUST throw
+  {
+    const std::string scene_bad_xml = R"(
+    <Root>
+      <Include path="overlay_contract.xml"/>
+      <Object id="bad_inst" model="needs_hmi"/>
+    </Root>)";
+    const std::string scene_bad_path = writeTempFile("scene_overlay_bad.xml", scene_bad_xml);
+
+    xml::EntityParser parser;
+    ginseng::database db;
+    ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_bad_path, db));
+  }
+
+  // B) Scene that supplies overlay id -> OK
+  {
+    const std::string scene_ok_xml = R"(
+    <Root>
+      <Include path="overlay_contract.xml"/>
+      <Object id="ok_inst" model="needs_hmi">
+        <Overlay slot="hmi" id="fw1"/>
+      </Object>
+    </Root>)";
+    const std::string scene_ok_path = writeTempFile("scene_overlay_ok.xml", scene_ok_xml);
+
+    xml::EntityParser parser;
+    ginseng::database db;
+    ASSERT_TRUE(parser.loadEntitiesFromFile(scene_ok_path, db));
+
+    auto ids = collectObjectIds(db);
+    ASSERT_EQ(ids.size(), 1u);
+    EXPECT_EQ(ids[0], "ok_inst");
+  }
+
+  // C) Scene that disables the required slot -> OK
+  {
+    const std::string scene_disable_xml = R"(
+    <Root>
+      <Include path="overlay_contract.xml"/>
+      <Object id="disabled_inst" model="needs_hmi">
+        <Overlay slot="hmi" disable="true"/>
+      </Object>
+    </Root>)";
+    const std::string scene_disable_path = writeTempFile("scene_overlay_disable.xml", scene_disable_xml);
+
+    xml::EntityParser parser;
+    ginseng::database db;
+    ASSERT_TRUE(parser.loadEntitiesFromFile(scene_disable_path, db));
+
+    auto ids = collectObjectIds(db);
+    ASSERT_EQ(ids.size(), 1u);
+    EXPECT_EQ(ids[0], "disabled_inst");
+  }
+}
 
 TEST(XMLParser, ParseRectangleShape)
 {
@@ -313,7 +659,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 {
   std::string xml_txt = R"(
 
-    <root>
+    <Root>
       <StackedShape id="stacked_shape">
         <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
         <AxisStackReference x="0.0" y="1.0" z="0.0"/>
@@ -343,7 +689,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
         <StackedShape id="stacked_shape"/>
       </FluidDomainShape>)
 
-    </root>)";
+    </Root>)";
 
   auto db = ginseng::database{};
   auto eid = db.create_entity();
@@ -420,7 +766,7 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 TEST(XMLParser, ContainerComponent)
 {
   std::string xml_txt = R"(
-    <root>
+    <Root>
       <StackedShape id="stacked_shape">
         <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
         <AxisStackReference x="0.0" y="1.0" z="0.0"/>
@@ -461,7 +807,7 @@ TEST(XMLParser, ContainerComponent)
         <DomainShapeRef id="fluid/container"/>
         <Material id=""/>
       </Container>
-    </root>
+    </Root>
   )";
 
   auto db = ginseng::database{};
@@ -511,7 +857,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
   // No shapes defined
   {
     std::string xml_txt = R"(
-    <root>
+    <Root>
       <Object id="test">
 
         <ParallelGrasp id="grasp/handle">
@@ -526,7 +872,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </ParallelGrasp>
 
      </Object>
-   </root>
+   </Root>
   )";
 
     xml::EntityParser parser;
@@ -537,7 +883,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
   // No shapes defined
   {
     std::string xml_txt = R"(
-    <root>
+    <Root>
       <Object id="test">
 
         <!-- FRONT SURFACE (normal +X) -->
@@ -601,7 +947,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </ParallelGrasp>
 
       </Object>
-    </root>
+    </Root>
     )";
 
     xml::EntityParser parser;
@@ -646,7 +992,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
 
   {
     std::string xml_txt = R"(
-    <root>
+    <Root>
       <Object id="test">
 
         <Shape id="box" type="Box">
@@ -671,7 +1017,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </ParallelGrasp>
 
       </Object>
-    </root>
+    </Root>
     )";
 
     xml::EntityParser parser;
@@ -706,7 +1052,6 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
     ASSERT_EQ(3, vshape.axes.size());
     // ASSERT_TRUE(vshape.vertices.empty());
-    std::cout << grasp << std::endl;
 
     ASSERT_TRUE(vshape.mesh_uri.empty());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, 1)));
@@ -716,7 +1061,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
 
   {
     std::string xml_txt = R"(
-    <root>
+    <Root>
       <Object id="test">
 
         <Shape id="cylinder" type="Cylinder">
@@ -740,7 +1085,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </ParallelGrasp>
 
       </Object>
-    </root>
+    </Root>
     )";
 
     xml::EntityParser parser;
@@ -773,8 +1118,6 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(ShapeType::Line, vshape.type);
     ASSERT_EQ(1, vshape.dimensions.size());
     ASSERT_EQ(0.02, vshape.dimensions.at(0));
-
-    std::cout << grasp << std::endl;
 
     ASSERT_EQ(2, vshape.axes.size());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
@@ -908,7 +1251,7 @@ TEST(XMLParser, ComponentsForLoop)
 {
   // Example: Create a 2x3 (for simplicity in test), but you can do A:H and 1:12 for 96 wells
   std::string xml_txt = R"(
-    <root>
+    <Root>
       <Object id="plate">
 
         <StackedShape id="stacked_shape">
@@ -936,7 +1279,7 @@ TEST(XMLParser, ComponentsForLoop)
           </Shape>
         </StackedShape>
 
-        <FluidDomainShape id="fluid/container">
+        <FluidDomainShape id="fluid/well_250ul">
           <StackedShape id="stacked_shape"/>
         </FluidDomainShape>
 
@@ -955,7 +1298,7 @@ TEST(XMLParser, ComponentsForLoop)
           </Container>
         </ForLoop>
       </Object>
-    </root>
+    </Root>
     )";
 
   xml::EntityParser parser;
