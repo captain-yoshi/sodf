@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16.3)
 project(sodf)
 
+option(SODF_WITH_CURL "Enable HTTP support in SODF resolver (sodf:// via http/https roots)" ON)
+
 set(CMAKE_CXX_STANDARD 17)
 
 set(SODF_LIBRARY ${PROJECT_NAME})
@@ -65,6 +67,15 @@ find_package(Eigen3 REQUIRED)
 find_library(MUPARSER_LIB muparser REQUIRED)
 find_path(MUPARSER_INCLUDE_DIR muParser.h REQUIRED)
 
+if(SODF_WITH_CURL)
+  find_package(CURL QUIET)
+  if(CURL_FOUND)
+    message(STATUS "SODF: HTTP support enabled (CURL::libcurl)")
+  else()
+    message(WARNING "SODF_WITH_CURL=ON but cURL not found → disabling HTTP support")
+    set(SODF_WITH_CURL OFF)
+  endif()
+endif()
 
 add_library(${PROJECT_NAME}
   ext/tinyxml2/tinyxml2.cpp
@@ -77,6 +88,7 @@ add_library(${PROJECT_NAME}
   src/physics/fluid_domain_shape.cpp
   src/systems/fsm.cpp
   src/systems/scene_graph.cpp
+  src/uri_resolver.cpp
   src/xml/component_parser.cpp
   src/xml/element_parser.cpp
   src/xml/entity_parser.cpp
@@ -101,6 +113,12 @@ target_link_libraries(${PROJECT_NAME}
     Eigen3::Eigen
     quarticRootsFlocke
 )
+
+# Public define so headers can see it
+if(SODF_WITH_CURL)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC SODF_WITH_CURL)
+  target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
+endif()
 
 # Export include directories for dependent projects
 target_include_directories(${PROJECT_NAME}
