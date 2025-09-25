@@ -1,4 +1,5 @@
 set(SODF_TESTS
+    test_alignment.cpp
     test_ecs.cpp
     test_fluid_domain_shape.cpp
     test_xml_parser.cpp
