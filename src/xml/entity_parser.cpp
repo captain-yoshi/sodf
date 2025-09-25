@@ -28,6 +28,7 @@ struct OverlayRequest
 {
   std::string slot;  // always required on <Object>
   std::string id;    // required when the <Object> has clone="..."
+  bool disable = false;
   int line = 0;
 };
 
@@ -38,6 +39,7 @@ struct ObjectSource
   std::string filename;
   std::string base_id;
   std::unordered_map<std::string, OverlaySource> overlay_map;  // key = id + slot
+  std::unique_ptr<tinyxml2::XMLDocument> materialized_doc;
 };
 
 struct SceneComponent
@@ -56,6 +58,9 @@ struct SceneObject
 
 using ObjectIndex = std::unordered_map<std::string, ObjectSource>;
 using SceneMap = std::unordered_map<std::string, SceneObject>;
+
+SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& object_index,
+                               const std::string& current_ns);
 
 std::string overlay_key(const std::string& id, const std::string& slot)
 {
@@ -265,8 +270,25 @@ std::string canonicalize_ref(const std::string& current_ns, const std::string& r
   return ref;
 }
 
+static bool has_model_attr(const tinyxml2::XMLElement* e)
+{
+  return e->Attribute("model") != nullptr;
+}
+
+static bool declares_required_overlay(const tinyxml2::XMLElement* obj_elem)
+{
+  for (auto* ov = obj_elem->FirstChildElement("Overlay"); ov; ov = ov->NextSiblingElement("Overlay"))
+  {
+    const bool required = ov->BoolAttribute("required", /*default*/ true);
+    const char* id = ov->Attribute("id");
+    if (required && (!id || !*id))
+      return true;  // contract slot
+  }
+  return false;
+}
+
 void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, const std::string& parent_ns,
-                      const std::string& base_dir, const std::string& filename);
+                      const std::string& base_dir, const std::string& filename, bool promote_objects);
 
 void processInclude(const tinyxml2::XMLElement* include_elem, ObjectIndex& object_index,
                     const std::string& including_file_dir, const std::string& parent_ns)
@@ -284,7 +306,7 @@ void processInclude(const tinyxml2::XMLElement* include_elem, ObjectIndex& objec
 
   std::string inc_file_dir = getDirectory(inc_filename);
 
-  buildObjectIndex(inc_doc, object_index, full_ns, inc_file_dir, inc_filename);
+  buildObjectIndex(inc_doc, object_index, full_ns, inc_file_dir, inc_filename, true);
 }
 
 bool ends_with(const std::string& s, const std::string& suf)
@@ -292,8 +314,262 @@ bool ends_with(const std::string& s, const std::string& suf)
   return s.size() >= suf.size() && std::equal(s.end() - suf.size(), s.end(), suf.begin());
 }
 
+bool declares_overlay_contract(const tinyxml2::XMLElement* obj_elem)
+{
+  // If the model declares any <Overlay> child, treat it as a contract model.
+  // (We could be stricter: only treat as contract if an <Overlay> has no id and required=true.
+  // But your stated rule says *any* <Overlay> means “don’t materialize”.)
+  return obj_elem->FirstChildElement("Overlay") != nullptr;
+}
+
+void register_materialized_model(ObjectIndex& index, const std::string& qualified_id, const std::string& base_id,
+                                 const SceneObject& composed_obj)
+{
+  // Make a fresh doc containing exactly the final components
+  auto doc = std::make_unique<tinyxml2::XMLDocument>();
+  auto* obj_elem = doc->NewElement("Object");
+  obj_elem->SetAttribute("id", base_id.c_str());
+  doc->InsertFirstChild(obj_elem);
+
+  // Copy each final component XML under the new <Object>
+  for (const auto& sc : composed_obj.components)
+  {
+    // DeepCopy from the original component element
+
+    // DeepCopy is a member of XMLNode
+    tinyxml2::XMLNode* copied = sc.xml->DeepClone(doc.get());
+    obj_elem->InsertEndChild(copied);
+  }
+
+  // Insert/overwrite the index entry (preserve overlay_map if already present)
+  auto [it, inserted] = index.emplace(qualified_id, ObjectSource{});
+  if (!inserted)
+  {
+    // preserve existing overlays
+    // (we only overwrite xml/filename/base_id/materialized_doc)
+  }
+
+  it->second.xml = obj_elem;               // points into materialized_doc
+  it->second.filename = "[materialized]";  // purely informational
+  it->second.base_id = base_id;
+  it->second.materialized_doc = std::move(doc);  // keep alive
+}
+
+bool is_patch_tag(std::string_view tag)
+{
+  return tag == "Add" || tag == "Update" || tag == "Upsert" || tag == "Remove";
+}
+
+void apply_patch_block(SceneObject& obj,
+                       const tinyxml2::XMLElement* block,  // <Add>/<Update>/<Upsert>/<Remove>
+                       std::string_view op_name)           // "Add"/"Update"/"Upsert"/"Remove"
+{
+  for (const auto* comp = block->FirstChildElement(); comp; comp = comp->NextSiblingElement())
+  {
+    const std::string comp_type_str = comp->Name();
+    auto opt_type = sceneComponentTypeFromString(comp_type_str);
+    if (!opt_type)
+      throw std::runtime_error("Unknown ComponentType string: " + comp_type_str);
+
+    SceneComponentType comp_type = *opt_type;
+    std::string comp_id = comp->Attribute("id") ? comp->Attribute("id") : "";
+
+    auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
+    auto it = std::find_if(obj.components.begin(), obj.components.end(), match_pred);
+
+    if (op_name == "Add")
+    {
+      if (it != obj.components.end())
+        throw std::runtime_error("Cannot <Add> already existing component <" + comp_type_str + " id=\"" + comp_id +
+                                 "\"> at line " + std::to_string(comp->GetLineNum()) + ".");
+      obj.components.push_back({ comp_type, comp_id, comp });
+    }
+    else if (op_name == "Update")
+    {
+      if (it == obj.components.end())
+        throw std::runtime_error("Cannot <Update> non-existent component <" + comp_type_str + " id=\"" + comp_id +
+                                 "\"> at line " + std::to_string(comp->GetLineNum()) + ".");
+      obj.components.erase(it);
+      obj.components.push_back({ comp_type, comp_id, comp });
+    }
+    else if (op_name == "Upsert")
+    {
+      obj.components.erase(std::remove_if(obj.components.begin(), obj.components.end(), match_pred),
+                           obj.components.end());
+      obj.components.push_back({ comp_type, comp_id, comp });
+    }
+    else /* Remove */
+    {
+      if (it == obj.components.end())
+        throw std::runtime_error("Cannot <Remove> non-existent component <" + comp_type_str + " id=\"" + comp_id +
+                                 "\"> at line " + std::to_string(comp->GetLineNum()) + ".");
+      obj.components.erase(it);
+    }
+  }
+}
+
+// “Upsert” a direct component tag like <Link>, <Joint>, <FSM>, ...
+void upsert_direct_component(SceneObject& obj, const tinyxml2::XMLElement* child)
+{
+  const std::string tag = child->Name();
+  auto opt_type = sceneComponentTypeFromString(tag);
+  if (!opt_type)
+    throw std::runtime_error("Unknown ComponentType string: " + tag);
+  SceneComponentType comp_type = *opt_type;
+
+  std::string comp_id = child->Attribute("id") ? child->Attribute("id") : "";
+  auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
+
+  obj.components.erase(std::remove_if(obj.components.begin(), obj.components.end(), match_pred), obj.components.end());
+  obj.components.push_back({ comp_type, comp_id, child });
+}
+
+// void register_ephemeral_model(ObjectIndex& index, const std::string& qualified_id, const std::string& base_id,
+//                               const tinyxml2::XMLElement* obj_elem, const std::string& filename_hint = "[scene]")
+// {
+//   auto [it, inserted] = index.emplace(qualified_id, ObjectSource{});
+//   // keep any overlays already attached for this qid (unlikely here, but safe)
+//   it->second.xml = obj_elem;
+//   it->second.filename = filename_hint;
+//   it->second.base_id = base_id;  // store the bare id (no ns)
+// }
+
+SceneObject composeModelObject(const tinyxml2::XMLElement* elem, const ObjectIndex& object_index,
+                               const std::string& current_ns)
+{
+  SceneObject obj;
+  obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+
+  // Collect overlay tags (model-level). We DO NOT enforce them here.
+  // (We also do NOT apply model defaults here; can be added later if desired.)
+  bool has_model = elem->Attribute("model");
+
+  // If cloning a model: recursively compose the clone source as a MODEL (no enforcement)
+  if (has_model)
+  {
+    // Resolve clone id (handle namespaces)
+    auto known_ns = collect_namespaces(object_index);
+    std::string model_id = elem->Attribute("model");
+    std::string canonical_clone = canonicalize_ref(current_ns, model_id, known_ns);
+
+    auto found = object_index.find(canonical_clone);
+    if (found == object_index.end())
+      throw std::runtime_error("Clone source not found: " + canonical_clone + " (line " +
+                               std::to_string(elem->GetLineNum()) + ")");
+
+    std::string cloned_ns = extract_namespace_from_qid_and_base(canonical_clone, found->second.base_id);
+
+    // Recurse as MODEL
+    obj = composeModelObject(found->second.xml, object_index, cloned_ns);
+    obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+  }
+
+  // Walk children (centralized handling)
+  for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
+  {
+    const std::string tag = child->Name();
+    if (tag == "Overlay")
+      continue;  // model requirements handled at scene level
+
+    if (has_model)
+    {
+      // Clone (model): only patch blocks are allowed
+      if (!is_patch_tag(tag))
+        throw std::runtime_error("Invalid child element <" + tag + "> inside <Object id=\"" + obj.id +
+                                 "\" model=\"...\"> at line " + std::to_string(child->GetLineNum()) +
+                                 ". Only <Add>, <Update>, <Upsert>, <Remove> or <Overlay> are allowed.");
+
+      apply_patch_block(obj, child, tag);
+    }
+    else
+    {
+      // Non-clone (model): only direct components (no patch blocks)
+      if (is_patch_tag(tag))
+        throw std::runtime_error("Invalid child element <" + tag + "> inside non-clone <Object id=\"" + obj.id +
+                                 "\"> at line " + std::to_string(child->GetLineNum()) +
+                                 ". Only direct component tags (e.g., <Origin>, <Link>) are allowed.");
+
+      upsert_direct_component(obj, child);
+    }
+  }
+
+  return obj;
+}
+
+void processImport(const tinyxml2::XMLElement* import_elem, ObjectIndex& object_index,
+                   const std::string& including_file_dir, const std::string& parent_ns, SceneMap& scene_map)
+{
+  // 1) Resolve path + ns
+  const char* path_c = import_elem->Attribute("path");
+  if (!path_c || !*path_c)
+  {
+    throw std::runtime_error("<Import> missing 'path' at line " + std::to_string(import_elem->GetLineNum()));
+  }
+  std::string path = path_c;
+  std::string ns = import_elem->Attribute("ns") ? import_elem->Attribute("ns") : "";
+  std::string full_ns = canonical_ns(parent_ns, ns);
+
+  // 2) Load target doc
+  std::string inc_filename = including_file_dir.empty() ? path : (including_file_dir + "/" + path);
+  auto inc_doc = std::make_unique<tinyxml2::XMLDocument>();
+  if (inc_doc->LoadFile(inc_filename.c_str()) != tinyxml2::XML_SUCCESS)
+  {
+    throw std::runtime_error("Failed to import: " + inc_filename);
+  }
+  std::string inc_file_dir = getDirectory(inc_filename);
+
+  // 3) Register models/overlays from imported doc (NO entities)
+  buildObjectIndex(inc_doc.get(), object_index, full_ns, inc_file_dir, inc_filename, true);
+
+  // 4) Promote imported doc’s top-level <Object>s into snapshot models (no entities)
+  if (const auto* inc_root = inc_doc->FirstChildElement("Root"))
+  {
+    for (const auto* obj_elem = inc_root->FirstChildElement("Object"); obj_elem;
+         obj_elem = obj_elem->NextSiblingElement("Object"))
+    {
+      if (has_model_attr(obj_elem))
+      {
+        // Instance: compose with enforcement (applies overlays/patches), then snapshot
+        SceneObject inst = composeSceneObject(obj_elem, object_index, full_ns);
+        register_materialized_model(object_index, qualify_id(full_ns, inst.id), inst.id, inst);
+      }
+      else if (!declares_required_overlay(obj_elem))
+      {
+        // Plain model (no required overlay slots): safe to materialize without enforcement
+        SceneObject m = composeModelObject(obj_elem, object_index, full_ns);
+        register_materialized_model(object_index, qualify_id(full_ns, m.id), m.id, m);
+      }
+      // else: contract model → skip (must be satisfied by a scene instance)
+    }
+  }
+
+  // 5) Import chaining: process <Import> tags found INSIDE the imported document
+  //    (only when reached via Import; Include won't do this)
+  if (const auto* root = inc_doc->FirstChildElement("Root"))
+  {
+    for (const auto* nested = root->FirstChildElement("Import"); nested; nested = nested->NextSiblingElement("Import"))
+    {
+      processImport(nested, object_index, inc_file_dir, full_ns, scene_map);
+    }
+  }
+
+  // 6) Instantiate the <Object> children that are listed INSIDE THIS <Import> block
+  //    (they belong to the CURRENT scene)
+  const std::string current_ns;  // scene has no ns by default
+  for (const auto* obj_elem = import_elem->FirstChildElement("Object"); obj_elem;
+       obj_elem = obj_elem->NextSiblingElement("Object"))
+  {
+    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns);
+    if (obj.id.empty())
+    {
+      throw std::runtime_error("Imported <Object> is missing 'id' at line " + std::to_string(obj_elem->GetLineNum()));
+    }
+    scene_map[obj.id] = std::move(obj);
+  }
+}
+
 void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, const std::string& ns,
-                      const std::string& base_dir, const std::string& filename)
+                      const std::string& base_dir, const std::string& filename, bool promote_objects)
 {
   const auto* root = doc->FirstChildElement("Root");
   if (!root)
@@ -367,38 +643,50 @@ void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_inde
       }
     }
   }
+
+  // Compose *each* included <Object> into a materialized model (no entities created).
+  if (promote_objects)
+  {
+    for (const auto* obj_elem = root->FirstChildElement("Object"); obj_elem;
+         obj_elem = obj_elem->NextSiblingElement("Object"))
+    {
+      if (has_model_attr(obj_elem))
+      {
+        // INSTANCE: fully compose as a SCENE object (applies overlays & patches),
+        // but DO NOT create entities here—just snapshot-register for cloning.
+        SceneObject inst = composeSceneObject(obj_elem, object_index, ns);
+        const std::string qid = qualify_id(ns, inst.id);
+        register_materialized_model(object_index, qid, inst.id, inst);
+        continue;
+      }
+
+      // MODEL (no model="..."):
+      if (declares_required_overlay(obj_elem))
+      {
+        // Contract model → do NOT materialize at index time
+        continue;
+      }
+
+      // Plain model: safe to materialize without enforcement
+      SceneObject m = composeModelObject(obj_elem, object_index, ns);
+      const std::string qid = qualify_id(ns, m.id);
+      register_materialized_model(object_index, qid, m.id, m);
+    }
+  }
 }
 
-SceneObject composeObject(const tinyxml2::XMLElement* elem, const ObjectIndex& object_index,
-                          const std::string& current_ns)
+SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& object_index,
+                               const std::string& current_ns)
 {
+  // Build model_qid and compose the MODEL first (no overlay enforcement there)
   SceneObject obj;
-  obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+  std::string model_qid;
 
-  // Collect <Overlay .../> requests on THIS <Object>
-  std::vector<OverlayRequest> overlay_reqs;
-  for (const auto* ov = elem->FirstChildElement("Overlay"); ov; ov = ov->NextSiblingElement("Overlay"))
+  bool has_model = elem->Attribute("model");
+  if (has_model)
   {
-    OverlayRequest r;
-    r.slot = ov->Attribute("slot") ? ov->Attribute("slot") : "";
-    r.id = ov->Attribute("id") ? ov->Attribute("id") : "";  // optional here; may be required later
-    r.line = ov->GetLineNum();
-    if (r.slot.empty())
-      throw std::runtime_error("<Overlay> missing 'slot' at line " + std::to_string(r.line));
-    overlay_reqs.push_back(std::move(r));
-  }
-
-  // Precompute once where you have the index (e.g., at the start of loadEntities)
-  auto known_ns = collect_namespaces(object_index);
-
-  bool has_clone = elem->Attribute("clone");
-
-  std::string model_qid = qualify_id(current_ns, obj.id);  // default when not cloning
-
-  // --- CLONE (deep-merge) ---
-  if (has_clone)
-  {
-    std::string clone_id = elem->Attribute("clone");
+    auto known_ns = collect_namespaces(object_index);
+    std::string clone_id = elem->Attribute("model");
     std::string canonical_clone = canonicalize_ref(current_ns, clone_id, known_ns);
 
     auto found = object_index.find(canonical_clone);
@@ -406,189 +694,175 @@ SceneObject composeObject(const tinyxml2::XMLElement* elem, const ObjectIndex& o
       throw std::runtime_error("Clone source not found: " + canonical_clone + " (line " +
                                std::to_string(elem->GetLineNum()) + ")");
 
-    std::string cloned_ns = extract_namespace_from_qid_and_base(canonical_clone, found->second.base_id);
-    obj = composeObject(found->second.xml, object_index, cloned_ns);  // Recursively clone
-    obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+    std::string modeled_ns = extract_namespace_from_qid_and_base(canonical_clone, found->second.base_id);
 
-    model_qid = canonical_clone;  // overlays are pulled from the clone source model
+    obj = composeModelObject(found->second.xml, object_index, modeled_ns);
+    obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
+    model_qid = canonical_clone;  // overlays belong to the clone source model
+  }
+  else
+  {
+    obj = composeModelObject(elem, object_index, current_ns);
+    model_qid = qualify_id(current_ns, obj.id);
   }
 
-  // Apply overlays BEFORE local Add/Update/Upsert/Remove
-  if (!overlay_reqs.empty())
+  // Collect instance-level overlay requests
+  std::vector<OverlayRequest> overlay_reqs;
+  for (const auto* ov = elem->FirstChildElement("Overlay"); ov; ov = ov->NextSiblingElement("Overlay"))
   {
-    auto mit = object_index.find(model_qid);
-    if (mit == object_index.end())
-      throw std::runtime_error("Model '" + model_qid + "' not found in object index while resolving overlays.");
-    const ObjectSource& model_os = mit->second;
+    OverlayRequest r;
+    r.slot = ov->Attribute("slot") ? ov->Attribute("slot") : "";
+    r.id = ov->Attribute("id") ? ov->Attribute("id") : "";
+    r.disable = ov->BoolAttribute("disable", false);
+    r.line = ov->GetLineNum();
+    if (r.slot.empty())
+      throw std::runtime_error("<Overlay> missing 'slot' at line " + std::to_string(r.line));
+    overlay_reqs.push_back(std::move(r));
+  }
 
-    // lookup by (id, slot)
-    auto find_by_id_slot = [&](const std::string& id, const std::string& slot) -> const OverlaySource& {
-      auto k = overlay_key(id, slot);
-      auto it = model_os.overlay_map.find(k);
-      if (it == model_os.overlay_map.end())
-        throw std::runtime_error("Overlay id='" + id + "' slot='" + slot + "' not available for model '" + model_qid +
-                                 "'.");
-      return it->second;
-    };
+  // Lookup model overlays and model requirements
+  auto mit = object_index.find(model_qid);
+  if (mit == object_index.end())
+    throw std::runtime_error("Model '" + model_qid + "' not found in object index while resolving overlays.");
+  const ObjectSource& model_os = mit->second;
 
-    if (has_clone)
+  auto find_by_id_slot = [&](const std::string& id, const std::string& slot) -> const OverlaySource& {
+    auto k = overlay_key(id, slot);
+    auto it = model_os.overlay_map.find(k);
+    if (it == model_os.overlay_map.end())
+      throw std::runtime_error("Overlay id='" + id + "' slot='" + slot + "' not available for model '" + model_qid +
+                               "'.");
+    return it->second;
+  };
+
+  auto collect_required_slots = [&](const ObjectSource& mos) {
+    std::unordered_set<std::string> req;
+    const tinyxml2::XMLElement* model_elem = mos.xml;
+    for (const auto* ov = model_elem->FirstChildElement("Overlay"); ov; ov = ov->NextSiblingElement("Overlay"))
     {
-      // CLONE site: every request must specify id + slot
-      for (const auto& req : overlay_reqs)
-      {
-        if (req.id.empty())
-          throw std::runtime_error("Overlay at clone site must specify both 'id' and 'slot' "
-                                   "(line " +
-                                   std::to_string(req.line) + ").");
-        const OverlaySource& ov = find_by_id_slot(req.id, req.slot);
-        apply_overlay(obj, ov.xml);
-        // std::cout << "[composeObject] Applying overlay id='" << ov.id << "' slot='" << ov.slot << "' to object='"
-        //           << obj.id << "' (model_qid='" << model_qid << "')\n";
-      }
+      const char* slot_c = ov->Attribute("slot");
+      if (!slot_c || !*slot_c)
+        throw std::runtime_error(std::string("<Overlay> missing 'slot' at line ") + std::to_string(ov->GetLineNum()) +
+                                 " in model '" + model_qid + "'.");
+      const char* id_c = ov->Attribute("id");
+      const bool required = ov->BoolAttribute("required", /*default*/ true);
+      if (required && (!id_c || !*id_c))
+        req.insert(slot_c);
     }
-    else
+    return req;
+  };
+
+  std::unordered_set<std::string> required_slots = collect_required_slots(model_os);
+  std::unordered_set<std::string> satisfied_slots;
+
+  // Apply/disable instance overlay requests; enforce clone vs non-clone rules
+  if (has_model)
+  {
+    for (const auto& req : overlay_reqs)
     {
-      // BASE/MODEL: slot-only is requirement-only; id+slot may apply directly if you want to
-      for (const auto& req : overlay_reqs)
+      if (req.disable)
       {
-        if (req.id.empty())
-          continue;  // requirement only, do not apply
-        const OverlaySource& ov = find_by_id_slot(req.id, req.slot);
-        apply_overlay(obj, ov.xml);
-        // std::cout << "[composeObject] Applying overlay id='" << ov.id << "' slot='" << ov.slot << "' to object='"
-        //           << obj.id << "' (model_qid='" << model_qid << "')\n";
+        satisfied_slots.insert(req.slot);
+        continue;
       }
+      if (req.id.empty())
+        throw std::runtime_error("Overlay at clone site must specify 'id' or set disable=\"true\" "
+                                 "(line " +
+                                 std::to_string(req.line) + ").");
+      const OverlaySource& ov = find_by_id_slot(req.id, req.slot);
+      apply_overlay(obj, ov.xml);
+      satisfied_slots.insert(req.slot);
+    }
+  }
+  else
+  {
+    for (const auto& req : overlay_reqs)
+    {
+      if (req.disable)
+      {
+        satisfied_slots.insert(req.slot);
+        continue;
+      }
+      if (req.id.empty())
+        continue;  // marker only (no immediate application)
+      const OverlaySource& ov = find_by_id_slot(req.id, req.slot);
+      apply_overlay(obj, ov.xml);
+      satisfied_slots.insert(req.slot);
+    }
+  }
+
+  // Enforce: every model-required slot must be satisfied (applied or disabled)
+  for (const auto& slot : required_slots)
+  {
+    if (!satisfied_slots.count(slot))
+    {
+      throw std::runtime_error("Object id='" + obj.id + "' (model '" + model_qid + "') requires overlay for slot='" +
+                               slot + "' but none was supplied; use <Overlay slot=\"" + slot +
+                               "\" id=\"...\"/> or disable=\"true\".");
     }
   }
 
   for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
   {
-    std::string tag = child->Name();
-
+    const std::string tag = child->Name();
     if (tag == "Overlay")
-      continue;  // already processed / or requirement-only
+      continue;  // already processed
 
-    // If inside clone, only patch operations are allowed
-    if (has_clone)
+    if (has_model)
     {
-      if (tag == "Add" || tag == "Update" || tag == "Upsert" || tag == "Remove")
-      {
-        // === Patch operations ===
-        for (const auto* comp = child->FirstChildElement(); comp; comp = comp->NextSiblingElement())
-        {
-          std::string comp_type_str = comp->Name();
-          auto opt_type = sceneComponentTypeFromString(comp_type_str);
-          if (!opt_type)
-            throw std::runtime_error("Unknown ComponentType string: " + comp_type_str);
-          SceneComponentType comp_type = *opt_type;
-          std::string comp_id = comp->Attribute("id") ? comp->Attribute("id") : "";
+      // In a cloned scene instance, only patch blocks are allowed
+      if (!is_patch_tag(tag))
+        throw std::runtime_error("Invalid child element <" + tag + "> inside scene <Object id=\"" + obj.id +
+                                 "\" model=\"...\"> at line " + std::to_string(child->GetLineNum()) +
+                                 ". Only <Add>, <Update>, <Upsert>, or <Remove> are allowed.");
 
-          auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
-          auto it = std::find_if(obj.components.begin(), obj.components.end(), match_pred);
-
-          if (tag == "Add")
-          {
-            if (it != obj.components.end())
-            {
-              throw std::runtime_error("Cannot <Add> already existing component <" + comp_type_str + " id=\"" +
-                                       comp_id + "\"> to <Object id=\"" + obj.id + "\"> at line " +
-                                       std::to_string(comp->GetLineNum()) + ".");
-            }
-            obj.components.push_back({ comp_type, comp_id, comp });
-          }
-          else if (tag == "Update")
-          {
-            if (it == obj.components.end())
-            {
-              throw std::runtime_error("Cannot <Update> non-existent component <" + comp_type_str + " id=\"" + comp_id +
-                                       "\"> in <Object id=\"" + obj.id + "\"> at line " +
-                                       std::to_string(comp->GetLineNum()) + ".");
-            }
-            // Remove and replace
-            obj.components.erase(it);
-            obj.components.push_back({ comp_type, comp_id, comp });
-          }
-          else if (tag == "Upsert")
-          {
-            // Remove if exists, then add
-            obj.components.erase(std::remove_if(obj.components.begin(), obj.components.end(), match_pred),
-                                 obj.components.end());
-            obj.components.push_back({ comp_type, comp_id, comp });
-          }
-          else if (tag == "Remove")
-          {
-            if (it == obj.components.end())
-            {
-              throw std::runtime_error("Cannot <Remove> non-existent component <" + comp_type_str + " id=\"" + comp_id +
-                                       "\"> from <Object id=\"" + obj.id + "\"> at line " +
-                                       std::to_string(comp->GetLineNum()) + ".");
-            }
-            obj.components.erase(it);
-          }
-        }
-      }
-      else
-      {
-        throw std::runtime_error(
-            "Invalid child element <" + tag + "> inside <Object id=\"" + obj.id + "\" clone=\"...\"> at line " +
-            std::to_string(child->GetLineNum()) +
-            ". Only <add>, <update>, <upsert>, or <remove> tags are allowed as children of a cloned object.");
-      }
+      apply_patch_block(obj, child, tag);
     }
     else
     {
-      // Only direct component children allowed when not cloning
-      if (tag == "Add" || tag == "Update" || tag == "Upsert" || tag == "Remove")
-      {
-        throw std::runtime_error("Invalid child element <" + tag + "> inside non-clone <Object id=\"" + obj.id +
+      // In a non-clone scene instance, only direct components (no patch blocks)
+      if (is_patch_tag(tag))
+        throw std::runtime_error("Invalid child element <" + tag + "> inside non-clone scene <Object id=\"" + obj.id +
                                  "\"> at line " + std::to_string(child->GetLineNum()) +
-                                 ". Only direct component tags (e.g., <Origin>, <Link>) are allowed when not cloning.");
-      }
-      // Direct children act as upsert (default overlay)
-      std::string comp_type_str = tag;
+                                 ". Only direct component tags or <Overlay> are allowed.");
 
-      auto opt_type = sceneComponentTypeFromString(comp_type_str);
-      if (!opt_type)
-        throw std::runtime_error("Unknown ComponentType string: " + comp_type_str);
-      SceneComponentType comp_type = *opt_type;
-
-      std::string comp_id = child->Attribute("id") ? child->Attribute("id") : "";
-
-      auto match_pred = [&](const SceneComponent& sc) { return sc.type == comp_type && sc.id == comp_id; };
-      obj.components.erase(std::remove_if(obj.components.begin(), obj.components.end(), match_pred),
-                           obj.components.end());
-      obj.components.push_back({ comp_type, comp_id, child });
+      upsert_direct_component(obj, child);
     }
   }
+
+  // Compute the model qid for the instance itself (scene has no ns by default)
+  const std::string self_model_qid = qualify_id(current_ns, obj.id);
+
+  // Make this object available as a model for later use
+  register_materialized_model(object_index, self_model_qid, obj.id, obj);
+
   return obj;
 }
 
-void parseSceneObjects(const tinyxml2::XMLDocument* doc, const ObjectIndex& object_index, SceneMap& scene)
+void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, SceneMap& scene,
+                       const std::string& base_dir)
 {
   const auto* root = doc->FirstChildElement("Root");
   if (!root)
     return;
 
+  for (const auto* imp = root->FirstChildElement("Import"); imp; imp = imp->NextSiblingElement("Import"))
+  {
+    processImport(imp, object_index, /*including_file_dir=*/base_dir, /*parent_ns=*/"", scene);
+  }
+
   // Only create entities for objects defined in the MAIN SCENE file!
   for (const auto* obj_elem = root->FirstChildElement("Object"); obj_elem;
        obj_elem = obj_elem->NextSiblingElement("Object"))
   {
-    std::string id = obj_elem->Attribute("id") ? obj_elem->Attribute("id") : "";
-    if (id.empty())
-      continue;
+    // Compose directly from the SCENE object element.
+    // (This lets <Overlay>, <Remove>, clone rules, etc. on the scene instance be respected.)
+    const std::string current_ns;  // scene file has no namespace by default
+    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns);
 
-    // Find the full overlay chain for this id
-    std::string qualified_id = id;  // If you support namespaces, do lookup here.
-    auto it = object_index.find(qualified_id);
-    if (it == object_index.end())
-      throw std::runtime_error("Object '" + id + "' not found in index (line " +
-                               std::to_string(obj_elem->GetLineNum()) + ")");
+    if (obj.id.empty())
+      throw std::runtime_error("Scene <Object> is missing 'id'.");
 
-    // *** Extract current namespace for this object ***
-    std::string current_ns = extract_namespace_from_qid_and_base(it->first, it->second.base_id);
-
-    // Compose the full object state
-    SceneObject obj = composeObject(it->second.xml, object_index, current_ns);
     scene[obj.id] = std::move(obj);
   }
 }
@@ -671,10 +945,10 @@ bool EntityParser::loadEntitiesFromText(const std::string& text, ginseng::databa
 bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ginseng::database& db)
 {
   ObjectIndex object_index;
-  buildObjectIndex(doc, object_index, "", base_dir, "[root]");
+  buildObjectIndex(doc, object_index, "", base_dir, "[root]", false);
 
   SceneMap scene_map;
-  parseSceneObjects(doc, object_index, scene_map);
+  parseSceneObjects(doc, object_index, scene_map, base_dir);
 
   for (const auto& scene : scene_map)
   {
