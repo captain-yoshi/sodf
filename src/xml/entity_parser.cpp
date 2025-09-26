@@ -1,5 +1,6 @@
 #include <unordered_set>
 
+#include <sodf/uri_resolver.h>
 #include <sodf/xml/utils.h>
 #include <sodf/xml/macros.h>
 #include <sodf/xml/entity_parser.h>
@@ -293,20 +294,36 @@ void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_inde
 void processInclude(const tinyxml2::XMLElement* include_elem, ObjectIndex& object_index,
                     const std::string& including_file_dir, const std::string& parent_ns)
 {
-  std::string path = include_elem->Attribute("path");
+  // --- grab <Include> attributes ---
+  const char* uri_attr = include_elem->Attribute("uri");
+  if (!uri_attr)
+  {
+    throw std::runtime_error("<Include> missing required 'uri' attribute");
+  }
+  std::string uri = uri_attr;
+
   std::string ns = include_elem->Attribute("ns") ? include_elem->Attribute("ns") : "";
   std::string full_ns = canonical_ns(parent_ns, ns);
 
-  // Resolve included file path relative to current file's directory
-  std::string inc_filename = including_file_dir.empty() ? path : (including_file_dir + "/" + path);
+  // --- resolve the URI to a local path ---
+  sodf::Resolved resolved = sodf::resolve_resource_uri(uri,
+                                                       /*current_xml_dir=*/including_file_dir);
 
+  if (resolved.local_path.empty())
+  {
+    throw std::runtime_error("Failed to resolve <Include> uri=" + uri);
+  }
+
+  // --- load the included XML ---
   auto* inc_doc = new tinyxml2::XMLDocument();
-  if (inc_doc->LoadFile(inc_filename.c_str()) != tinyxml2::XML_SUCCESS)
-    throw std::runtime_error("Failed to include: " + inc_filename);
+  if (inc_doc->LoadFile(resolved.local_path.c_str()) != tinyxml2::XML_SUCCESS)
+  {
+    throw std::runtime_error("Failed to parse included file: " + resolved.local_path);
+  }
 
-  std::string inc_file_dir = getDirectory(inc_filename);
-
-  buildObjectIndex(inc_doc, object_index, full_ns, inc_file_dir, inc_filename, true);
+  // --- recurse to build object index from included file ---
+  std::string inc_file_dir = getDirectory(resolved.local_path);
+  buildObjectIndex(inc_doc, object_index, full_ns, inc_file_dir, resolved.local_path, true);
 }
 
 bool ends_with(const std::string& s, const std::string& suf)
@@ -499,52 +516,59 @@ SceneObject composeModelObject(const tinyxml2::XMLElement* elem, const ObjectInd
 void processImport(const tinyxml2::XMLElement* import_elem, ObjectIndex& object_index,
                    const std::string& including_file_dir, const std::string& parent_ns, SceneMap& scene_map)
 {
-  // 1) Resolve path + ns
-  const char* path_c = import_elem->Attribute("path");
-  if (!path_c || !*path_c)
+  // 1) Required attributes: uri + (optional) ns
+  const char* uri_c = import_elem->Attribute("uri");
+  if (!uri_c || !*uri_c)
   {
-    throw std::runtime_error("<Import> missing 'path' at line " + std::to_string(import_elem->GetLineNum()));
+    throw std::runtime_error(std::string("<Import> missing 'uri' at line ") + std::to_string(import_elem->GetLineNum()));
   }
-  std::string path = path_c;
-  std::string ns = import_elem->Attribute("ns") ? import_elem->Attribute("ns") : "";
-  std::string full_ns = canonical_ns(parent_ns, ns);
+  const std::string uri = uri_c;
 
-  // 2) Load target doc
-  std::string inc_filename = including_file_dir.empty() ? path : (including_file_dir + "/" + path);
+  const std::string ns = import_elem->Attribute("ns") ? import_elem->Attribute("ns") : "";
+  const std::string full_ns = canonical_ns(parent_ns, ns);
+
+  // 2) Resolve the URI to a local file (supports sodf://, http(s)://, file://, or relative)
+  sodf::Resolved resolved = sodf::resolve_resource_uri(uri,
+                                                       /*current_xml_dir=*/including_file_dir);
+
+  if (resolved.local_path.empty())
+  {
+    throw std::runtime_error(std::string("Failed to resolve <Import> uri='") + uri + "' at line " +
+                             std::to_string(import_elem->GetLineNum()));
+  }
+
+  // 3) Load target doc
   auto inc_doc = std::make_unique<tinyxml2::XMLDocument>();
-  if (inc_doc->LoadFile(inc_filename.c_str()) != tinyxml2::XML_SUCCESS)
+  if (inc_doc->LoadFile(resolved.local_path.c_str()) != tinyxml2::XML_SUCCESS)
   {
-    throw std::runtime_error("Failed to import: " + inc_filename);
+    throw std::runtime_error("Failed to import: " + resolved.local_path);
   }
-  std::string inc_file_dir = getDirectory(inc_filename);
+  const std::string inc_file_dir = getDirectory(resolved.local_path);
 
-  // 3) Register models/overlays from imported doc (NO entities)
-  buildObjectIndex(inc_doc.get(), object_index, full_ns, inc_file_dir, inc_filename, true);
+  // 4) Register models/overlays from imported doc (NO entities)
+  buildObjectIndex(inc_doc.get(), object_index, full_ns, inc_file_dir, resolved.local_path, /*no_entities=*/true);
 
-  // 4) Promote imported doc’s top-level <Object>s into snapshot models (no entities)
+  // 5) Promote top-level <Object>s from imported doc into snapshot models (no entities)
   if (const auto* inc_root = inc_doc->FirstChildElement("Root"))
   {
-    for (const auto* obj_elem = inc_root->FirstChildElement("Object"); obj_elem;
+    for (const tinyxml2::XMLElement* obj_elem = inc_root->FirstChildElement("Object"); obj_elem;
          obj_elem = obj_elem->NextSiblingElement("Object"))
     {
       if (has_model_attr(obj_elem))
       {
-        // Instance: compose with enforcement (applies overlays/patches), then snapshot
         SceneObject inst = composeSceneObject(obj_elem, object_index, full_ns);
         register_materialized_model(object_index, qualify_id(full_ns, inst.id), inst.id, inst);
       }
       else if (!declares_required_overlay(obj_elem))
       {
-        // Plain model (no required overlay slots): safe to materialize without enforcement
         SceneObject m = composeModelObject(obj_elem, object_index, full_ns);
         register_materialized_model(object_index, qualify_id(full_ns, m.id), m.id, m);
       }
-      // else: contract model → skip (must be satisfied by a scene instance)
+      // else: contract model → skip
     }
   }
 
-  // 5) Import chaining: process <Import> tags found INSIDE the imported document
-  //    (only when reached via Import; Include won't do this)
+  // 6) Import chaining: process nested <Import> inside the imported document (import-only behavior)
   if (const auto* root = inc_doc->FirstChildElement("Root"))
   {
     for (const auto* nested = root->FirstChildElement("Import"); nested; nested = nested->NextSiblingElement("Import"))
@@ -553,16 +577,16 @@ void processImport(const tinyxml2::XMLElement* import_elem, ObjectIndex& object_
     }
   }
 
-  // 6) Instantiate the <Object> children that are listed INSIDE THIS <Import> block
-  //    (they belong to the CURRENT scene)
-  const std::string current_ns;  // scene has no ns by default
+  // 7) Instantiate <Object> children listed INSIDE THIS <Import> block into the CURRENT scene (no ns by default)
+  const std::string current_ns;  // empty = scene namespace
   for (const auto* obj_elem = import_elem->FirstChildElement("Object"); obj_elem;
        obj_elem = obj_elem->NextSiblingElement("Object"))
   {
     SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns);
     if (obj.id.empty())
     {
-      throw std::runtime_error("Imported <Object> is missing 'id' at line " + std::to_string(obj_elem->GetLineNum()));
+      throw std::runtime_error(std::string("Imported <Object> missing 'id' at line ") +
+                               std::to_string(obj_elem->GetLineNum()));
     }
     scene_map[obj.id] = std::move(obj);
   }

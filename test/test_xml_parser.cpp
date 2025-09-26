@@ -41,7 +41,7 @@ TEST(XMLParser, IncludeMissingFile)
 {
   const std::string scene_xml = R"(
     <Root>
-      <Include path="__does_not_exist__.xml"/>
+      <Include uri="__does_not_exist__.xml"/>
     </Root>)";
   const std::string scene_path = writeTempFile("scene_include_missing.xml", scene_xml);
 
@@ -70,8 +70,8 @@ TEST(XMLParser, DuplicateObjectIdAcrossIncludes)
 
   const std::string scene = R"(
     <Root>
-      <Include path="dup_A.xml"/>
-      <Include path="dup_B.xml"/>
+      <Include uri="dup_A.xml"/>
+      <Include uri="dup_B.xml"/>
     </Root>)";
   const std::string scene_path = writeTempFile("scene_dup.xml", scene);
 
@@ -92,7 +92,7 @@ TEST(XMLParser, OverlaySlotCollision)
 
   const std::string scene = R"(<?xml version="1.0"?>
     <Root>
-      <Include path="overlay_collision.xml"/>
+      <Include uri="overlay_collision.xml"/>
     </Root>)";
   const std::string scene_path = writeTempFile("scene_overlay_collision.xml", scene);
 
@@ -122,9 +122,9 @@ TEST(XMLParser, OverlayExactDuplicate)
 
   const std::string scene = R"(
     <Root>
-      <Include path="device_dup.xml"/>
-      <Include path="ovA.xml"/>
-      <Include path="ovB.xml"/>
+      <Include uri="device_dup.xml"/>
+      <Include uri="ovA.xml"/>
+      <Include uri="ovB.xml"/>
     </Root>)";
   const std::string scene_path = writeTempFile("scene_overlay_dup.xml", scene);
 
@@ -154,7 +154,7 @@ TEST(XMLParser, ImportWithNS_UnqualifiedModelRef)
 
   const std::string scene = R"(
     <Root>
-      <Import path="lib_ns.xml" ns="foo"/>
+      <Import uri="lib_ns.xml" ns="foo"/>
       <Object id="inst" model="base"/> <!-- should be model="foo:base" -->
     </Root>)";
   const std::string scene_path = writeTempFile("scene_import_ns_bad.xml", scene);
@@ -174,7 +174,7 @@ TEST(XMLParser, InvalidChildInClone)
 
   const std::string scene = R"(
     <Root>
-      <Include path="lib_bad_child.xml"/>
+      <Include uri="lib_bad_child.xml"/>
       <Object id="inst" model="base">
         <Origin id="extra"/> <!-- illegal under model="..." -->
       </Object>
@@ -201,7 +201,7 @@ TEST(XMLParser, OverlayRemoveMissingComponent)
 
   const std::string scene = R"(
     <Root>
-      <Include path="lib_remove_missing.xml"/>
+      <Include uri="lib_remove_missing.xml"/>
       <Object id="inst" model="base_remove">
         <Overlay slot="hmi" id="ov1"/>
       </Object>
@@ -225,7 +225,7 @@ TEST(XMLParser, ContractModelUnsatisfied)
 
   const std::string scene = R"(
     <Root>
-      <Include path="lib_contract.xml"/>
+      <Include uri="lib_contract.xml"/>
       <Object id="inst" model="device_contract"/>
     </Root>)";
   const std::string scene_path = writeTempFile("scene_contract_bad.xml", scene);
@@ -246,7 +246,7 @@ TEST(XMLParser, IncludePublishesModelForClone)
   // Scene that includes the model file, then clones it
   const std::string scene_xml = R"(
     <Root>
-      <Include path="models_include.xml"/>
+      <Include uri="models_include.xml"/>
       <Object id="inst" model="base"/>
     </Root>)";
 
@@ -273,7 +273,7 @@ TEST(XMLParser, ImportPublishesModelForClone)
   // Scene imports the file, then clones the imported model
   const std::string scene_xml = R"(
     <Root>
-      <Import path="models_import.xml"/>
+      <Import uri="models_import.xml"/>
       <Object id="inst2" model="base_import"/>
     </Root>)";
 
@@ -312,7 +312,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
   {
     const std::string scene_bad_xml = R"(
     <Root>
-      <Include path="overlay_contract.xml"/>
+      <Include uri="overlay_contract.xml"/>
       <Object id="bad_inst" model="needs_hmi"/>
     </Root>)";
     const std::string scene_bad_path = writeTempFile("scene_overlay_bad.xml", scene_bad_xml);
@@ -326,7 +326,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
   {
     const std::string scene_ok_xml = R"(
     <Root>
-      <Include path="overlay_contract.xml"/>
+      <Include uri="overlay_contract.xml"/>
       <Object id="ok_inst" model="needs_hmi">
         <Overlay slot="hmi" id="fw1"/>
       </Object>
@@ -346,7 +346,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
   {
     const std::string scene_disable_xml = R"(
     <Root>
-      <Include path="overlay_contract.xml"/>
+      <Include uri="overlay_contract.xml"/>
       <Object id="disabled_inst" model="needs_hmi">
         <Overlay slot="hmi" disable="true"/>
       </Object>
