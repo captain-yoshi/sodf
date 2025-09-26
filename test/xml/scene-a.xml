@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Root sodf_version="0.0.7">
-  <Include path="./bio-rad-t100-thermal-cycler.xml" ns="allo"/>
-  <Include path="./bio-rad-t100-thermal-cycler.hmi-overlay.xml"/>
+  <Include uri="./bio-rad-t100-thermal-cycler.xml" ns="allo"/>
+  <Include uri="./bio-rad-t100-thermal-cycler.hmi-overlay.xml"/>
 
   <Object id="pcr1" model="allo:bio-rad:t100-thermal-cycler">
     <Overlay id="hmi-fw-2.4.3" slot="hmi"/>
