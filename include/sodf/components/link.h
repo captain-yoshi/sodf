@@ -11,7 +11,11 @@ struct InertialProperties
 {
   double mass = 0.0;
   Eigen::Vector3d center_of_mass = Eigen::Vector3d::Zero();
-  Eigen::Matrix3d inertia_tensor = 1e-6 * Eigen::Matrix3d::Identity();  // 3×3 symmetric matrix
+  // Default to a tiny positive-definite inertia (epsilon*I) instead of 0 or 1:
+  // - keeps the matrix invertible for solvers
+  // - clearly acts as a placeholder (negligible effect compared to real inertia)
+  // - avoids hiding bugs where a real inertia tensor was never assigned
+  Eigen::Matrix3d inertia_tensor = 1e-6 * Eigen::Matrix3d::Identity();
 };
 
 struct Link
