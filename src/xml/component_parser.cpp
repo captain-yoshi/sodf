@@ -134,6 +134,10 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
   if (!visual_shape)
     throw std::runtime_error("Link '" + std::string(id) + "' <Visual> is missing <Shape> element at line " +
                              std::to_string(visual->GetLineNum()));
+  // BoundingBox (ptional)
+  const tinyxml2::XMLElement* bbox = elem->FirstChildElement("BoundingBox");
+  if (bbox)
+    link.bbox = parseBoxShape(bbox);
 
   link.visual = parseShape(visual_shape);
 
