@@ -123,25 +123,15 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
   const char* id = elem->Attribute("id");
   if (!id)
     throw std::runtime_error("Link element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+  const std::string link_id = id;
 
-  // --- Visual (must exist and contain a <Shape>)
-  const auto* visual = elem->FirstChildElement("Visual");
-  if (!visual)
-    throw std::runtime_error("Link '" + std::string(id) + "' missing required <Visual> element at line " +
-                             std::to_string(elem->GetLineNum()));
-
-  const auto* visual_shape = visual->FirstChildElement("Shape");
-  if (!visual_shape)
-    throw std::runtime_error("Link '" + std::string(id) + "' <Visual> is missing <Shape> element at line " +
-                             std::to_string(visual->GetLineNum()));
   // BoundingBox (ptional)
   const tinyxml2::XMLElement* bbox = elem->FirstChildElement("BoundingBox");
   if (bbox)
-    link.bbox = parseBoxShape(bbox);
+    if (const auto* shape = bbox->FirstChildElement("Shape"))
+      link.bbox = parseBoxShape(shape);
 
-  link.visual = parseShape(visual_shape);
-
-  // --- Collision (must exist and contain a <Shape>)
+  // Collision (required)
   const auto* collision = elem->FirstChildElement("Collision");
   if (!collision)
     throw std::runtime_error("Link '" + std::string(id) + "' missing required <Collision> element at line " +
@@ -154,8 +144,22 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
 
   link.collision = parseShape(collision_shape);
 
-  // --- Inertial (optional but can be present)
-  if (const auto* inertial = elem->FirstChildElement("Inertial"))
+  // Visual (required)
+  const auto* visual = elem->FirstChildElement("Visual");
+  if (!visual)
+    throw std::runtime_error("Link '" + std::string(id) + "' missing required <Visual> element at line " +
+                             std::to_string(elem->GetLineNum()));
+
+  const auto* visual_shape = visual->FirstChildElement("Shape");
+  if (!visual_shape)
+    throw std::runtime_error("Link '" + std::string(id) + "' <Visual> is missing <Shape> element at line " +
+                             std::to_string(visual->GetLineNum()));
+
+  link.visual = parseShape(visual_shape);
+
+  // Inertial (optional)
+  const tinyxml2::XMLElement* inertial = elem->FirstChildElement("Inertial");
+  if (inertial)
   {
     if (const auto* mass = inertial->FirstChildElement("Mass"))
       link.dynamics.mass = parseRequiredDoubleExpression(mass, "value");
@@ -173,7 +177,41 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
     }
   }
 
-  // --- Store to component
+  auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
+
+  auto add_child_tf = [&](const tinyxml2::XMLElement* parent_elem, const char* suffix) {
+    const std::string child_id = link_id + "/" + suffix;
+
+    geometry::TransformNode node;
+    node.parent = link_id;  // always relative to the link
+    node.local = Eigen::Isometry3d::Identity();
+    node.global = Eigen::Isometry3d::Identity();
+    node.dirty = true;
+
+    if (parent_elem)
+    {
+      if (const auto* tf = parent_elem->FirstChildElement("Transform"))
+      {
+        node = parseTransformNode(tf);
+
+        if (node.parent.empty())
+          node.parent = link_id;  // always relative to the link
+      }
+    }
+
+    tf_component->elements.emplace_back(child_id, std::move(node));
+  };
+
+  if (bbox)
+    add_child_tf(bbox, "bbox");
+  if (collision)
+    add_child_tf(collision, "collision");
+  if (visual)
+    add_child_tf(visual, "visual");
+  if (inertial)
+    add_child_tf(inertial, "inertial");
+
+  // Store to component
   auto* component = getOrCreateComponent<LinkComponent>(db, eid);
   component->elements.emplace_back(id, std::move(link));
 }
