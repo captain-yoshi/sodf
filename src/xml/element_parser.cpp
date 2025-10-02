@@ -857,7 +857,18 @@ components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem)
   }
 
   // Canonical/virtual surface
-  grasp.canonical_surface = parseShape(elem->FirstChildElement("VirtualSurface"));
+  const tinyxml2::XMLElement* vs_elem = elem->FirstChildElement("VirtualSurface");
+  if (vs_elem)
+  {
+    const tinyxml2::XMLElement* shape_elem = vs_elem->FirstChildElement("Shape");
+    if (!shape_elem)
+    {
+      throw std::runtime_error("<VirtualSurface> missing <Shape> child at line " +
+                               std::to_string(vs_elem->GetLineNum()));
+    }
+
+    grasp.canonical_surface = parseShape(shape_elem);
+  }
 
   return grasp;
 }
