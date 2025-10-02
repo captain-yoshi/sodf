@@ -14,7 +14,7 @@ enum class ComponentType
   Touchscreen,
   Joint,
   Link,
-  FitConstraint,
+  Insertion,
   Origin,
   FSM,
   ActionMap,
@@ -40,8 +40,8 @@ inline const char* componentTypeToString(ComponentType type)
       return "Joint";
     case ComponentType::Link:
       return "Link";
-    case ComponentType::FitConstraint:
-      return "FitConstraint";
+    case ComponentType::Insertion:
+      return "Insertion";
     case ComponentType::Origin:
       return "Origin";
     case ComponentType::FSM:
@@ -71,8 +71,8 @@ inline ComponentType componentTypeFromString(const std::string& type_str)
     return ComponentType::Joint;
   if (type_str == "Link")
     return ComponentType::Link;
-  if (type_str == "FitConstraint")
-    return ComponentType::FitConstraint;
+  if (type_str == "Insertion")
+    return ComponentType::Insertion;
   if (type_str == "Origin")
     return ComponentType::Origin;
   if (type_str == "FSM")
