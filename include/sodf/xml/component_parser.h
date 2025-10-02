@@ -13,7 +13,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* obj_elem, ginsen
 void parseActionMapComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseButtonComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseContainerComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
-void parseFitConstraintComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseInsertionComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseFSMComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseJointComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);

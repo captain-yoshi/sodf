@@ -117,7 +117,7 @@
       </Inertial>
     </Link>
 
-    <FitConstraint id="fit/pcr/rx">
+    <Insertion id="insertion/pcr/rx">
       <Transform parent="root">
         <Position x="0.08436" y="0.16794261249" z="0.0"/>
         <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
@@ -126,9 +126,9 @@
       <AxisReference x="0.0" y="1.0" z="0.0"/>
       <RotationalSymmetry value="2"/>
       <ApproachDistance value="0.0"/>
-    </FitConstraint>
+    </Insertion>
 
-    <FitConstraint id="fit/central_footpad/tx">
+    <Insertion id="insertion/central_footpad/tx">
       <Transform parent="root">
         <Position x="0.08436" y="0.16794261249" z="0.0"/>
         <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
@@ -137,7 +137,7 @@
       <AxisReference x="0.0" y="1.0" z="0.0"/>
       <RotationalSymmetry value="2"/>
       <ApproachDistance value="0.0"/>
-    </FitConstraint>
+    </Insertion>
 
     <Touchscreen id="touchscreen">
       <Transform parent="root">

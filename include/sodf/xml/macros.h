@@ -15,7 +15,7 @@ namespace xml {
 void parseActionMapComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseButtonComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseContainerComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
-void parseFitConstraintComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
+void parseInsertionComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseFSMComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
 void parseJointComponent(const tinyxml2::XMLElement* obj_elem, ginseng::database& db, EntityID eid);
@@ -34,7 +34,7 @@ void parseVirtualButtonComponent(const tinyxml2::XMLElement* obj_elem, ginseng::
   X(Origin, parseOriginComponent)                                                                                      \
   X(Link, parseLinkComponent)                                                                                          \
   X(Joint, parseJointComponent)                                                                                        \
-  X(FitConstraint, parseFitConstraintComponent)                                                                        \
+  X(Insertion, parseInsertionComponent)                                                                                \
   X(Product, parseProductComponent)                                                                                    \
   X(Touchscreen, parseTouchscreenComponent)                                                                            \
   X(FSM, parseFSMComponent)                                                                                            \

@@ -9,7 +9,7 @@
 #include <sodf/components/container.h>
 #include <sodf/components/domain_shape.h>
 #include <sodf/components/finite_state_machine.h>
-#include <sodf/components/fitting.h>
+#include <sodf/components/insertion.h>
 #include <sodf/components/grasp.h>
 #include <sodf/components/joint.h>
 #include <sodf/components/link.h>
@@ -174,51 +174,50 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
   component->elements.emplace_back(id, std::move(link));
 }
 
-void parseFitConstraintComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseInsertionComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  components::FitConstraint fit;
+  components::Insertion insertion;
 
   const char* id = elem->Attribute("id");
   if (!id)
-    throw std::runtime_error("FitConstraint element missing 'id' attribute at line " +
-                             std::to_string(elem->GetLineNum()));
+    throw std::runtime_error("Insertion element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
 
-  // --- AxisInsertion (required)
+  // AxisInsertion (required)
   const auto* axis1 = elem->FirstChildElement("AxisInsertion");
   if (!axis1)
-    throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <AxisInsertion> element at line " +
+    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <AxisInsertion> element at line " +
                              std::to_string(elem->GetLineNum()));
-  fit.axis_insertion = parseUnitVector(axis1);
+  insertion.axis_insertion = parseUnitVector(axis1);
 
-  // --- AxisReference (required)
+  // AxisReference (required)
   const auto* axis2 = elem->FirstChildElement("AxisReference");
   if (!axis2)
-    throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <AxisReference> element at line " +
+    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <AxisReference> element at line " +
                              std::to_string(elem->GetLineNum()));
-  fit.axis_reference = parseUnitVector(axis2);
+  insertion.axis_reference = parseUnitVector(axis2);
 
   // validate orthonormality
-  if (!geometry::areVectorsOrthonormal(fit.axis_insertion, fit.axis_reference, 1e-09))
-    throw std::runtime_error("FitConstraint '" + std::string(id) + "' axis are not orthogonal at line " +
+  if (!geometry::areVectorsOrthonormal(insertion.axis_insertion, insertion.axis_reference, 1e-09))
+    throw std::runtime_error("Insertion '" + std::string(id) + "' axis are not orthogonal at line " +
                              std::to_string(elem->GetLineNum()));
 
-  // --- RotationalSymmetry (required)
+  // RotationalSymmetry (required)
   const auto* sym = elem->FirstChildElement("RotationalSymmetry");
   if (!sym)
-    throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <RotationalSymmetry> element at line " +
+    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <RotationalSymmetry> element at line " +
                              std::to_string(elem->GetLineNum()));
-  fit.rotational_symmetry = sym->UnsignedAttribute("value");
+  insertion.rotational_symmetry = sym->UnsignedAttribute("value");
 
-  // --- ApproachDistance (required)
+  // ApproachDistance (required)
   const auto* dist = elem->FirstChildElement("ApproachDistance");
   if (!dist)
-    throw std::runtime_error("FitConstraint '" + std::string(id) + "' missing <ApproachDistance> element at line " +
+    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <ApproachDistance> element at line " +
                              std::to_string(elem->GetLineNum()));
-  fit.approach_distance = parseRequiredDoubleExpression(dist, "value");
+  insertion.approach_distance = parseRequiredDoubleExpression(dist, "value");
 
   // store to component
-  auto* component = getOrCreateComponent<FitConstraintComponent>(db, eid);
-  component->elements.emplace_back(id, std::move(fit));
+  auto* component = getOrCreateComponent<InsertionComponent>(db, eid);
+  component->elements.emplace_back(id, std::move(insertion));
 }
 
 void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
