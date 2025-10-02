@@ -20,8 +20,9 @@ struct InertialProperties
 
 struct Link
 {
-  geometry::Shape visual;
+  geometry::Shape bbox;  // bouding box, box shape
   geometry::Shape collision;
+  geometry::Shape visual;
 
   InertialProperties dynamics;
 };
