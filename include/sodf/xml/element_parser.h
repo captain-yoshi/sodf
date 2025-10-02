@@ -19,7 +19,20 @@ void parseQuaternion(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
 Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsilon = 1e-09);
 Eigen::Isometry3d parseIsometry3D(const tinyxml2::XMLElement* transform_elem);
 
+geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseMeshShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseShape(const tinyxml2::XMLElement* elem);
+
 geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform_elem);
 components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_elem);
 components::Button parseButton(const tinyxml2::XMLElement* btn_elem);

@@ -79,351 +79,385 @@ Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsi
   return vec;
 }
 
-geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
+void validateAxesOrthonormal(const geometry::Shape& shape, const tinyxml2::XMLElement* elem)
 {
-  using namespace sodf::geometry;
-
-  Shape shape;
-
-  // Type
-  const char* type_str = elem->Attribute("type");
-  if (!type_str)
-    throw std::runtime_error("Shape element missing 'type' attribute at line " + std::to_string(elem->GetLineNum()));
-  shape.type = shapeTypeFromString(type_str);
-
-  // --- Handle role attribute for lines ---
-  std::string anchor = elem->Attribute("anchor") ? elem->Attribute("anchor") : "";
-
-  // --- Parse by shape type ---
-  switch (shape.type)
-  {
-    case ShapeType::Rectangle:
-    {
-      // Axes
-      Eigen::Vector3d normal, width, height;
-      if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        normal = parseUnitVector(a);
-      else
-        throw std::runtime_error("Rectangle missing AxisNormal.");
-      if (const auto* a = elem->FirstChildElement("AxisWidth"))
-        width = parseUnitVector(a);
-      else
-        throw std::runtime_error("Rectangle missing AxisWidth.");
-      if (const auto* a = elem->FirstChildElement("AxisHeight"))
-        height = parseUnitVector(a);
-      else
-        throw std::runtime_error("Rectangle missing AxisHeight.");
-      shape.axes = { normal, width, height };
-      // Dimensions
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("Rectangle missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "width"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
-      break;
-    }
-    case ShapeType::Circle:
-    {
-      Eigen::Vector3d normal, major;
-      if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        normal = parseUnitVector(a);
-      else
-        throw std::runtime_error("Circle missing AxisNormal.");
-      if (const auto* a = elem->FirstChildElement("AxisMajor"))
-        major = parseUnitVector(a);
-      else
-        throw std::runtime_error("Circle missing AxisMajor.");
-      shape.axes = { normal, major };
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("Circle missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "radius"));
-      break;
-    }
-    case ShapeType::Triangle:
-    case ShapeType::Polygon:
-    {
-      Eigen::Vector3d normal, ax, ay;
-      if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        normal = parseUnitVector(a);
-      else
-        throw std::runtime_error("Triangle/Polygon missing AxisNormal.");
-      if (const auto* a = elem->FirstChildElement("AxisX"))
-        ax = parseUnitVector(a);
-      else
-        throw std::runtime_error("Triangle/Polygon missing AxisX.");
-      if (const auto* a = elem->FirstChildElement("AxisY"))
-        ay = parseUnitVector(a);
-      else
-        throw std::runtime_error("Triangle/Polygon missing AxisY.");
-      shape.axes = { normal, ax, ay };
-      // Vertices
-      const auto* verts = elem->FirstChildElement("Vertices");
-      if (!verts)
-        throw std::runtime_error("Triangle/Polygon missing <Vertices>");
-      for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
-        shape.vertices.emplace_back(parseRequiredDoubleExpression(v, "x"), parseRequiredDoubleExpression(v, "y"), 0.0);
-      if ((shape.type == ShapeType::Triangle && shape.vertices.size() != 3) ||
-          (shape.type == ShapeType::Polygon && shape.vertices.size() < 3))
-        throw std::runtime_error("Triangle/Polygon has invalid number of vertices.");
-      break;
-    }
-    case ShapeType::Box:
-    {
-      Eigen::Vector3d ax, ay, az;
-      if (const auto* a = elem->FirstChildElement("AxisWidth"))
-        ax = parseUnitVector(a);
-      else
-        throw std::runtime_error("Box missing AxisWidth.");
-      if (const auto* a = elem->FirstChildElement("AxisDepth"))
-        ay = parseUnitVector(a);
-      else
-        throw std::runtime_error("Box missing AxisDepth.");
-      if (const auto* a = elem->FirstChildElement("AxisHeight"))
-        az = parseUnitVector(a);
-      else
-        throw std::runtime_error("Box missing AxisHeight.");
-      shape.axes = { ax, ay, az };
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("Box missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "width"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "depth"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
-      break;
-    }
-    case ShapeType::Cylinder:
-    {
-      Eigen::Vector3d symmetry, ref;
-      if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
-        symmetry = parseUnitVector(a);
-      else
-        throw std::runtime_error("Cylinder missing AxisSymmetry.");
-      if (const auto* a = elem->FirstChildElement("AxisReference"))
-        ref = parseUnitVector(a);
-      else
-        throw std::runtime_error("Cylinder missing AxisReference.");
-      shape.axes = { symmetry, ref };
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("Cylinder missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "radius"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
-      break;
-    }
-    case ShapeType::Sphere:
-    {
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("Sphere missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "radius"));
-      break;
-    }
-    case ShapeType::Cone:
-    {
-      Eigen::Vector3d symmetry, ref;
-      if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
-        symmetry = parseUnitVector(a);
-      else
-        throw std::runtime_error("Cone missing AxisSymmetry.");
-      if (const auto* a = elem->FirstChildElement("AxisReference"))
-        ref = parseUnitVector(a);
-      else
-        throw std::runtime_error("Cone missing AxisReference.");
-      shape.axes = { symmetry, ref };
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("Cone missing <Dimensions>");
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "base_radius"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "top_radius"));
-      shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
-      break;
-    }
-    case ShapeType::SphericalSegment:
-    {
-      Eigen::Vector3d symmetry, ref;
-      if (const auto* a = elem->FirstChildElement("AxisSymmetry"))
-        symmetry = parseUnitVector(a);
-      else
-        throw std::runtime_error("SphericalSegment missing AxisSymmetry.");
-      if (const auto* a = elem->FirstChildElement("AxisReference"))
-        ref = parseUnitVector(a);
-      else
-        throw std::runtime_error("SphericalSegment missing AxisReference.");
-
-      shape.axes = { symmetry, ref };
-
-      const auto* dims = elem->FirstChildElement("Dimensions");
-      if (!dims)
-        throw std::runtime_error("SphericalSegment missing <Dimensions>");
-
-      bool has_r1 = dims->Attribute("base_radius");
-      bool has_r2 = dims->Attribute("top_radius");
-      bool has_h = dims->Attribute("height");
-
-      int count = static_cast<int>(has_r1) + static_cast<int>(has_r2) + static_cast<int>(has_h);
-      if (count < 2)
-        throw std::runtime_error(
-            "SphericalSegment <Dimensions> must specify at least two of: base_radius, top_radius, height");
-
-      double r1 = has_r1 ? parseRequiredDoubleExpression(dims, "base_radius") : 0.0;
-      double r2 = has_r2 ? parseRequiredDoubleExpression(dims, "top_radius") : 0.0;
-      double h = has_h ? parseRequiredDoubleExpression(dims, "height") : 0.0;
-
-      if (count == 2)
-      {
-        if (!has_h)
-          h = geometry::inferSegmentHeightFromRadii(r1, r2);
-        else if (!has_r2)
-          r2 = geometry::inferTopRadiusFromHeight(r1, h);
-        else if (!has_r1)
-          r1 = geometry::inferTopRadiusFromHeight(r2, h);  // reversed assumption
-      }
-      else
-      {
-        // std::cout << "=== Validating Spherical Segment ===" << std::endl;
-        // std::cout << "base_radius (r1): " << r1 << std::endl;
-        // std::cout << "top_radius  (r2): " << r2 << std::endl;
-        // std::cout << "height (h):       " << h << std::endl;
-
-        if (!geometry::isValidSegment(r1, r2, h))
-          throw std::runtime_error("SphericalSegment dimensions are incompatible: no valid sphere exists.");
-      }
-
-      shape.dimensions = { r1, r2, h };
-      break;
-    }
-    case ShapeType::Plane:
-    {
-      Eigen::Vector3d normal, ax, ay;
-      if (const auto* a = elem->FirstChildElement("AxisNormal"))
-        normal = parseUnitVector(a);
-      else
-        throw std::runtime_error("Plane missing AxisNormal.");
-      if (const auto* a = elem->FirstChildElement("AxisX"))
-        ax = parseUnitVector(a);
-      else
-        throw std::runtime_error("Plane missing AxisX.");
-      if (const auto* a = elem->FirstChildElement("AxisY"))
-        ay = parseUnitVector(a);
-      else
-        throw std::runtime_error("Plane missing AxisY.");
-      shape.axes = { normal, ax, ay };
-      if (const auto* dims = elem->FirstChildElement("Dimensions"))
-      {
-        shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "width"));
-        shape.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
-      }
-      break;
-    }
-    case ShapeType::Mesh:
-    {
-      const auto* file = elem->FirstChildElement("Resource");
-      if (!file || !file->Attribute("uri"))
-        throw std::runtime_error("Mesh missing <Resource uri=...>");
-      shape.mesh_uri = file->Attribute("uri");
-      if (const auto* scale = elem->FirstChildElement("Scale"))
-      {
-        shape.scale.x() = parseDoubleExpression(scale, "x", 1.0);
-        shape.scale.y() = parseDoubleExpression(scale, "y", 1.0);
-        shape.scale.z() = parseDoubleExpression(scale, "z", 1.0);
-      }
-      break;
-    }
-    case ShapeType::Line:
-    {
-      const auto* axis_elem = elem->FirstChildElement("AxisDirection");
-      const auto* len_elem = elem->FirstChildElement("Length");
-      const auto* vtx_elem = elem->FirstChildElement("Vertex");
-
-      bool use_axis_length = (axis_elem && len_elem);
-      bool use_vertices = (vtx_elem != nullptr);
-
-      if (use_axis_length && use_vertices)
-        throw std::runtime_error("Line: Specify either (AxisDirection + Length) or two Vertex tags, not both.");
-
-      if (use_axis_length)
-      {
-        // Role is required for Axis+Length, or defaults to "center"
-        if (anchor.empty())
-          anchor = "center";
-
-        Eigen::Vector3d axis(0, 0, 0);
-        axis = parseUnitVector(axis_elem);
-        shape.axes.push_back(axis);
-
-        double length = parseRequiredDoubleExpression(len_elem, "value");
-        if (length <= 0)
-          throw std::runtime_error("Line: Length must be positive.");
-
-        if (anchor == "begin")
-        {
-          // Start: (0,0,0), End: axis * length
-          shape.vertices.emplace_back(0.0, 0.0, 0.0);
-          shape.vertices.emplace_back(axis.normalized() * length);
-        }
-        else if (anchor == "center")
-        {
-          // Centered at (0,0,0): Start: -½axis*length, End: +½axis*length
-          shape.vertices.emplace_back(-0.5 * axis.normalized() * length);
-          shape.vertices.emplace_back(0.5 * axis.normalized() * length);
-        }
-        else
-        {
-          throw std::runtime_error("Line: Unknown anchor '" + anchor + "'. Allowed: begin, center.");
-        }
-        // Optionally: Store a "is_2d" flag if z is 0 for both endpoints
-      }
-      else if (use_vertices)
-      {
-        std::vector<Eigen::Vector3d> verts;
-        for (const auto* v = vtx_elem; v; v = v->NextSiblingElement("Vertex"))
-        {
-          double x = parseRequiredDoubleExpression(v, "x");
-          double y = parseRequiredDoubleExpression(v, "y");
-          double z = 0.0;
-          // If z attribute present, use it (else default to 0.0)
-          queryDoubleExpression(v, "z", &z);
-          verts.emplace_back(x, y, z);
-        }
-        if (verts.size() != 2)
-          throw std::runtime_error("Line: Must have exactly 2 Vertex tags.");
-
-        bool is2d = (verts[0].z() == 0.0 && verts[1].z() == 0.0);
-        bool is3d = (verts[0].z() != 0.0 || verts[1].z() != 0.0);
-        if (!is2d && !is3d)
-          throw std::runtime_error("Line: Vertices must either both have z=0 or both specify z values.");
-        shape.vertices = std::move(verts);
-        // Optionally: Store is2d flag for later logic
-      }
-      else
-      {
-        throw std::runtime_error("Line: Must specify either (AxisDirection + Length) or two Vertex tags.");
-      }
-      break;
-    }
-
-    default:
-      throw std::runtime_error("Unknown shape type in parseShapeElement.");
-  }
-
-  // validate axes orthonormality
+  const int ln = elem->GetLineNum();
   if (shape.axes.size() == 1)
   {
-    if (!isUnitVector(shape.axes[0]))
-      throw std::runtime_error("Shape axis must be a unit vector at line " + std::to_string(elem->GetLineNum()));
+    if (!geometry::isUnitVector(shape.axes[0]))
+      throw std::runtime_error("Shape axis must be a unit vector at line " + std::to_string(ln));
   }
   else if (shape.axes.size() == 2)
   {
-    if (!areVectorsOrthonormal(shape.axes[0], shape.axes[1], 1e-09))
-      throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
+    if (!geometry::areVectorsOrthonormal(shape.axes[0], shape.axes[1], 1e-9))
+      throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(ln));
   }
   else if (shape.axes.size() == 3)
   {
-    if (!areVectorsOrthonormal(shape.axes[0], shape.axes[1], shape.axes[2], 1e-09))
-      throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
+    if (!geometry::areVectorsOrthonormal(shape.axes[0], shape.axes[1], shape.axes[2], 1e-9))
+      throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(ln));
   }
-  return shape;
+}
+
+const tinyxml2::XMLElement* reqChild(const tinyxml2::XMLElement* parent, const char* tag, const char* ctx)
+{
+  if (const auto* e = parent->FirstChildElement(tag))
+    return e;
+  throw std::runtime_error(std::string(ctx) + " missing <" + tag + "> at line " + std::to_string(parent->GetLineNum()));
+}
+
+geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Rectangle;
+  Eigen::Vector3d normal = parseUnitVector(reqChild(elem, "AxisNormal", "Rectangle"));
+  Eigen::Vector3d width = parseUnitVector(reqChild(elem, "AxisWidth", "Rectangle"));
+  Eigen::Vector3d height = parseUnitVector(reqChild(elem, "AxisHeight", "Rectangle"));
+  s.axes = { normal, width, height };
+
+  const auto* dims = reqChild(elem, "Dimensions", "Rectangle");
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "width"));
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Circle;
+  Eigen::Vector3d normal = parseUnitVector(reqChild(elem, "AxisNormal", "Circle"));
+  Eigen::Vector3d major = parseUnitVector(reqChild(elem, "AxisMajor", "Circle"));
+  s.axes = { normal, major };
+
+  const auto* dims = reqChild(elem, "Dimensions", "Circle");
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "radius"));
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Triangle;
+  Eigen::Vector3d normal = parseUnitVector(reqChild(elem, "AxisNormal", "Triangle"));
+  Eigen::Vector3d ax = parseUnitVector(reqChild(elem, "AxisX", "Triangle"));
+  Eigen::Vector3d ay = parseUnitVector(reqChild(elem, "AxisY", "Triangle"));
+  s.axes = { normal, ax, ay };
+
+  const auto* verts = reqChild(elem, "Vertices", "Triangle");
+  for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
+    s.vertices.emplace_back(parseRequiredDoubleExpression(v, "x"), parseRequiredDoubleExpression(v, "y"), 0.0);
+  if (s.vertices.size() != 3)
+    throw std::runtime_error("Triangle/Polygon has invalid number of vertices.");
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Polygon;
+  Eigen::Vector3d normal = parseUnitVector(reqChild(elem, "AxisNormal", "Polygon"));
+  Eigen::Vector3d ax = parseUnitVector(reqChild(elem, "AxisX", "Polygon"));
+  Eigen::Vector3d ay = parseUnitVector(reqChild(elem, "AxisY", "Polygon"));
+  s.axes = { normal, ax, ay };
+
+  const auto* verts = reqChild(elem, "Vertices", "Polygon");
+  for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
+    s.vertices.emplace_back(parseRequiredDoubleExpression(v, "x"), parseRequiredDoubleExpression(v, "y"), 0.0);
+  if (s.vertices.size() < 3)
+    throw std::runtime_error("Triangle/Polygon has invalid number of vertices.");
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Box;
+  Eigen::Vector3d ax = parseUnitVector(reqChild(elem, "AxisWidth", "Box"));
+  Eigen::Vector3d ay = parseUnitVector(reqChild(elem, "AxisDepth", "Box"));
+  Eigen::Vector3d az = parseUnitVector(reqChild(elem, "AxisHeight", "Box"));
+  s.axes = { ax, ay, az };
+
+  const auto* dims = reqChild(elem, "Dimensions", "Box");
+  const double width = parseRequiredDoubleExpression(dims, "width");
+  const double depth = parseRequiredDoubleExpression(dims, "depth");
+  const double height = parseRequiredDoubleExpression(dims, "height");
+  s.dimensions.push_back(width);
+  s.dimensions.push_back(depth);
+  s.dimensions.push_back(height);
+
+  // Anchor (default: center)
+  // std::string anchor = elem->Attribute("anchor") ? elem->Attribute("anchor") : "center";
+  // // Allowed: center, bottom, top
+  // //  - center:  box spans [-w/2,+w/2], [-d/2,+d/2], [-h/2,+h/2] about origin
+  // //  - bottom:  origin at bottom face center -> center is +h/2 along height axis
+  // //  - top:     origin at top face center    -> center is -h/2 along height axis
+  // if (anchor == "center")
+  // {
+  //   s.origin_offset = Eigen::Vector3d::Zero();
+  // }
+  // else if (anchor == "bottom")
+  // {
+  //   s.origin_offset = 0.5 * height * az;
+  // }
+  // else if (anchor == "top")
+  // {
+  //   s.origin_offset = -0.5 * height * az;
+  // }
+  // else
+  // {
+  //   throw std::runtime_error("Box: Unknown anchor '" + anchor +
+  //                            "'. Allowed: center, bottom, top. "
+  //                            "At line " +
+  //                            std::to_string(elem->GetLineNum()));
+  // }
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Cylinder;
+  Eigen::Vector3d symmetry = parseUnitVector(reqChild(elem, "AxisSymmetry", "Cylinder"));
+  Eigen::Vector3d ref = parseUnitVector(reqChild(elem, "AxisReference", "Cylinder"));
+  s.axes = { symmetry, ref };
+
+  const auto* dims = reqChild(elem, "Dimensions", "Cylinder");
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "radius"));
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Sphere;
+  const auto* dims = reqChild(elem, "Dimensions", "Sphere");
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "radius"));
+  // no axes to validate
+  return s;
+}
+
+geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Cone;
+  Eigen::Vector3d symmetry = parseUnitVector(reqChild(elem, "AxisSymmetry", "Cone"));
+  Eigen::Vector3d ref = parseUnitVector(reqChild(elem, "AxisReference", "Cone"));
+  s.axes = { symmetry, ref };
+
+  const auto* dims = reqChild(elem, "Dimensions", "Cone");
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "base_radius"));
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "top_radius"));
+  s.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::SphericalSegment;
+  Eigen::Vector3d symmetry = parseUnitVector(reqChild(elem, "AxisSymmetry", "SphericalSegment"));
+  Eigen::Vector3d ref = parseUnitVector(reqChild(elem, "AxisReference", "SphericalSegment"));
+  s.axes = { symmetry, ref };
+
+  const auto* dims = reqChild(elem, "Dimensions", "SphericalSegment");
+
+  const bool has_r1 = dims->Attribute("base_radius");
+  const bool has_r2 = dims->Attribute("top_radius");
+  const bool has_h = dims->Attribute("height");
+  const int count = static_cast<int>(has_r1) + static_cast<int>(has_r2) + static_cast<int>(has_h);
+  if (count < 2)
+    throw std::runtime_error(
+        "SphericalSegment <Dimensions> must specify at least two of: base_radius, top_radius, height");
+
+  double r1 = has_r1 ? parseRequiredDoubleExpression(dims, "base_radius") : 0.0;
+  double r2 = has_r2 ? parseRequiredDoubleExpression(dims, "top_radius") : 0.0;
+  double h = has_h ? parseRequiredDoubleExpression(dims, "height") : 0.0;
+
+  if (count == 2)
+  {
+    if (!has_h)
+      h = geometry::inferSegmentHeightFromRadii(r1, r2);
+    else if (!has_r2)
+      r2 = geometry::inferTopRadiusFromHeight(r1, h);
+    else if (!has_r1)
+      r1 = geometry::inferTopRadiusFromHeight(r2, h);  // reversed assumption
+  }
+  else
+  {
+    if (!geometry::isValidSegment(r1, r2, h))
+      throw std::runtime_error("SphericalSegment dimensions are incompatible: no valid sphere exists.");
+  }
+
+  s.dimensions = { r1, r2, h };
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Plane;
+  Eigen::Vector3d normal = parseUnitVector(reqChild(elem, "AxisNormal", "Plane"));
+  Eigen::Vector3d ax = parseUnitVector(reqChild(elem, "AxisX", "Plane"));
+  Eigen::Vector3d ay = parseUnitVector(reqChild(elem, "AxisY", "Plane"));
+  s.axes = { normal, ax, ay };
+
+  if (const auto* dims = elem->FirstChildElement("Dimensions"))
+  {
+    s.dimensions.push_back(parseRequiredDoubleExpression(dims, "width"));
+    s.dimensions.push_back(parseRequiredDoubleExpression(dims, "height"));
+  }
+
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseMeshShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Mesh;
+  const auto* file = elem->FirstChildElement("Resource");
+  if (!file || !file->Attribute("uri"))
+    throw std::runtime_error("Mesh missing <Resource uri=...> at line " + std::to_string(elem->GetLineNum()));
+  s.mesh_uri = file->Attribute("uri");
+
+  if (const auto* scale = elem->FirstChildElement("Scale"))
+  {
+    s.scale.x() = parseDoubleExpression(scale, "x", 1.0);
+    s.scale.y() = parseDoubleExpression(scale, "y", 1.0);
+    s.scale.z() = parseDoubleExpression(scale, "z", 1.0);
+  }
+  // no axes to validate
+  return s;
+}
+
+geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Line;
+
+  std::string anchor = elem->Attribute("anchor") ? elem->Attribute("anchor") : "";
+
+  const auto* axis_elem = elem->FirstChildElement("AxisDirection");
+  const auto* len_elem = elem->FirstChildElement("Length");
+  const auto* vtx_elem = elem->FirstChildElement("Vertex");
+
+  const bool use_axis_length = (axis_elem && len_elem);
+  const bool use_vertices = (vtx_elem != nullptr);
+
+  if (use_axis_length && use_vertices)
+    throw std::runtime_error("Line: Specify either (AxisDirection + Length) or two Vertex tags, not both.");
+
+  if (use_axis_length)
+  {
+    if (anchor.empty())
+      anchor = "center";
+
+    Eigen::Vector3d axis = parseUnitVector(axis_elem);
+    s.axes.push_back(axis);
+
+    double length = parseRequiredDoubleExpression(len_elem, "value");
+    if (length <= 0)
+      throw std::runtime_error("Line: Length must be positive.");
+
+    const Eigen::Vector3d n = axis.normalized();
+    if (anchor == "begin")
+    {
+      s.vertices.emplace_back(0.0, 0.0, 0.0);
+      s.vertices.emplace_back(n * length);
+    }
+    else if (anchor == "center")
+    {
+      s.vertices.emplace_back(-0.5 * n * length);
+      s.vertices.emplace_back(0.5 * n * length);
+    }
+    else
+    {
+      throw std::runtime_error("Line: Unknown anchor '" + anchor + "'. Allowed: begin, center.");
+    }
+  }
+  else if (use_vertices)
+  {
+    for (const auto* v = vtx_elem; v; v = v->NextSiblingElement("Vertex"))
+    {
+      double x = parseRequiredDoubleExpression(v, "x");
+      double y = parseRequiredDoubleExpression(v, "y");
+      double z = 0.0;
+      queryDoubleExpression(v, "z", &z);
+      s.vertices.emplace_back(x, y, z);
+    }
+    if (s.vertices.size() != 2)
+      throw std::runtime_error("Line: Must have exactly 2 Vertex tags.");
+
+    const bool z0 = (s.vertices[0].z() == 0.0 && s.vertices[1].z() == 0.0);
+    const bool zN = (s.vertices[0].z() != 0.0 || s.vertices[1].z() != 0.0);
+    if (!z0 && !zN)
+      throw std::runtime_error("Line: Vertices must either both have z=0 or both specify z values.");
+  }
+  else
+  {
+    throw std::runtime_error("Line: Must specify either (AxisDirection + Length) or two Vertex tags.");
+  }
+
+  // If we set s.axes for Axis+Length, validate unit length.
+  if (!s.axes.empty())
+    validateAxesOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::ShapeType type;
+  if (const char* type_str = elem->Attribute("type"))
+    type = geometry::shapeTypeFromString(type_str);
+  else
+    throw std::runtime_error("Shape element missing 'type' attribute at line " + std::to_string(elem->GetLineNum()));
+
+  switch (type)
+  {
+    case geometry::ShapeType::Rectangle:
+      return parseRectangleShape(elem);
+    case geometry::ShapeType::Circle:
+      return parseCircleShape(elem);
+    case geometry::ShapeType::Triangle:
+      return parseTriangleShape(elem);
+    case geometry::ShapeType::Polygon:
+      return parsePolygonShape(elem);
+    case geometry::ShapeType::Box:
+      return parseBoxShape(elem);
+    case geometry::ShapeType::Cylinder:
+      return parseCylinderShape(elem);
+    case geometry::ShapeType::Sphere:
+      return parseSphereShape(elem);
+    case geometry::ShapeType::Cone:
+      return parseConeShape(elem);
+    case geometry::ShapeType::SphericalSegment:
+      return parseSphericalSegmentShape(elem);
+    case geometry::ShapeType::Plane:
+      return parsePlaneShape(elem);
+    case geometry::ShapeType::Mesh:
+      return parseMeshShape(elem);
+    case geometry::ShapeType::Line:
+      return parseLineShape(elem);
+    default:
+      throw std::runtime_error("Unknown shape type in parseShapeElement at line " + std::to_string(elem->GetLineNum()));
+  }
 }
 
 components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_elem)
