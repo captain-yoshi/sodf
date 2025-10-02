@@ -970,13 +970,13 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_NE(tf_node, nullptr);
 
     ASSERT_EQ(0.02, grasp->gap_size);
-    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp->approach);
+    ASSERT_EQ(ParallelGrasp::GraspType::INTERNAL, grasp->grasp_type);
     ASSERT_EQ(4, grasp->rotational_symmetry);
     ASSERT_EQ("area/front/handle", grasp->contact_shape_ids[0]);
     ASSERT_EQ("area/back/handle", grasp->contact_shape_ids[1]);
 
     // ASSERT_TRUE((tf_ptr->local.linear() * grasp.axis_of_rotation).isApprox(Eigen::Vector3d(1, 0, 0)));
-    ASSERT_TRUE(grasp->axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(grasp->rotation_axis.isApprox(Eigen::Vector3d(1, 0, 0)));
 
     auto& vshape = grasp->canonical_surface;
     ASSERT_EQ(ShapeType::Rectangle, vshape.type);
@@ -1008,7 +1008,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
 
         <ParallelGrasp id="grasp">
           <DerivedFromParallelShapes>
-            <Approach value="Internal"/>
+            <GraspType value="Internal"/>
             <AxisRotationalFirstShape x="0.0" y="0.0" z="-1.0"/>
             <AxisNormalFirstShape x="1.0" y="0.0" z="0.0"/>
             <AxisRotationalGrasp x="1.0" y="0.0" z="0.0"/>
@@ -1040,11 +1040,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_NE(tf_node, nullptr);
 
     ASSERT_EQ(0.02, grasp->gap_size);
-    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp->approach);
+    ASSERT_EQ(ParallelGrasp::GraspType::INTERNAL, grasp->grasp_type);
     ASSERT_EQ(4, grasp->rotational_symmetry);
     ASSERT_EQ(1, grasp->contact_shape_ids.size());
     ASSERT_EQ("box", grasp->contact_shape_ids[0]);
-    ASSERT_TRUE(grasp->axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(grasp->rotation_axis.isApprox(Eigen::Vector3d(1, 0, 0)));
 
     auto& vshape = grasp->canonical_surface;
     ASSERT_EQ(ShapeType::Rectangle, vshape.type);
@@ -1076,7 +1076,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
 
         <ParallelGrasp id="grasp">
           <DerivedFromParallelShapes>
-            <Approach value="Internal"/>
+            <GraspType value="Internal"/>
             <AxisRotationalFirstShape x="0.0" y="0.0" z="1.0"/>
             <AxisNormalFirstShape x="1.0" y="0.0" z="0.0"/>
             <AxisRotationalGrasp x="1.0" y="0.0" z="0.0"/>
@@ -1108,11 +1108,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_NE(tf_node, nullptr);
 
     ASSERT_EQ(0.024, grasp->gap_size);
-    ASSERT_EQ(ParallelGrasp::ApproachType::INTERNAL, grasp->approach);
+    ASSERT_EQ(ParallelGrasp::GraspType::INTERNAL, grasp->grasp_type);
     ASSERT_EQ(0, grasp->rotational_symmetry);
     ASSERT_EQ(1, grasp->contact_shape_ids.size());
     ASSERT_EQ("cylinder", grasp->contact_shape_ids[0]);
-    ASSERT_TRUE(grasp->axis_of_rotation.isApprox(Eigen::Vector3d(1, 0, 0)));
+    ASSERT_TRUE(grasp->rotation_axis.isApprox(Eigen::Vector3d(1, 0, 0)));
 
     auto& vshape = grasp->canonical_surface;
     ASSERT_EQ(ShapeType::Line, vshape.type);
