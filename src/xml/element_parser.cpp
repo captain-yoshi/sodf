@@ -823,24 +823,25 @@ components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem)
   using namespace components;
   ParallelGrasp grasp;
 
-  // Approach
-  const auto* approach_elem = elem->FirstChildElement("Approach");
-  if (!approach_elem || !approach_elem->Attribute("value"))
-    throw std::runtime_error("ParallelGrasp: <Approach> tag with 'value' is required.");
-  std::string approach_val = approach_elem->Attribute("value");
-  if (approach_val == "INTERNAL")
-    grasp.approach = ParallelGrasp::ApproachType::INTERNAL;
-  else if (approach_val == "EXTERNAL")
-    grasp.approach = ParallelGrasp::ApproachType::EXTERNAL;
+  // Grasp type
+  const auto* grasp_type_elem = elem->FirstChildElement("GraspType");
+  if (!grasp_type_elem || !grasp_type_elem->Attribute("value"))
+    throw std::runtime_error("ParallelGrasp: <GraspType> tag with 'value' is required.");
+  std::string grasp_type_val = grasp_type_elem->Attribute("value");
+  if (grasp_type_val == "Internal")
+    grasp.grasp_type = ParallelGrasp::GraspType::INTERNAL;
+  else if (grasp_type_val == "External")
+    grasp.grasp_type = ParallelGrasp::GraspType::EXTERNAL;
   else
-    throw std::runtime_error("ParallelGrasp: <Approach> value must be 'INTERNAL' or 'EXTERNAL'");
+    throw std::runtime_error("ParallelGrasp: <GraspType> value must be 'Internal' or 'External'");
 
   // Gap size
   const auto* gap_elem = elem->FirstChildElement("GapSize");
   grasp.gap_size = gap_elem ? parseRequiredDoubleExpression(gap_elem, "value") : 0.0;
+  grasp.gap_axis = parseUnitVector(elem->FirstChildElement("GapAxis"));
 
   // Rotational axis/symmetry
-  grasp.axis_of_rotation = parseUnitVector(elem->FirstChildElement("RotationalAxis"));
+  grasp.rotation_axis = parseUnitVector(elem->FirstChildElement("RotationalAxis"));
   const auto* sym_elem = elem->FirstChildElement("RotationalSymmetry");
   grasp.rotational_symmetry = sym_elem ? sym_elem->UnsignedAttribute("value") : 1;
 

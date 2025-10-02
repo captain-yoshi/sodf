@@ -950,7 +950,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     transform.local.linear() = rot;
     transform.local.translation() = ref_centroid;
 
-    grasp.axis_of_rotation = axis_rotational_grasp;
+    grasp.rotation_axis = axis_rotational_grasp;
     // grasp.axis_of_rotation =
     //     rot * axis_rotational_grasp.normalized();  // Always the X axis in the grasp canonical frame
     grasp.canonical_surface = *shape_ptrs[0];  // Or construct a new "virtual" surface here if needed
@@ -978,8 +978,8 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     auto tf0 = getComponentElement(transform_component->elements, shape_ids[0]);
     Eigen::Vector3d normal_contact = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[0]);
 
-    grasp.approach = (to_virtual.dot(normal_contact) > 0) ? ParallelGrasp::ApproachType::INTERNAL :
-                                                            ParallelGrasp::ApproachType::EXTERNAL;
+    grasp.grasp_type =
+        (to_virtual.dot(normal_contact) > 0) ? ParallelGrasp::GraspType::INTERNAL : ParallelGrasp::GraspType::EXTERNAL;
   }
 
   // ---- 3D shape, single (cylinder/box) ----
@@ -1008,7 +1008,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     transform.local.linear().col(2) = axis_normal_root;
     transform.local.translation() = centroid_root;
 
-    grasp.axis_of_rotation = axis_rotational_grasp;
+    grasp.rotation_axis = axis_rotational_grasp;
 
     Eigen::Matrix3d grasp_to_world = transform.local.linear();
     Eigen::Matrix3d world_to_grasp = grasp_to_world.transpose();  // since R is orthogonal
@@ -1055,18 +1055,18 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
         grasp.canonical_surface.axes.push_back(shape_to_grasp * box_axis);
     }
 
-    // Approach: must be specified
-    const auto* approach_elem = derived_elem->FirstChildElement("Approach");
+    // GraspType: must be specified
+    const auto* approach_elem = derived_elem->FirstChildElement("GraspType");
     if (!approach_elem || !approach_elem->Attribute("value"))
       throw std::runtime_error(
-          "ParallelGrasp: <Approach> tag with 'value' attribute is required for single 3D shape (box/cylinder).");
-    std::string approach_str = approach_elem->Attribute("value");
-    if (approach_str == "INTERNAL" || approach_str == "Internal")
-      grasp.approach = ParallelGrasp::ApproachType::INTERNAL;
-    else if (approach_str == "EXTERNAL" || approach_str == "External")
-      grasp.approach = ParallelGrasp::ApproachType::EXTERNAL;
+          "ParallelGrasp: <GraspType> tag with 'value' attribute is required for single 3D shape (box/cylinder).");
+    std::string grasp_type_str = approach_elem->Attribute("value");
+    if (grasp_type_str == "Internal")
+      grasp.grasp_type = ParallelGrasp::GraspType::INTERNAL;
+    else if (grasp_type_str == "External")
+      grasp.grasp_type = ParallelGrasp::GraspType::EXTERNAL;
     else
-      throw std::runtime_error("ParallelGrasp: <Approach> value must be 'INTERNAL' or 'EXTERNAL'");
+      throw std::runtime_error("ParallelGrasp: <GraspType> value must be 'Internal' or 'External'");
   }
   else
     throw std::runtime_error("ParallelGrasp: Must derive from exactly pairs of two 2D shapes (parallel), or one 3D "
