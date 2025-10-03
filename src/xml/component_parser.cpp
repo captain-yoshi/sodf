@@ -24,6 +24,19 @@ namespace xml {
 
 using namespace components;
 
+std::string evalElementIdRequired(const tinyxml2::XMLElement* elem)
+{
+  std::string id;
+  if (!tryEvalTextAttribute(elem, "id", &id))
+    throw std::runtime_error(std::string(elem->Name()) + " element missing 'id' attribute at line " +
+                             std::to_string(elem->GetLineNum()));
+
+  if (id.empty())
+    throw std::runtime_error(std::string(elem->Name()) + " 'id' attribute cannot be empty at line " +
+                             std::to_string(elem->GetLineNum()));
+  return id;
+}
+
 std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLElement* trans_elem,
                                                           const FSMLabels& state_labels, const FSMLabels& action_labels,
                                                           int invalid_value)
@@ -36,9 +49,9 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
   for (const tinyxml2::XMLElement* tr_elem = trans_elem->FirstChildElement("Transition"); tr_elem;
        tr_elem = tr_elem->NextSiblingElement("Transition"))
   {
-    std::string from = tr_elem->Attribute("from");
-    std::string action = tr_elem->Attribute("action");
-    std::string to = tr_elem->Attribute("to");
+    std::string from = evalTextAttributeRequired(tr_elem, "from");
+    std::string action = evalTextAttributeRequired(tr_elem, "action");
+    std::string to = evalTextAttributeRequired(tr_elem, "to");
 
     if (!state_labels.has_label(from) || !state_labels.has_label(to))
       throw std::runtime_error("Transition refers to undefined state at line " + std::to_string(tr_elem->GetLineNum()));
@@ -69,10 +82,7 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
 
 void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("StackedShape element missing 'id' attribute at line " +
-                             std::to_string(elem->GetLineNum()));
+  const std::string id = evalElementIdRequired(elem);
 
   auto stack = parseStackedShape(elem);
   if (stack.shapes.empty())
@@ -85,10 +95,7 @@ void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ginseng::datab
 
 void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("ParallelGrasp element missing 'id' attribute at line " +
-                             std::to_string(elem->GetLineNum()));
+  const std::string id = evalElementIdRequired(elem);
 
   if (const auto* derived_elem = elem->FirstChildElement("DerivedFromParallelShapes"))
   {
@@ -106,9 +113,7 @@ void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, ginseng::data
 
 void parseShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Shape element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+  const std::string id = evalElementIdRequired(elem);
 
   auto shape = parseShape(elem);
 
@@ -119,11 +124,7 @@ void parseShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db
 void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   Link link;
-
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Link element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
-  const std::string link_id = id;
+  const std::string id = evalElementIdRequired(elem);
 
   // BoundingBox (ptional)
   const tinyxml2::XMLElement* bbox = elem->FirstChildElement("BoundingBox");
@@ -162,28 +163,28 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
   if (inertial)
   {
     if (const auto* mass = inertial->FirstChildElement("Mass"))
-      link.dynamics.mass = parseRequiredDoubleExpression(mass, "value");
+      link.dynamics.mass = evalNumberAttributeRequired(mass, "value");
 
     if (const auto* com = inertial->FirstChildElement("CenterOfMass"))
       parsePosition(com, link.dynamics.center_of_mass);
 
     if (const auto* I = inertial->FirstChildElement("Tensor"))
     {
-      link.dynamics.inertia_tensor << parseRequiredDoubleExpression(I, "ixx"), parseRequiredDoubleExpression(I, "ixy"),
-          parseRequiredDoubleExpression(I, "ixz"), parseRequiredDoubleExpression(I, "ixy"),
-          parseRequiredDoubleExpression(I, "iyy"), parseRequiredDoubleExpression(I, "iyz"),
-          parseRequiredDoubleExpression(I, "ixz"), parseRequiredDoubleExpression(I, "iyz"),
-          parseRequiredDoubleExpression(I, "izz");
+      link.dynamics.inertia_tensor << evalNumberAttributeRequired(I, "ixx"), evalNumberAttributeRequired(I, "ixy"),
+          evalNumberAttributeRequired(I, "ixz"), evalNumberAttributeRequired(I, "ixy"),
+          evalNumberAttributeRequired(I, "iyy"), evalNumberAttributeRequired(I, "iyz"),
+          evalNumberAttributeRequired(I, "ixz"), evalNumberAttributeRequired(I, "iyz"),
+          evalNumberAttributeRequired(I, "izz");
     }
   }
 
   auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
 
   auto add_child_tf = [&](const tinyxml2::XMLElement* parent_elem, const char* suffix) {
-    const std::string child_id = link_id + "/" + suffix;
+    const std::string child_id = id + "/" + suffix;
 
     geometry::TransformNode node;
-    node.parent = link_id;  // always relative to the link
+    node.parent = id;  // always relative to the link
     node.local = Eigen::Isometry3d::Identity();
     node.global = Eigen::Isometry3d::Identity();
     node.dirty = true;
@@ -195,7 +196,7 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
         node = parseTransformNode(tf);
 
         if (node.parent.empty())
-          node.parent = link_id;  // always relative to the link
+          node.parent = id;  // always relative to the link
       }
     }
 
@@ -219,10 +220,7 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
 void parseInsertionComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   components::Insertion insertion;
-
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Insertion element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+  const std::string id = evalElementIdRequired(elem);
 
   // AxisInsertion (required)
   const auto* axis1 = elem->FirstChildElement("AxisInsertion");
@@ -248,14 +246,14 @@ void parseInsertionComponent(const tinyxml2::XMLElement* elem, ginseng::database
   if (!sym)
     throw std::runtime_error("Insertion '" + std::string(id) + "' missing <RotationalSymmetry> element at line " +
                              std::to_string(elem->GetLineNum()));
-  insertion.rotational_symmetry = sym->UnsignedAttribute("value");
+  insertion.rotational_symmetry = evalUIntAttributeRequired(sym, "value");
 
   // ApproachDistance (required)
   const auto* dist = elem->FirstChildElement("ApproachDistance");
   if (!dist)
     throw std::runtime_error("Insertion '" + std::string(id) + "' missing <ApproachDistance> element at line " +
                              std::to_string(elem->GetLineNum()));
-  insertion.approach_distance = parseRequiredDoubleExpression(dist, "value");
+  insertion.approach_distance = evalNumberAttributeRequired(dist, "value");
 
   // store to component
   auto* component = getOrCreateComponent<InsertionComponent>(db, eid);
@@ -265,15 +263,12 @@ void parseInsertionComponent(const tinyxml2::XMLElement* elem, ginseng::database
 void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   components::Touchscreen ts;
-
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Touchscreen element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+  const std::string id = evalElementIdRequired(elem);
 
   if (const auto* size = elem->FirstChildElement("Size"))
   {
-    ts.width = parseRequiredDoubleExpression(size, "width");
-    ts.height = parseRequiredDoubleExpression(size, "height");
+    ts.width = evalNumberAttributeRequired(size, "width");
+    ts.height = evalNumberAttributeRequired(size, "height");
   }
 
   if (const auto* normal = elem->FirstChildElement("SurfaceNormal"))
@@ -281,45 +276,42 @@ void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::databa
 
   if (const auto* pressure = elem->FirstChildElement("Pressure"))
   {
-    ts.min_pressure = parseRequiredDoubleExpression(pressure, "min");
-    ts.max_pressure = parseRequiredDoubleExpression(pressure, "max");
+    ts.min_pressure = evalNumberAttributeRequired(pressure, "min");
+    ts.max_pressure = evalNumberAttributeRequired(pressure, "max");
   }
 
   if (const auto* touch = elem->FirstChildElement("Touch"))
   {
-    ts.touch_radius = parseRequiredDoubleExpression(touch, "radius");
-    ts.multi_touch = touch->BoolAttribute("multi_touch");
-    ts.allow_drag = touch->BoolAttribute("allow_drag");
+    ts.touch_radius = evalNumberAttributeRequired(touch, "radius");
+    ts.multi_touch = evalBoolAttribute(touch, "multi_touch", false);
+    ts.allow_drag = evalBoolAttribute(touch, "allow_drag", false);
   }
 
   if (const auto* meta = elem->FirstChildElement("Metadata"))
   {
     if (auto* model = meta->FirstChildElement("Model"))
-      ts.model = model->GetText();
+      ts.model = evalTextNode(model);
     if (auto* version = meta->FirstChildElement("Version"))
-      ts.version = version->GetText();
+      ts.version = evalTextNode(version);
     if (auto* driver = meta->FirstChildElement("Driver"))
-      ts.driver = driver->GetText();
+      ts.driver = evalTextNode(driver);
   }
 
   // store to component
   auto* component = getOrCreateComponent<TouchscreenComponent>(db, eid);
   component->elements.emplace_back(id, std::move(ts));
-}
+}  // namespace xml
 
 void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("FSM element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
-
   components::FSM fsm;
+  const std::string id = evalElementIdRequired(elem);
 
   const auto* start = elem->FirstChildElement("StartState");
   if (!start || !start->Attribute("name"))
     throw std::runtime_error("FSM missing or malformed <StartState> at line " + std::to_string(elem->GetLineNum()));
 
-  std::string start_state = start->Attribute("name");
+  std::string start_state = evalTextAttributeRequired(start, "name");
 
   // Parse states
   if (const auto* states_elem = elem->FirstChildElement("States"))
@@ -327,7 +319,7 @@ void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, 
     for (const auto* state_elem = states_elem->FirstChildElement("State"); state_elem;
          state_elem = state_elem->NextSiblingElement("State"))
     {
-      std::string name = state_elem->Attribute("name");
+      std::string name = evalTextAttributeRequired(state_elem, "name");
       fsm.state_labels.add(name);
     }
   }
@@ -344,7 +336,7 @@ void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, 
     for (const auto* action_elem = actions_elem->FirstChildElement("Action"); action_elem;
          action_elem = action_elem->NextSiblingElement("Action"))
     {
-      std::string name = action_elem->Attribute("name");
+      std::string name = evalTextAttributeRequired(action_elem, "name");
       fsm.action_labels.add(name);
     }
   }
@@ -376,17 +368,11 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database
   if (!elem->FirstChildElement("ActionMap"))
     return;
 
-  const char* component_id = elem->Attribute("id");
-  if (!component_id)
-    throw std::runtime_error("Component missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
-
+  const std::string component_id = evalElementIdRequired(elem);
   for (const tinyxml2::XMLElement* action_map_elem = elem->FirstChildElement("ActionMap"); action_map_elem;
        action_map_elem = action_map_elem->NextSiblingElement("ActionMap"))
   {
-    const char* fsm_id = action_map_elem->Attribute("fsm");
-    if (!fsm_id)
-      throw std::runtime_error("ActionMap missing 'fsm' attribute at line " +
-                               std::to_string(action_map_elem->GetLineNum()));
+    const std::string fsm_id = evalTextAttributeRequired(action_map_elem, "fsm");
 
     // Build up ActionMap locally
     components::ActionMap action_map;
@@ -396,18 +382,13 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database
     {
       components::ActionMapEntry entry;
       // Required
-      const char* trigger = map_elem->Attribute("trigger");
-      const char* action = map_elem->Attribute("action");
-      if (!trigger || !action)
-        throw std::runtime_error("Map missing 'trigger' or 'action' at line " + std::to_string(map_elem->GetLineNum()));
-
-      entry.trigger = trigger;
-      entry.action = action;
+      entry.trigger = evalTextAttributeRequired(map_elem, "trigger");
+      entry.action = evalTextAttributeRequired(map_elem, "action");
 
       // Optional: trigger_params
-      const char* trigger_params = map_elem->Attribute("trigger_params");
-      if (trigger_params)
-        entry.trigger_params = trigger_params;
+      std::string params;
+      if (tryEvalTextAttribute(map_elem, "trigger_params", &params))
+        entry.trigger_params = std::move(params);
 
       entry.component_id = component_id;
       entry.component_type = componentTypeFromString(elem->Name());
@@ -437,10 +418,7 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database
 void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
   Container container;
-
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Container element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
+  const std::string id = evalElementIdRequired(elem);
 
   if (const auto* a = elem->FirstChildElement("AxisBottom"))
     container.axis_bottom = parseUnitVector(a);
@@ -458,23 +436,19 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   // Content (first one only)
   if (const auto* cont = elem->FirstChildElement("Content"))
   {
-    if (const char* type = cont->Attribute("type"))
-      container.content_type = type;
-    double volume = parseDoubleExpression(cont, "volume", 0.0);
-    const char* units = cont->Attribute("units");
-    container.volume = convertVolumeToSI(volume, units ? units : "m^3");
+    container.content_type = evalTextAttribute(cont, "type", "");
+    const double volume = evalNumberAttribute(cont, "volume", 0.0);
+    const std::string units = evalTextAttribute(cont, "units", "m^3");
+    container.volume = convertVolumeToSI(volume, units.c_str());
   }
 
   // Parse <DomainShapeRef>
   if (const tinyxml2::XMLElement* domainShapeRefElem = elem->FirstChildElement("DomainShapeRef"))
   {
-    if (const char* domain_id = domainShapeRefElem->Attribute("id"))
+    container.domain_shape_id = evalTextAttributeRequired(domainShapeRefElem, "id");
+    if (container.domain_shape_id.empty())
     {
-      container.domain_shape_id = domain_id;
-    }
-    else
-    {
-      throw std::runtime_error("Missing id attribute in <DomainShapeRef> at line " +
+      throw std::runtime_error("Empty 'id' in <DomainShapeRef> at line " +
                                std::to_string(domainShapeRefElem->GetLineNum()));
     }
   }
@@ -482,13 +456,10 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   // Parse <LiquidLevelJointRef>
   if (const tinyxml2::XMLElement* liquidLevelJointRefElem = elem->FirstChildElement("LiquidLevelJointRef"))
   {
-    if (const char* joint_id = liquidLevelJointRefElem->Attribute("id"))
+    container.liquid_level_joint_id = evalTextAttributeRequired(liquidLevelJointRefElem, "id");
+    if (container.liquid_level_joint_id.empty())
     {
-      container.liquid_level_joint_id = joint_id;
-    }
-    else
-    {
-      throw std::runtime_error("Missing id attribute in <LiquidLevelJointRef> at line " +
+      throw std::runtime_error("Empty 'id' in <LiquidLevelJointRef> at line " +
                                std::to_string(liquidLevelJointRefElem->GetLineNum()));
     }
   }
@@ -556,10 +527,6 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
 
 void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Button element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
-
   auto btn = parseButton(elem);
 
   // validate link + joint exists in database
@@ -583,31 +550,25 @@ void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
   }
 
   auto* btn_component = getOrCreateComponent<ButtonComponent>(db, eid);
+  const std::string id = evalElementIdRequired(elem);
   btn_component->elements.emplace_back(id, std::move(btn));
 }
 
 void parseVirtualButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("VirtualButton element missing 'id' attribute at line " +
-                             std::to_string(elem->GetLineNum()));
-
   auto button = parseVirtualButton(elem);
 
   auto* btn_component = getOrCreateComponent<VirtualButtonComponent>(db, eid);
+  const std::string id = evalElementIdRequired(elem);
   btn_component->elements.emplace_back(id, std::move(button));
 }
 
 void parseJointComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Joint element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
-
   auto joint = parseJoint(elem);
 
   auto* joint_component = getOrCreateComponent<JointComponent>(db, eid);
+  const std::string id = evalElementIdRequired(elem);
   joint_component->elements.emplace_back(id, std::move(joint));
 }
 
@@ -617,27 +578,19 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ginse
   if (!stack_component)
     throw std::runtime_error("StackedShapeComponent missing from entity!");
 
-  // <FluidDomainShape id="...">
-  const char* domain_id = fluidElem->Attribute("id");
-  if (!domain_id)
-    throw std::runtime_error("FluidDomainShape is missing 'id' attribute!");
-
-  DomainShape domain_shape;
-
-  const char* id = fluidElem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("FluidDomainShape element missing 'id' attribute at line " +
-                             std::to_string(fluidElem->GetLineNum()));
+  const std::string id = evalElementIdRequired(fluidElem);
 
   // <StackedShape id="..."/>
   const tinyxml2::XMLElement* stackElem = fluidElem->FirstChildElement("StackedShape");
   if (!stackElem)
     throw std::runtime_error("FluidDomainShape missing <StackedShape>");
 
-  const char* stack_id = stackElem->Attribute("id");
-  if (!stack_id)
-    throw std::runtime_error("StackedShape is missing 'id' attribute!");
-  domain_shape.stacked_shape_id = stack_id ? stack_id : "";
+  const std::string stack_id = evalTextAttributeRequired(stackElem, "id");
+  if (stack_id.empty())
+    throw std::runtime_error("Empty 'id' in <StackedShape> at line " + std::to_string(stackElem->GetLineNum()));
+
+  DomainShape domain_shape;
+  domain_shape.stacked_shape_id = stack_id;
 
   // Find the stack in the ECS
   auto stacked_shapes_ptr = getComponentElement(stack_component->elements, domain_shape.stacked_shape_id);
@@ -711,22 +664,18 @@ void parseProductComponent(const tinyxml2::XMLElement* elem, ginseng::database& 
   auto* component = getOrCreateComponent<ObjectComponent>(db, eid);
 
   if (auto* name = elem->FirstChildElement("Name"))
-    component->name = parseText(name);
+    component->name = evalTextNode(name);
   if (auto* model = elem->FirstChildElement("Model"))
-    component->model = parseText(model);
+    component->model = evalTextNode(model);
   if (auto* sn = elem->FirstChildElement("SerialNumber"))
-    component->serial_number = parseText(sn);
+    component->serial_number = evalTextNode(sn);
   if (auto* vendor = elem->FirstChildElement("Vendor"))
-    component->vendor = parseText(vendor);
+    component->vendor = evalTextNode(vendor);
 }
 
 void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
 {
-  // Get id attribute or use "root"
-  const char* id = elem->Attribute("id");
-  if (!id)
-    throw std::runtime_error("Origin element missing 'id' attribute at line " + std::to_string(elem->GetLineNum()));
-  std::string origin_id = id;
+  const std::string id = evalElementIdRequired(elem);
 
   // Count which "case" is present
   int case_count = 0;
@@ -776,9 +725,9 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
 
     // Overwrite or insert as first entry
     if (tf_component->elements.empty())
-      tf_component->elements.emplace_back(origin_id, std::move(frame));
+      tf_component->elements.emplace_back(id, std::move(frame));
     else
-      tf_component->elements[0] = std::make_pair(origin_id, std::move(frame));
+      tf_component->elements[0] = std::make_pair(id, std::move(frame));
 
     auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
     origin_component->origin = geometry::Transform{ .parent = frame.parent, .tf = frame.local };
@@ -786,11 +735,11 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
   else if (align_frames_elem)
   {
     geometry::AlignFrames align;
-    align.target_id = align_frames_elem->Attribute("with");
-    const auto* src = align_frames_elem->FirstChildElement("Source");
-    const auto* tgt = align_frames_elem->FirstChildElement("Target");
-    align.source_tf = src && src->Attribute("name") ? src->Attribute("name") : "";
-    align.target_tf = tgt && tgt->Attribute("name") ? tgt->Attribute("name") : "";
+    align.target_id = evalTextAttributeRequired(align_frames_elem, "with");
+    if (const auto* src = align_frames_elem->FirstChildElement("Source"))
+      align.source_tf = evalTextAttribute(src, "name", "");
+    if (const auto* tgt = align_frames_elem->FirstChildElement("Target"))
+      align.target_tf = evalTextAttribute(tgt, "name", "");
 
     auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
     origin_component->origin = align;
@@ -798,43 +747,29 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
   else if (align_pair_frames_elem)
   {
     geometry::AlignPairFrames align;
-    align.target_id = align_pair_frames_elem->Attribute("with");
-    align.tolerance = parseRequiredDoubleExpression(align_pair_frames_elem, "tolerance");
+    align.target_id = evalTextAttributeRequired(align_pair_frames_elem, "with");
+    align.tolerance = evalNumberAttributeRequired(align_pair_frames_elem, "tolerance");
 
     int found = 0;
     for (const auto* tag = align_pair_frames_elem->FirstChildElement(); tag; tag = tag->NextSiblingElement())
     {
-      std::string tname = tag->Name();
-      const char* name_attr = tag->Attribute("name");
-      if (!name_attr)
-        throw std::runtime_error("AlignGeometricPair missing 'name' attribute at line " +
-                                 std::to_string(tag->GetLineNum()));
-      std::string name = name_attr;
+      const std::string tname = tag->Name();
+      const std::string name = evalTextAttributeRequired(tag, "name");
 
       if (tname == "Source" || tname == "SourceTransform")
-      {
-        if (found == 0)
-          align.source_tf1 = name;
-        else if (found == 1)
-          align.source_tf2 = name;
-        else
-          throw std::runtime_error("Too many <Source> tags in <AlignGeometricPair> at line " +
-                                   std::to_string(tag->GetLineNum()));
-      }
+        (found == 0 ? align.source_tf1 :
+                      found == 1 ?
+                      align.source_tf2 :
+                      throw std::runtime_error("Too many <Source> ... at line " + std::to_string(tag->GetLineNum())));
       else if (tname == "Target" || tname == "TargetTransform")
-      {
-        if (found == 2)
-          align.target_tf1 = name;
-        else if (found == 3)
-          align.target_tf2 = name;
-        else
-          throw std::runtime_error("Too many <Target> tags in <AlignGeometricPair> at line " +
-                                   std::to_string(tag->GetLineNum()));
-      }
+        (found == 2 ? align.target_tf1 :
+                      found == 3 ?
+                      align.target_tf2 :
+                      throw std::runtime_error("Too many <Target> ... at line " + std::to_string(tag->GetLineNum())));
       else
         throw std::runtime_error("Unexpected tag <" + tname + "> in <AlignGeometricPair> at line " +
                                  std::to_string(tag->GetLineNum()));
-      found++;
+      ++found;
     }
     if (align.source_tf1.empty() || align.source_tf2.empty() || align.target_tf1.empty() || align.target_tf2.empty())
       throw std::runtime_error("Missing source/target transforms in <AlignGeometricPair> at line " +
@@ -853,30 +788,24 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
 
   if (const auto* transform_elem = elem->FirstChildElement("Transform"))
   {
-    const char* id = elem->Attribute("id");
-    if (!id)
-      throw std::runtime_error("Transform parent element missing 'id' attribute at line " +
-                               std::to_string(elem->GetLineNum()));
-
-    std::string id_str(id);
+    const std::string id = evalElementIdRequired(elem);
 
     // Check for duplicates manually if component exists
     if (auto* transform_component = db.get_component<components::TransformComponent*>(eid))
     {
       auto it = std::find_if(transform_component->elements.begin(), transform_component->elements.end(),
-                             [&](const auto& p) { return p.first == id_str; });
+                             [&](const auto& p) { return p.first == id; });
 
       if (it != transform_component->elements.end())
       {
-        throw std::runtime_error("Duplicate transform id '" + id_str + "' at line " +
-                                 std::to_string(elem->GetLineNum()));
+        throw std::runtime_error("Duplicate transform id '" + id + "' at line " + std::to_string(elem->GetLineNum()));
       }
     }
 
     geometry::TransformNode frame = parseTransformNode(transform_elem);
 
     auto* component = getOrCreateComponent<components::TransformComponent>(db, eid);
-    component->elements.emplace_back(id_str, std::move(frame));
+    component->elements.emplace_back(id, std::move(frame));
   }
 }
 
@@ -887,10 +816,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     throw std::runtime_error(std::string(derived_elem->Name()) + " has not parent element at line " +
                              std::to_string(derived_elem->GetLineNum()));
 
-  const char* id = parent->Attribute("id");
-  if (!id)
-    throw std::runtime_error(parent->Name() + std::string(" missing 'id' attribute at line ") +
-                             std::to_string(parent->GetLineNum()));
+  const std::string id = evalElementIdRequired(parent);
 
   auto shape_component = db.get_component<components::ShapeComponent*>(eid);
   if (!shape_component)
@@ -921,9 +847,11 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
   for (const auto* shape_elem = derived_elem->FirstChildElement("Shape"); shape_elem;
        shape_elem = shape_elem->NextSiblingElement("Shape"))
   {
-    if (!shape_elem->Attribute("id"))
-      throw std::runtime_error("ParallelGrasp <Shape> missing 'id' attribute");
-    std::string shape_id = shape_elem->Attribute("id");
+    const std::string shape_id = evalTextAttributeRequired(shape_elem, "id");
+    if (shape_id.empty())
+      throw std::runtime_error("ParallelGrasp <Shape> has empty 'id' at line " +
+                               std::to_string(shape_elem->GetLineNum()));
+
     auto shape = getComponentElement(shape_component->elements, shape_id);
     if (!shape)
       throw std::runtime_error("No Shape entry found for '" + shape_id + "' in ShapeComponent");
@@ -1101,7 +1029,8 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     if (!approach_elem || !approach_elem->Attribute("value"))
       throw std::runtime_error(
           "ParallelGrasp: <GraspType> tag with 'value' attribute is required for single 3D shape (box/cylinder).");
-    std::string grasp_type_str = approach_elem->Attribute("value");
+
+    const std::string grasp_type_str = evalTextAttributeRequired(approach_elem, "value");
     if (grasp_type_str == "Internal")
       grasp.grasp_type = ParallelGrasp::GraspType::INTERNAL;
     else if (grasp_type_str == "External")
