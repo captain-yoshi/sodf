@@ -4,6 +4,7 @@ set(SODF_TESTS
     test_fluid_domain_shape.cpp
     test_uri_resolver.cpp
     test_xml_parser.cpp
+    test_expression_parser.cpp
 )
 
 set(TEST_DEPENDECIES
