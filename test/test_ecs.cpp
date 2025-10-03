@@ -55,7 +55,7 @@ TEST(ECS, ParsingSingleObject)
 
   // Transform component validation
   auto& transform = db.get_component<components::TransformComponent>(eid);
-  EXPECT_EQ(transform.elements.size(), 60);
+  EXPECT_EQ(transform.elements.size(), 69);
 
   // Link component validation
   auto& link = db.get_component<components::LinkComponent>(eid);
@@ -123,7 +123,7 @@ TEST(ECS, ParseSceneA)
 
     // Transform component validation
     auto& transform = db.get_component<components::TransformComponent>(eid);
-    EXPECT_EQ(transform.elements.size(), 58);
+    EXPECT_EQ(transform.elements.size(), 64);
 
     // Link component validation
     auto& link = db.get_component<components::LinkComponent>(eid);
@@ -185,7 +185,7 @@ TEST(ECS, ParseSceneB)
 
     // Transform component validation
     auto& transform = db.get_component<components::TransformComponent>(eid);
-    EXPECT_EQ(transform.elements.size(), 58);
+    EXPECT_EQ(transform.elements.size(), 64);
 
     // Link component validation
     auto& link = db.get_component<components::LinkComponent>(eid);
