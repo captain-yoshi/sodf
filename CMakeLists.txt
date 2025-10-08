@@ -94,6 +94,7 @@ add_library(${PROJECT_NAME}
   src/xml/entity_parser.cpp
   src/xml/expression_parser.cpp
   src/xml/for_loop_parser.cpp
+  src/xml/patch_operations.cpp
 )
 
 # Internal libraries

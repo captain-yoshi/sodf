@@ -5,11 +5,10 @@
 
   <Object id="pcr1" model="allo:bio-rad:t100-thermal-cycler">
     <Overlay id="hmi-fw-2.4.3" slot="hmi"/>
-    <Remove>
-      <Link id="link/base"/>
-      <VirtualButton id="btn/incubate" type="virtual"/>
-      <FSM id="fsm/touchscreen"/>
-    </Remove>
+
+    <Remove block="Link[@id=link/base]"/>
+    <Remove block="VirtualButton[@id=btn/incubate]"/>
+    <Remove block="FSM[@id=fsm/touchscreen]"/>
   </Object>
 
   <Object id="pcr2"/>
