@@ -5,6 +5,7 @@ set(SODF_TESTS
     test_uri_resolver.cpp
     test_xml_parser.cpp
     test_expression_parser.cpp
+    test_patch_operations.cpp
 )
 
 set(TEST_DEPENDECIES
