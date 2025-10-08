@@ -83,6 +83,20 @@ inline std::optional<SceneComponentType> sceneComponentTypeFromString(const std:
   return std::nullopt;
 }
 
+inline const char* sceneComponentTypeToString(SceneComponentType type)
+{
+  switch (type)
+  {
+#define X(name, func)                                                                                                  \
+  case SceneComponentType::name:                                                                                       \
+    return #name;
+    SODF_XML_COMPONENT_PARSERS(X)
+#undef X
+    default:
+      return "Unknown";
+  }
+}
+
 inline std::optional<SceneSubComponentType> sceneSubComponentTypeFromString(const std::string& name)
 {
 #define X(tag, func)                                                                                                   \
