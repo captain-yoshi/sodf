@@ -6,6 +6,7 @@
 namespace sodf {
 namespace xml {
 
+constexpr long double pi = 3.141592653589793238462643383279502884L;
 std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalContext& ctx);
 double parseExpression(const char* expr);
 static std::optional<std::string> resolve_ref_raw(std::string_view ref, const ExprEvalContext& ctx);
@@ -557,7 +558,7 @@ double evalBareMath(const char* expr)
   try
   {
     mu::Parser parser;
-    parser.DefineConst("pi", M_PI);
+    parser.DefineConst("pi", pi);
     parser.DefineConst("inf", std::numeric_limits<double>::infinity());
     parser.SetExpr(expr);
     return parser.Eval();
