@@ -120,6 +120,17 @@ void register_math_symbols(mu::Parser& parser)
   parser.DefineFun("atan2d", mu::fun_type2(&wrap_atan2d));
 }
 
+static mu::Parser& get_math_parser()
+{
+  // One parser per thread, initialized once
+  thread_local mu::Parser parser = [] {
+    mu::Parser p;
+    register_math_symbols(p);
+    return p;
+  }();
+  return parser;
+}
+
 // Expand ${...} references as raw text, repeatedly, up to max_depth.
 // No math evaluation here.
 std::string eval_text_with_refs(const char* raw, const ExprEvalContext& ctx, int max_depth = MAX_RECURSION_DEPTH)
@@ -716,10 +727,7 @@ double evalBareMath(const char* expr)
 
   try
   {
-    mu::Parser parser;
-
-    register_math_symbols(parser);
-
+    mu::Parser& parser = get_math_parser();  // reuse per-thread instance
     parser.SetExpr(expr);
     return parser.Eval();
   }
