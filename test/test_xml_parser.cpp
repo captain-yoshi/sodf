@@ -301,7 +301,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
       <!-- Provide an overlay library entry for the slot -->
       <Overlay id="fw1" slot="hmi" target="needs_hmi">
         <!-- could add components here; not necessary for this minimal test -->
-        <Add>
+        <Add block="./">
           <Product/>
         </Add>
       </Overlay>

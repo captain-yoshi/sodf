@@ -42,7 +42,7 @@ TEST(ExpressionRefs, IndexingAndFields)
   EXPECT_NEAR(a, 1.2 + 10.0, 1e-12);
 }
 
-TEST(ExpressionRefs, IdWithSlash_Quoted)
+TEST(ExpressionRefs, IdWithSlash)
 {
   const char* xml = R"(
   <Root>
@@ -50,7 +50,7 @@ TEST(ExpressionRefs, IdWithSlash_Quoted)
       <Thing id="link/base">
         <Collision><Shape><Dimensions height="0.3"/></Shape></Collision>
       </Thing>
-      <Use h="${#'link/base'/Collision/Shape/Dimensions.height} / 2"/>
+      <Use h="${../Thing[@id=link/base]/Collision/Shape/Dimensions.height} / 2"/>
     </Object>
   </Root>)";
   tinyxml2::XMLDocument doc;
@@ -60,7 +60,7 @@ TEST(ExpressionRefs, IdWithSlash_Quoted)
   EXPECT_NEAR(h, 0.15, 1e-12);
 }
 
-TEST(ExpressionRefs, GlobalRootLookup)
+TEST(ExpressionRefs, DocRootLookup)
 {
   const char* xml = R"(
   <Root>
@@ -82,9 +82,9 @@ TEST(ExpressionRefs, NestedReference)
       <Params>
         <Value id="base" a="5"/>
         <!-- Reference to another reference -->
-        <Value id="alias" a="${#base.a}"/>
+        <Value id="alias" a="${../Value[@id=base].a}"/>
         <!-- Final usage -->
-        <Use b="${#alias.a} + 2"/>
+        <Use b="${../Value[@id=alias].a} + 2"/>
       </Params>
     </Object>
   </Root>)";
@@ -106,11 +106,11 @@ TEST(ExpressionRefs, RecursiveReferenceMultiHop)
       <Params>
         <Value id="base"  a="3"/>
         <!-- alias1 depends on base -->
-        <Value id="alias1" a="${#base.a} * 2"/>        <!-- 3 * 2 = 6 -->
+        <Value id="alias1" a="${../Value[@id=base].a} * 2"/>        <!-- 3 * 2 = 6 -->
         <!-- alias2 depends on alias1 -->
-        <Value id="alias2" a="${#alias1.a} + 1"/>      <!-- 6 + 1 = 7 -->
+        <Value id="alias2" a="${../Value[@id=alias1].a} + 1"/>      <!-- 6 + 1 = 7 -->
         <!-- use depends on alias2 and alias1 -->
-        <Use c="${#alias2.a} + ${#alias1.a}"/>        <!-- 7 + 6 = 13 -->
+        <Use c="${../Value[@id=alias2].a} + ${../Value[@id=alias1].a}"/>       <!-- 7 + 6 = 13 -->
       </Params>
     </Object>
   </Root>)";
@@ -130,9 +130,9 @@ TEST(ExpressionRefs, RecursiveReferenceCycleDetect)
   <Root>
     <Object id="obj">
       <Params>
-        <Value id="A" a="${#B.a} + 1"/>
-        <Value id="B" a="${#A.a} + 1"/>
-        <Use k="${#A.a}"/>
+        <Value id="A" a="${../Value[@id=B].a} + 1"/>
+        <Value id="B" a="${../Value[@id=A].a} + 1"/>
+        <Use k="${../Value[@id=A].a}"/>
       </Params>
     </Object>
   </Root>)";
@@ -160,7 +160,7 @@ TEST(ExpressionRefs, CurrentElementAttr)
   EXPECT_NEAR(evalNumberAttributeRequired(use, "out"), 14.0, 1e-12);
 }
 
-TEST(ExpressionRefs, DotSlashNoOp)
+TEST(ExpressionRefs, ChildRootScope)
 {
   const char* xml = R"(
   <Root>
@@ -176,14 +176,14 @@ TEST(ExpressionRefs, DotSlashNoOp)
   EXPECT_NEAR(evalNumberAttributeRequired(use, "out"), 6.0, 1e-12);
 }
 
-TEST(ExpressionRefs, MidPathIdWithinSubtree)
+TEST(ExpressionRefs, MidPathIdWithinSubtree1)
 {
   const char* xml = R"(
   <Root>
     <Object id="obj">
       <Group>
         <Node id="T"><Param p="9"/></Node>
-        <Use z="${../#T/Param.p}"/>
+        <Use z="${../Node[@id=T]/Param.p}"/>
       </Group>
     </Object>
   </Root>)";
@@ -193,13 +193,13 @@ TEST(ExpressionRefs, MidPathIdWithinSubtree)
   EXPECT_NEAR(evalNumberAttributeRequired(use, "z"), 9.0, 1e-12);
 }
 
-TEST(ExpressionRefs, HashQuotedIdDotAttrSugar)
+TEST(ExpressionRefs, MidPathIdWithinSubtree2)
 {
   const char* xml = R"(
   <Root>
     <Object id="obj">
       <Thing id="link/base"><Dims h="0.3"/></Thing>
-      <Use h10="${#'link/base'Dims.h} * 10"/>
+      <Use h10="${../Thing[@id=link/base]/Dims.h} * 10"/>
     </Object>
   </Root>)";
   tinyxml2::XMLDocument doc;
@@ -214,7 +214,9 @@ TEST(ExpressionRefs, ZeroBasedIndexing)
   <Root>
     <Object id="obj">
       <Block>
-        <Position x="10"/><Position x="20"/><Position x="30"/>
+        <Position x="10"/>
+        <Position x="20"/>
+        <Position x="30"/>
         <Use first="${../Position[0].x}" third="${../Position[2].x}"/>
       </Block>
     </Object>
@@ -333,33 +335,37 @@ TEST(ExpressionRefs, WhitespaceToleratedInRef)
   EXPECT_NEAR(evalNumberAttributeRequired(use, "x"), 1.0, 1e-12);
 }
 
-TEST(ExpressionRefs, HashIdDotAttrSugar_Global)
-{
-  const char* xml = R"(
-  <Root>
-    <Object id="obj"><Params><Value id="X" a="5"/></Params></Object>
-    <Object id="scene"><Use v="${#X.a} + 2"/></Object>
-  </Root>)";
-  tinyxml2::XMLDocument doc;
-  ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
-  auto* use = doc.RootElement()->LastChildElement("Object")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "v"), 7.0, 1e-12);
-}
-
-TEST(ExpressionRefs, UnquotedIdWithDotRequiresQuoting)
+TEST(ExpressionRefs, MissingKeyInSelectorThrows)
 {
   const char* xml = R"(
   <Root>
     <Object id="obj">
       <Params><Value id="my.id" a="11"/></Params>
-      <!-- This is ambiguous and should fail: use #'my.id'.a instead -->
-      <Use bad="${#my.id.a}"/>
+      <Use bad="${../Params/Value[=my.id].a}"/>
     </Object>
   </Root>)";
+
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
   EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+}
+
+TEST(ExpressionRefs, QuotedKeyWithDotIdWorks)
+{
+  const char* xml = R"(
+  <Root>
+    <Object id="obj">
+      <Params><Value id="my.id" a="11"/></Params>
+      <!-- Correct usage with explicit key and quoted id -->
+      <Use good="${../Params/Value[@id=my.id].a} + 1"/>
+    </Object>
+  </Root>)";
+
+  tinyxml2::XMLDocument doc;
+  ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "good"), 12.0, 1e-12);
 }
 
 TEST(ExpressionRefs, CombineMultipleRefs)
