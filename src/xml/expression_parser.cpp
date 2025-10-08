@@ -18,14 +18,107 @@
 namespace sodf {
 namespace xml {
 
-constexpr long double pi = 3.141592653589793238462643383279502884L;
-constexpr long double tau = 2.0L * pi;
-
 std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalContext& ctx);
 double parseExpression(const char* expr);
 static std::optional<std::string> resolve_ref_raw(std::string_view ref, const ExprEvalContext& ctx);
 double evalBareMath(const char* expr);
 ExprEvalContext make_context(const tinyxml2::XMLElement* scope);
+
+namespace {
+using Real = mu::value_type;
+
+// High-precision constants computed in long double
+constexpr long double kPiL = 3.141592653589793238462643383279502884L;
+constexpr long double kTauL = 2.0L * kPiL;
+constexpr long double kDeg2RadL = kPiL / 180.0L;
+constexpr long double kRad2DegL = 180.0L / kPiL;
+
+// Radian trig (compute in long double; return Real)
+Real wrap_sin(Real x)
+{
+  return static_cast<Real>(::sin((long double)x));
+}
+Real wrap_cos(Real x)
+{
+  return static_cast<Real>(::cos((long double)x));
+}
+Real wrap_tan(Real x)
+{
+  return static_cast<Real>(::tan((long double)x));
+}
+Real wrap_asin(Real x)
+{
+  return static_cast<Real>(::asin((long double)x));
+}
+Real wrap_acos(Real x)
+{
+  return static_cast<Real>(::acos((long double)x));
+}
+
+// Degree trig
+Real wrap_sind(Real x)
+{
+  return static_cast<Real>(::sin((long double)x * kDeg2RadL));
+}
+Real wrap_cosd(Real x)
+{
+  return static_cast<Real>(::cos((long double)x * kDeg2RadL));
+}
+Real wrap_tand(Real x)
+{
+  return static_cast<Real>(::tan((long double)x * kDeg2RadL));
+}
+Real wrap_asind(Real x)
+{
+  return static_cast<Real>(::asin((long double)x) * kRad2DegL);
+}
+Real wrap_acosd(Real x)
+{
+  return static_cast<Real>(::acos((long double)x) * kRad2DegL);
+}
+
+// Two-arg
+Real wrap_atan2(Real y, Real x)
+{
+  return static_cast<Real>(::atan2((long double)y, (long double)x));
+}
+Real wrap_atan2d(Real y, Real x)
+{
+  return static_cast<Real>(::atan2((long double)y, (long double)x) * kRad2DegL);
+}
+}  // anonymous namespace
+
+void register_math_symbols(mu::Parser& parser)
+{
+  using Real = mu::value_type;
+
+  const Real pi = static_cast<Real>(kPiL);
+  const Real tau = static_cast<Real>(kTauL);
+  const Real inf = std::numeric_limits<Real>::infinity();
+  const Real nan = std::numeric_limits<Real>::quiet_NaN();
+
+  parser.DefineConst("pi", pi);
+  parser.DefineConst("tau", tau);
+
+  parser.DefineConst("inf", inf);
+  parser.DefineConst("nan", nan);
+
+  // radian trig
+  parser.DefineFun("sin", mu::fun_type1(&wrap_sin));
+  parser.DefineFun("cos", mu::fun_type1(&wrap_cos));
+  parser.DefineFun("tan", mu::fun_type1(&wrap_tan));
+  parser.DefineFun("asin", mu::fun_type1(&wrap_asin));
+  parser.DefineFun("acos", mu::fun_type1(&wrap_acos));
+  parser.DefineFun("atan2", mu::fun_type2(&wrap_atan2));
+
+  // degree trig
+  parser.DefineFun("sind", mu::fun_type1(&wrap_sind));
+  parser.DefineFun("cosd", mu::fun_type1(&wrap_cosd));
+  parser.DefineFun("tand", mu::fun_type1(&wrap_tand));
+  parser.DefineFun("asind", mu::fun_type1(&wrap_asind));
+  parser.DefineFun("acosd", mu::fun_type1(&wrap_acosd));
+  parser.DefineFun("atan2d", mu::fun_type2(&wrap_atan2d));
+}
 
 // Expand ${...} references as raw text, repeatedly, up to max_depth.
 // No math evaluation here.
@@ -422,12 +515,12 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
   if (ref.size() >= 2 && ref.substr(0, 2) == "//")
   {
     ref.remove_prefix(2);
-    cur = ctx.doc ? ctx.doc->RootElement() : nullptr;  // // → document root
+    cur = ctx.doc ? ctx.doc->RootElement() : nullptr;  // // document root
   }
   else if (!ref.empty() && ref.front() == '/')
   {
     ref.remove_prefix(1);
-    cur = ctx.object_root;  // / → enclosing Object root
+    cur = ctx.object_root;  // / enclosing Object root
   }
   else
   {
@@ -578,7 +671,7 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
       continue;
     }
 
-    // Element or Element[i] — default child scope with top-level retry
+    // Element or Element[i], default child scope with top-level retry
     {
       auto nexts = eval_one_step_or_root_retry(cur, tok);
       if (nexts.empty())
@@ -624,9 +717,9 @@ double evalBareMath(const char* expr)
   try
   {
     mu::Parser parser;
-    parser.DefineConst("pi", pi);
-    parser.DefineConst("tau", tau);
-    parser.DefineConst("inf", std::numeric_limits<double>::infinity());
+
+    register_math_symbols(parser);
+
     parser.SetExpr(expr);
     return parser.Eval();
   }
