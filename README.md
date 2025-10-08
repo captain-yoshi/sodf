@@ -9,8 +9,6 @@ SODF expressions allow flexible, context-aware references and inline math:
 - **Variable substitution**: values are referenced inside `${...}` and expanded before evaluation.
 
 ``` xml
-<!-- Full example covering: relative, parent, object root (/), doc root (//),
-     #ID.attr sugar, quoted #'id', mid-path #, 0-based [i], .attr on current. -->
 <Root>
   <Config><Scale value="42"/></Config>
 
@@ -19,7 +17,6 @@ SODF expressions allow flexible, context-aware references and inline math:
       <Const id="X" a="5"/>
       <Thing id="link/base">
         <Orientation pitch="0.5"/>
-        <Orientation pitch="1.2"/>
         <Dims h="0.3" w="0.1"/>
       </Thing>
     </Params>
@@ -29,31 +26,37 @@ SODF expressions allow flexible, context-aware references and inline math:
       <Node id="T"><Param p="9"/></Node>
 
       <Expand
-        a ="${../../Params/Thing/Orientation[1].pitch}"   <!-- parent hop + [1] (0-based) -->
-        b ="${.val}"                                      <!-- current element attr -->
-        c ="${/Params/Thing/Dims.h}"                      <!-- object-root anchor -->
-        d ="${//Config/Scale.value}"                      <!-- doc-root anchor -->
-        e ="${#X.a} + 2"                                  <!-- #ID.attr sugar + math -->
-        f ="${#'link/base'/Dims.h} / 2"                   <!-- quoted id with slash, then descend -->
-        g ="${../#T/Param.p}"                             <!-- mid-path # within subtree -->
-        eqn="pi / 2 + inf"                                <!-- use inline math expressions -->
-        sum="${../Position.x} + ${../Position.z}"         <!-- combine refs -->
-        val="7"
-      />
+        a ="${//Config/Scale.value}"                 <!-- doc-root scope        -->
+        b ="${/Params/Thing/Dims.h}"                 <!-- object-root scope     -->
+        h ="${/Params/Thing[0]/Dims.h}"              <!-- tag index             -->
+        c ="${/Params/Thing[@id=link/base]/Dims.h}"  <!-- attr. filter          -->
+        d ="${Child.id}"                             <!-- child-root scope 1    -->
+        e ="${./Child.id}"                           <!-- child-root scope 2    -->
+        f ="${.val}"                                 <!-- current element attr  -->
+        g ="${../Node[@id=T]/Param.p}"               <!-- parent hop            -->
+        eq1="cos(pi/2) + sind(45) + tau"             <!-- inline math 1         -->
+        eq2="inf + nan"                              <!-- inline math 2         -->
+        sum="${../Position.x} + ${../Position.z}"    <!-- combine expressions   -->
+        val="7">
+
+          <Child id="yoshi"/>
+      </Expand>
     </Block>
   </Object>
 </Root>
 
 <!-- After Evaluation -->
 <Expand
-  a ="1.2" 
-  b ="7" 
-  c ="0.3
-  d ="42"
-  e ="7"
-  f ="0.15"
-  g ="9"
-  eqn="1.57079632679 + inf"
+  a="42"
+  b="0.3"
+  h="0.3"
+  c="0.3"
+  d="yoshi"
+  e="yoshi"
+  f="7"
+  g="9"
+  eq1="6.990292088366134" 
+  eq2="nan"
   sum="40"
   val="7"
 />

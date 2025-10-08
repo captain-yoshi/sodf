@@ -1,6 +1,18 @@
 #include "sodf/xml/expression_parser.h"
 #include <string_view>
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <sodf/xml/selector.h>
+
 #include "muParser.h"
 
 namespace sodf {
@@ -38,7 +50,7 @@ std::string eval_text_with_refs(const char* raw, const ExprEvalContext& ctx, int
         throw std::runtime_error("Unclosed ${...} in text expression");
 
       std::string ref = s.substr(l + 2, r - (l + 2));
-      auto rawv = resolve_ref_raw(ref, ctx);  // <-- the raw resolver you already have
+      auto rawv = resolve_ref_raw(ref, ctx);
       if (!rawv.has_value())
         throw std::runtime_error("Cannot resolve reference: " + ref);
 
@@ -78,53 +90,6 @@ static const tinyxml2::XMLElement* parent_element(const tinyxml2::XMLElement* e)
   return nullptr;
 }
 
-static bool parse_indexed_name(std::string_view token, std::string_view& name, int& idx /* 0-based or -1 */)
-{
-  size_t lb = token.find('[');
-  if (lb == std::string::npos)
-  {
-    name = trim_sv(token);
-    idx = -1;
-    return true;
-  }
-  size_t rb = token.find(']', lb + 1);
-  if (rb == std::string::npos)
-    return false;
-  name = trim_sv(token.substr(0, lb));
-  auto idx_sv = trim_sv(token.substr(lb + 1, rb - lb - 1));
-  long long tmp = -1;
-  try
-  {
-    tmp = std::stoll(std::string(idx_sv));
-  }
-  catch (...)
-  {
-    return false;
-  }
-  if (tmp < 0 || tmp > std::numeric_limits<int>::max())
-    return false;
-  idx = (int)tmp;  // 0-based
-  if (rb + 1 != token.size())
-    return false;
-  return true;
-}
-
-static const tinyxml2::XMLElement* nth_child_named(const tinyxml2::XMLElement* parent, std::string_view name,
-                                                   int zero_based_idx /* -1 = first (i.e., 0) */)
-{
-  if (!parent)
-    return nullptr;
-  int k = 0;
-  for (auto* e = parent->FirstChildElement(std::string(name).c_str()); e;
-       e = e->NextSiblingElement(std::string(name).c_str()))
-  {
-    if (zero_based_idx < 0 || k == zero_based_idx)
-      return e;
-    ++k;
-  }
-  return nullptr;
-}
-
 static const tinyxml2::XMLElement* dfs_find_id(const tinyxml2::XMLElement* root, std::string_view id)
 {
   if (!root)
@@ -149,15 +114,251 @@ static std::vector<std::string_view> split_slashes(std::string_view p)
 {
   std::vector<std::string_view> out;
   size_t start = 0, n = p.size();
-  for (size_t i = 0; i <= n; ++i)
-  {
-    if (i == n || p[i] == '/')
-    {
+  int bracket_depth = 0;
+  char quote = 0;
+
+  auto flush = [&](size_t i) {
+    if (i >= start)
       out.push_back(p.substr(start, i - start));
-      start = i + 1;
+    start = i + 1;
+  };
+
+  for (size_t i = 0; i < n; ++i)
+  {
+    char c = p[i];
+    if (quote)
+    {
+      if (c == quote)
+        quote = 0;
+      continue;
+    }
+    if (c == '\'' || c == '"')
+    {
+      quote = c;
+      continue;
+    }
+    if (c == '[')
+    {
+      ++bracket_depth;
+      continue;
+    }
+    if (c == ']')
+    {
+      if (bracket_depth > 0)
+        --bracket_depth;
+      continue;
+    }
+
+    if (c == '/' && bracket_depth == 0 && quote == 0)
+    {
+      flush(i);
     }
   }
+  // tail
+  if (start <= n)
+    out.push_back(p.substr(start, n - start));
   return out;
+}
+
+// Helper: are we a top-level element (whose parent is the document root element)?
+static bool is_top_level_under_doc_root(const tinyxml2::XMLElement* cur,
+                                        const tinyxml2::XMLElement** out_parent_root = nullptr)
+{
+  if (!cur)
+    return false;
+  const tinyxml2::XMLNode* p = cur->Parent();
+  const tinyxml2::XMLElement* parent_el = p ? p->ToElement() : nullptr;
+  if (!parent_el)
+    return false;  // cur itself is very likely the true root element.
+  const tinyxml2::XMLNode* pp = parent_el->Parent();
+  bool top = pp && (pp->ToElement() == nullptr);  // parent_el's parent is XMLDocument
+  if (top && out_parent_root)
+    *out_parent_root = parent_el;
+  return top;
+}
+
+// --- STRICT: guard against predicates with missing keys or values.
+// Throws on:
+//   [@]         -> missing key
+//   [@=X]       -> missing key
+//   [@*=foo]    -> missing key
+//   [=foo]      -> missing key (no '@')
+//   [*=foo]     -> missing key (no '@')
+//   [@id=]      -> missing value
+//   [@id*=]     -> missing value
+static void validate_attr_predicates_have_keys_and_values(std::string_view token)
+{
+  auto is_space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
+  auto trim = [&](std::string_view s) {
+    size_t a = 0, b = s.size();
+    while (a < b && is_space(s[a]))
+      ++a;
+    while (b > a && is_space(s[b - 1]))
+      --b;
+    return s.substr(a, b - a);
+  };
+
+  size_t i = 0;
+  while (i < token.size())
+  {
+    if (token[i] != '[')
+    {
+      ++i;
+      continue;
+    }
+
+    // Find the matching ']'
+    size_t j = i + 1;
+    int depth = 1;
+    char quote = 0;
+    for (; j < token.size(); ++j)
+    {
+      char c = token[j];
+      if (quote)
+      {
+        if (c == quote)
+          quote = 0;
+        continue;
+      }
+      if (c == '\'' || c == '"')
+      {
+        quote = c;
+        continue;
+      }
+      if (c == '[')
+      {
+        ++depth;
+        continue;
+      }
+      if (c == ']')
+      {
+        if (--depth == 0)
+          break;
+      }
+    }
+    if (j >= token.size())
+      break;  // malformed; let downstream parse complain
+
+    std::string_view body = trim(token.substr(i + 1, j - (i + 1)));
+    if (!body.empty())
+    {
+      if (body.front() == '@')
+      {
+        // Parse @key[(*=|=)value] or @key (exists) or @* forms
+        std::string_view rest = trim(body.substr(1));  // after '@'
+
+        // Find operator (*= or =) while ignoring quotes
+        size_t op_pos = std::string::npos;
+        bool contains_op = false;
+        {  // scan rest, track quotes to find unquoted '='
+          char q = 0;
+          for (size_t k = 0; k < rest.size(); ++k)
+          {
+            char c = rest[k];
+            if (q)
+            {
+              if (c == q)
+                q = 0;
+              continue;
+            }
+            if (c == '\'' || c == '"')
+            {
+              q = c;
+              continue;
+            }
+            if (c == '=')
+            {
+              op_pos = k;
+              contains_op = (k > 0 && rest[k - 1] == '*');  // "*=" if true
+              break;
+            }
+          }
+        }
+
+        if (op_pos == std::string::npos)
+        {
+          // EXISTS form: [@name] or [@*]
+          std::string_view key = trim(rest);
+          if (key.empty())
+            throw std::runtime_error("Missing key in attribute predicate '[" + std::string(body) + "]'");
+        }
+        else
+        {
+          // EQUALS/CONTAINS: LHS must be a key (possibly "*"), RHS must be non-empty
+          std::string_view key = trim(rest.substr(0, op_pos - (contains_op ? 1 : 0)));
+          if (key.empty())
+            throw std::runtime_error("Missing key in attribute predicate '[" + std::string(body) + "]'");
+
+          std::string_view rhs = trim(rest.substr(op_pos + 1));
+          if (rhs.empty())
+            throw std::runtime_error("Missing value in attribute predicate '[" + std::string(body) + "]'");
+        }
+      }
+      else
+      {
+        // If there is an (unquoted) '=' anywhere in body but no leading '@',
+        // it's an attribute predicate missing the key (e.g. [=foo], [*=bar]).
+        bool has_unquoted_eq = false;
+        char q = 0;
+        for (size_t k = 0; k < body.size(); ++k)
+        {
+          char c = body[k];
+          if (q)
+          {
+            if (c == q)
+              q = 0;
+            continue;
+          }
+          if (c == '\'' || c == '"')
+          {
+            q = c;
+            continue;
+          }
+          if (c == '=')
+          {
+            has_unquoted_eq = true;
+            break;
+          }
+        }
+        if (has_unquoted_eq)
+        {
+          throw std::runtime_error("Missing key in attribute predicate '[" + std::string(body) + "]'");
+        }
+        // Otherwise: digits-only index like [2] is allowed — no error here.
+      }
+    }
+
+    i = j + 1;
+  }
+}
+
+static std::vector<tinyxml2::XMLElement*> eval_one_step_or_root_retry(const tinyxml2::XMLElement* cur,
+                                                                      std::string_view token)
+{
+  validate_attr_predicates_have_keys_and_values(token);
+
+  auto sel = parse_selector(std::string(token));
+  if (sel.steps.size() != 1)
+    throw std::runtime_error("Invalid token in ${...} path: " + std::string(token));
+
+  auto* cur_nc = const_cast<tinyxml2::XMLElement*>(cur);
+  auto nexts = eval_step(cur_nc, sel.steps[0]);
+  if (!nexts.empty())
+    return nexts;
+
+  // If we are at a top-level element under the document root AND the child search failed,
+  // retry the same step against the document root element. This enables ../Object/... to
+  // select sibling <Object> elements at the root.
+  const tinyxml2::XMLElement* parent_root = nullptr;
+  if (is_top_level_under_doc_root(cur, &parent_root) && parent_root)
+  {
+    auto* parent_nc = const_cast<tinyxml2::XMLElement*>(parent_root);
+    auto retry = eval_step(parent_nc, sel.steps[0]);
+    if (!retry.empty())
+      return retry;
+  }
+
+  return {};
 }
 
 double eval_with_refs(const char* raw_expr, const ExprEvalContext& ctx, int max_depth = MAX_RECURSION_DEPTH)
@@ -194,14 +395,12 @@ double eval_with_refs(const char* raw_expr, const ExprEvalContext& ctx, int max_
 
     if (!changed)
     {
-      // No ${...} left → parse math
       if (expr.find("${") != std::string::npos)
         throw std::runtime_error("Unresolved ${...} after expansion");
       return evalBareMath(expr.c_str());
     }
   }
 
-  // Depth exceeded → likely a cycle (A->B->A…)
   throw std::runtime_error("Recursive reference detected or expansion too deep (> " + std::to_string(max_depth) + ").");
 }
 
@@ -209,72 +408,6 @@ double eval_with_refs(const char* expr, const tinyxml2::XMLElement* scope, int m
 {
   ExprEvalContext ctx = make_context(scope);
   return eval_with_refs(expr, ctx, max_depth);
-}
-
-// Consume an ID right after '#'. Supports #'...'  #"..."  #( ... )  or unquoted.
-// For unquoted, we now stop at the first '/' OR at the first '.' (to allow #ID.attr).
-static bool consume_id_after_hash(std::string_view& ref, std::string& out_id)
-{
-  if (ref.empty() || ref.front() != '#')
-    return false;
-  ref.remove_prefix(1);  // drop '#'
-  if (ref.empty())
-    return false;
-
-  char c = ref.front();
-  if (c == '\'' || c == '"')
-  {
-    // #'...' or #"..."
-    ref.remove_prefix(1);
-    size_t end = 0;
-    while (end < ref.size() && ref[end] != c)
-      ++end;
-    if (end == ref.size())
-      throw std::runtime_error("Unclosed quoted id after #");
-    out_id.assign(ref.substr(0, end));
-    ref.remove_prefix(end + 1);  // remainder may start with '.' or '/'
-    return true;
-  }
-  else if (c == '(')
-  {
-    // #( ... )
-    ref.remove_prefix(1);
-    size_t end = ref.find(')');
-    if (end == std::string::npos)
-      throw std::runtime_error("Unclosed #(id) after #");
-    out_id.assign(ref.substr(0, end));
-    ref.remove_prefix(end + 1);  // remainder may start with '.' or '/'
-    return true;
-  }
-  else
-  {
-    // Unquoted: stop at first '/' or '.' (dot means a following final .attr)
-    size_t slash = ref.find('/');
-    size_t dot = ref.find('.');
-    bool cut_at_dot = (dot != std::string::npos) && (slash == std::string::npos || dot < slash);
-
-    if (cut_at_dot)
-    {
-      if (dot == 0)
-        throw std::runtime_error("Empty id before '.attr' after #");
-      out_id.assign(ref.substr(0, dot));
-      ref.remove_prefix(dot);  // keep ".attr..." as remainder
-      return true;
-    }
-    else
-    {
-      out_id.assign(ref.substr(0, slash));
-      if (slash == std::string::npos)
-      {
-        ref = std::string_view{};  // no remainder
-      }
-      else
-      {
-        ref.remove_prefix(slash);  // keep "/..." as remainder
-      }
-      return true;
-    }
-  }
 }
 
 static std::optional<std::string> resolve_ref_raw(std::string_view ref, const ExprEvalContext& ctx)
@@ -285,33 +418,20 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
 
   const tinyxml2::XMLElement* cur = nullptr;
 
-  // anchor
+  // explicit anchor
   if (ref.size() >= 2 && ref.substr(0, 2) == "//")
   {
     ref.remove_prefix(2);
-    cur = ctx.doc ? ctx.doc->RootElement() : nullptr;
+    cur = ctx.doc ? ctx.doc->RootElement() : nullptr;  // // → document root
   }
   else if (!ref.empty() && ref.front() == '/')
   {
     ref.remove_prefix(1);
-    cur = ctx.object_root;
-  }
-  else if (!ref.empty() && ref.front() == '#')
-  {
-    std::string want;
-    if (!consume_id_after_hash(ref, want))
-      return std::nullopt;
-    const tinyxml2::XMLElement* root = ctx.doc ? ctx.doc->RootElement() : nullptr;
-    if (!root)
-      return std::nullopt;
-    cur = dfs_find_id(root, want);
-    if (!cur)
-      return std::nullopt;
-    // ref now empty or begins with '/' for further descent
+    cur = ctx.object_root;  // / → enclosing Object root
   }
   else
   {
-    cur = ctx.scope;
+    cur = ctx.scope;  // default: current element scope
   }
   if (!cur)
     return std::nullopt;
@@ -323,11 +443,13 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
     auto tok = trim_sv(tokens[ti]);
     if (tok.empty())
       continue;
+
     const bool last = (ti + 1 == tokens.size());
 
-    if (tok == ".")
+    if (tok == ".")  // ./ children scope is the default; "." is a no-op step
       continue;
-    if (tok == "..")
+
+    if (tok == "..")  // ../ parent scope
     {
       cur = parent_element(cur);
       if (!cur)
@@ -344,17 +466,13 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
         std::string_view left = trim_sv(tok.substr(0, dot));
         std::string_view attr = trim_sv(tok.substr(dot + 1));
 
-        // optional descend one step
+        // optional single-step descend before reading attribute
         if (!left.empty() && !(left.size() == 1 && left[0] == '.'))
         {
-          std::string_view name;
-          int idx = -1;
-          if (!parse_indexed_name(left, name, idx))
-            throw std::runtime_error("Invalid token before .attr: " + std::string(left));
-          const tinyxml2::XMLElement* next = nth_child_named(cur, name, idx);
-          if (!next)
+          auto nexts = eval_one_step_or_root_retry(cur, left);
+          if (nexts.empty())
             return std::nullopt;
-          cur = next;
+          cur = nexts.front();
         }
 
         if (attr.empty())
@@ -365,35 +483,17 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
         }
         return std::nullopt;
       }
-      // if last and not .attr → require .attr
+      // if last and not .attr → require .attr (explicit rule)
       throw std::runtime_error("Terminal element requires `.attr` (e.g., `.../Tag.attr`).");
     }
 
-    // mid-path #id: search within current subtree
-    if (tok.front() == '#')
+    // normal element step (./children scope by default) with top-level retry
     {
-      std::string_view id_sv = trim_sv(tok.substr(1));
-      if (id_sv.empty())
-        throw std::runtime_error("Empty #id in ${...}");
-      const tinyxml2::XMLElement* found = dfs_find_id(cur, id_sv);
-      if (!found)
+      auto nexts = eval_one_step_or_root_retry(cur, tok);
+      if (nexts.empty())
         return std::nullopt;
-      cur = found;
-      continue;
+      cur = nexts.front();
     }
-
-    // element or element[i]
-    std::string_view name;
-    int idx = -1;
-    if (!parse_indexed_name(tok, name, idx))
-      throw std::runtime_error("Invalid token in ${...} path: " + std::string(tok));
-    if (name.empty())
-      throw std::runtime_error("Empty element name in ${...} path.");
-
-    const tinyxml2::XMLElement* next = nth_child_named(cur, name, idx);
-    if (!next)
-      return std::nullopt;
-    cur = next;
   }
 
   // should not reach here (last must be .attr)
@@ -408,38 +508,25 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
 
   const tinyxml2::XMLElement* cur = nullptr;
 
-  // --- anchor selection
+  // explicit anchor
   if (ref.size() >= 2 && ref.substr(0, 2) == "//")
   {
     ref.remove_prefix(2);
-    cur = ctx.doc ? ctx.doc->RootElement() : nullptr;
+    cur = ctx.doc ? ctx.doc->RootElement() : nullptr;  // // document root
   }
   else if (!ref.empty() && ref.front() == '/')
   {
     ref.remove_prefix(1);
-    cur = ctx.object_root;
-  }
-  else if (!ref.empty() && ref.front() == '#')
-  {
-    std::string want;
-    if (!consume_id_after_hash(ref, want))
-      return std::nullopt;
-    const tinyxml2::XMLElement* root = ctx.doc ? ctx.doc->RootElement() : nullptr;
-    if (!root)
-      return std::nullopt;
-    cur = dfs_find_id(root, want);
-    if (!cur)
-      return std::nullopt;
-    // `ref` now either empty or begins with '/' to continue walking under that element
+    cur = ctx.object_root;  // / enclosing Object root
   }
   else
   {
-    cur = ctx.scope;
+    cur = ctx.scope;  // default: current element scope
   }
   if (!cur)
     return std::nullopt;
 
-  // --- walk slash-separated tokens
+  // walk slash-separated tokens
   auto tokens = split_slashes(ref);
   for (size_t ti = 0; ti < tokens.size(); ++ti)
   {
@@ -458,17 +545,13 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
         std::string_view left = trim_sv(tok.substr(0, dot));
         std::string_view attr = trim_sv(tok.substr(dot + 1));
 
-        // Optional: descend one step into 'left' if provided
+        // Optional: descend one step into 'left' if provided (with top-level retry)
         if (!left.empty() && left != std::string_view("."))
         {
-          std::string_view name;
-          int idx = -1;
-          if (!parse_indexed_name(left, name, idx))
-            throw std::runtime_error("Invalid token before .attr: " + std::string(left));
-          const tinyxml2::XMLElement* next = nth_child_named(cur, name, idx);
-          if (!next)
+          auto nexts = eval_one_step_or_root_retry(cur, left);
+          if (nexts.empty())
             return std::nullopt;
-          cur = next;
+          cur = nexts.front();
         }
 
         if (attr.empty())
@@ -480,15 +563,14 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
       }
     }
 
-    // No '@' allowed anymore
+    // No '@' allowed — explicit .attr only
     if (tok.front() == '@')
-    {
       throw std::runtime_error("`@attr` is not supported. Use final `.attr` (e.g., `.../Tag.attr`).");
-    }
 
-    if (tok == ".")
+    if (tok == ".")  // ./ children scope
       continue;
-    if (tok == "..")
+
+    if (tok == "..")  // ../ parent scope
     {
       cur = parent_element(cur);
       if (!cur)
@@ -496,31 +578,13 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
       continue;
     }
 
-    // mid-path #id (within current subtree)
-    if (tok.front() == '#')
+    // Element or Element[i] — default child scope with top-level retry
     {
-      std::string_view id_sv = trim_sv(tok.substr(1));
-      if (id_sv.empty())
-        throw std::runtime_error("Empty #id in ${...}");
-      const tinyxml2::XMLElement* found = dfs_find_id(cur, id_sv);
-      if (!found)
+      auto nexts = eval_one_step_or_root_retry(cur, tok);
+      if (nexts.empty())
         return std::nullopt;
-      cur = found;
-      continue;
+      cur = nexts.front();
     }
-
-    // Element or Element[i]
-    std::string_view name;
-    int idx = -1;
-    if (!parse_indexed_name(tok, name, idx))
-      throw std::runtime_error("Invalid token in ${...} path: " + std::string(tok));
-    if (name.empty())
-      throw std::runtime_error("Empty element name in ${...} path.");
-
-    const tinyxml2::XMLElement* next = nth_child_named(cur, name, idx);
-    if (!next)
-      return std::nullopt;
-    cur = next;
 
     if (last)
     {
@@ -576,10 +640,9 @@ double evalNumberExpr(const char* expr, const tinyxml2::XMLElement* scope)
 {
   if (!expr)
     throw std::runtime_error("Null expression.");
-  // Fast path: no ${...}, evaluate directly
   if (std::strstr(expr, "${") == nullptr)
     return evalBareMath(expr);
-  return eval_with_refs(expr, scope);  // your multi-pass expander + muParser
+  return eval_with_refs(expr, scope);
 }
 
 double evalNumberAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr)
@@ -597,9 +660,7 @@ double evalNumberAttribute(const tinyxml2::XMLElement* elem, const char* attr, d
 {
   const char* expr = elem ? elem->Attribute(attr) : nullptr;
   if (!expr)
-  {
     return fallback;
-  }
   return evalNumberExpr(expr, elem);
 }
 
@@ -618,11 +679,9 @@ std::string evalTextExpr(const char* raw, const tinyxml2::XMLElement* scope, int
 {
   if (!raw)
     return {};
-  // Fast path: no ${...}
   if (std::strstr(raw, "${") == nullptr)
     return std::string(raw);
 
-  // Build context
   ExprEvalContext ctx = make_context(scope);
 
   std::string s(raw);
@@ -640,11 +699,11 @@ std::string evalTextExpr(const char* raw, const tinyxml2::XMLElement* scope, int
         throw std::runtime_error("Unclosed ${...} in text expression");
 
       std::string ref = s.substr(l + 2, r - (l + 2));
-      auto rawv = resolve_ref_raw(ref, ctx);  // returns raw attribute string
+      auto rawv = resolve_ref_raw(ref, ctx);
       if (!rawv.has_value())
         throw std::runtime_error("Cannot resolve reference: " + ref);
 
-      s.replace(l, r - l + 1, *rawv);  // insert raw text (no parentheses)
+      s.replace(l, r - l + 1, *rawv);
       pos = l + rawv->size();
       changed = true;
     }
