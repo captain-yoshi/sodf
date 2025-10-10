@@ -2,7 +2,7 @@
 #define SODF_COMPONENTS_CONTAINER_H_
 
 #include <vector>
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 
 #include <Eigen/Geometry>
 

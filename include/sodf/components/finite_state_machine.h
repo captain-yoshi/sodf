@@ -5,8 +5,9 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <tuple>
+#include <vector>
 
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 
 namespace sodf {
 namespace components {

@@ -27,10 +27,10 @@ static std::string writeTempFile(const std::string& filename, const std::string&
   return p.string();
 }
 
-static std::vector<std::string> collectObjectIds(ginseng::database& db)
+static std::vector<std::string> collectObjectIds(ecs::Database& db)
 {
   std::vector<std::string> ids;
-  db.visit([&](ginseng::database::ent_id, ObjectComponent& obj) { ids.push_back(obj.id); });
+  db.each([&](ecs::Database::entity_type, const components::ObjectComponent& obj) { ids.push_back(obj.id); });
   return ids;
 }
 
@@ -149,7 +149,7 @@ TEST(XMLParser_PatchOps, OverlayAllowsPatchOps_InOrder_NoThrow)
   const std::string scene_path = writeTempFile("scene_overlay_ops.xml", makeScene(objects));
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -186,7 +186,7 @@ TEST(XMLParser_PatchOps, Update_Block_Tag_Attr_Variants_NoThrow)
   const std::string scene_path = writeTempFile("scene_update_variants.xml", makeScene(objects));
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -209,7 +209,7 @@ TEST(XMLParser_PatchOps, AddAttr_Duplicate_Throws)
   const std::string scene_path = writeTempFile("scene_add_attr_dup.xml", makeScene(objects));
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -228,7 +228,7 @@ TEST(XMLParser_PatchOps, UpsertAttr_Replaces_NoThrow)
   const std::string scene_path = writeTempFile("scene_upsert_attr.xml", makeScene(objects));
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -253,7 +253,7 @@ TEST(XMLParser_PatchOps, AddBlock_AnchorBefore_NoThrow)
   const std::string scene_path = writeTempFile("scene_add_block_before.xml", makeScene(objects));
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -299,7 +299,7 @@ TEST(XMLParser_PatchOps, FullMatrix_Add_Update_Upsert_Remove_NoThrow)
   const std::string scene_path = writeTempFile("scene_full_matrix.xml", makeScene(objects));
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
