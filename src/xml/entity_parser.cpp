@@ -11,6 +11,8 @@
 
 #include <sodf/components/object.h>
 
+#include <iostream>
+
 namespace sodf {
 namespace xml {
 
@@ -731,7 +733,7 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
   }
 }
 
-void parseComponentSubElements(const tinyxml2::XMLElement* parent, ginseng::database& db, EntityID eid)
+void parseComponentSubElements(const tinyxml2::XMLElement* parent, ecs::Database& db, ecs::EntityID eid)
 {
   // Call every registered subcomponent parser with the parent element itself.
   for (const auto& subParseFunc : subParseFuncs)
@@ -740,7 +742,7 @@ void parseComponentSubElements(const tinyxml2::XMLElement* parent, ginseng::data
   }
 }
 
-void parseComponents(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, ginseng::database& db, EntityID eid,
+void parseComponents(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, ecs::Database& db, ecs::EntityID eid,
                      size_t parseFuncIdx)
 {
   if (parseFuncIdx == ForLoopIndex)
@@ -780,7 +782,7 @@ EntityParser::~EntityParser()
 {
 }
 
-bool EntityParser::loadEntitiesFromFile(const std::string& filename, ginseng::database& db)
+bool EntityParser::loadEntitiesFromFile(const std::string& filename, ecs::Database& db)
 {
   doc = std::make_unique<tinyxml2::XMLDocument>();
   if (doc->LoadFile(filename.c_str()) != tinyxml2::XML_SUCCESS)
@@ -792,7 +794,7 @@ bool EntityParser::loadEntitiesFromFile(const std::string& filename, ginseng::da
   return loadEntities(doc.get(), base_dir, db);
 }
 
-bool EntityParser::loadEntitiesFromText(const std::string& text, ginseng::database& db, const std::string& base_dir)
+bool EntityParser::loadEntitiesFromText(const std::string& text, ecs::Database& db, const std::string& base_dir)
 {
   doc = std::make_unique<tinyxml2::XMLDocument>();
   if (doc->Parse(text.c_str()) != tinyxml2::XML_SUCCESS)
@@ -804,7 +806,7 @@ bool EntityParser::loadEntitiesFromText(const std::string& text, ginseng::databa
   return loadEntities(doc.get(), base_dir, db);
 }
 
-bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ginseng::database& db)
+bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ecs::Database& db)
 {
   ObjectIndex object_index;
   buildObjectIndex(doc, object_index, "", base_dir, "[root]", false);
@@ -814,9 +816,9 @@ bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& b
 
   for (const auto& scene : scene_map)
   {
-    auto eid = db.create_entity();
+    auto eid = db.create();
     components::ObjectComponent obj_comp{ .id = scene.second.id };
-    db.add_component(eid, std::move(obj_comp));
+    db.add(eid, std::move(obj_comp));
 
     for (const auto& comp : scene.second.components)
     {

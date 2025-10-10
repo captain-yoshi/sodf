@@ -1,7 +1,7 @@
 #ifndef SODF_COMPONENTS_TRANSFORM_H_
 #define SODF_COMPONENTS_TRANSFORM_H_
 
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 #include <sodf/geometry/transform.h>
 
 namespace sodf {
@@ -22,7 +22,6 @@ struct TransformComponent
     elements.emplace_back("root", std::move(origin));
   }
 
-  std::optional<EntityID> parent_ent_id;
   ElementMap<std::string, geometry::TransformNode> elements;
 };
 

@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <tuple>
 
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 #include <sodf/component_type.h>
 
 namespace sodf {

@@ -4,7 +4,7 @@
 #include <variant>
 #include <Eigen/Geometry>
 
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 #include <sodf/geometry/shape.h>
 
 namespace sodf {

@@ -1,7 +1,7 @@
 #ifndef SODF_COMPONENTS_DOMAIN_SHAPE_H_
 #define SODF_COMPONENTS_DOMAIN_SHAPE_H_
 
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 #include <sodf/physics/fluid_domain_shape.h>
 
 #include <vector>
