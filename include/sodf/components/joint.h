@@ -2,7 +2,7 @@
 #define SODF_COMPONENTS_JOINT_H_
 
 #include <Eigen/Geometry>
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 
 namespace sodf {
 namespace components {

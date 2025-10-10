@@ -30,10 +30,10 @@ static std::string writeTempFile(const std::string& filename, const std::string&
   return p.string();
 }
 
-static std::vector<std::string> collectObjectIds(ginseng::database& db)
+static std::vector<std::string> collectObjectIds(ecs::Database& db)
 {
   std::vector<std::string> ids;
-  db.visit([&](ginseng::database::ent_id, ObjectComponent& obj) { ids.push_back(obj.id); });
+  db.each([&](ecs::Database::entity_type id, ObjectComponent& obj) { ids.push_back(obj.id); });
   return ids;
 }
 
@@ -46,7 +46,7 @@ TEST(XMLParser, IncludeMissingFile)
   const std::string scene_path = writeTempFile("scene_include_missing.xml", scene_xml);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -57,7 +57,7 @@ TEST(XMLParser, ImportMissingPath)
       <Import/>
     </Root>)";
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromText(scene_xml, db, /*base_dir=*/""));
 }
 
@@ -76,7 +76,7 @@ TEST(XMLParser, DuplicateObjectIdAcrossIncludes)
   const std::string scene_path = writeTempFile("scene_dup.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -97,7 +97,7 @@ TEST(XMLParser, OverlaySlotCollision)
   const std::string scene_path = writeTempFile("scene_overlay_collision.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -129,7 +129,7 @@ TEST(XMLParser, OverlayExactDuplicate)
   const std::string scene_path = writeTempFile("scene_overlay_dup.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -140,7 +140,7 @@ TEST(XMLParser, CloneSourceNotFound)
   <Object id="x" model="missing_model"/>
 </Root>)";
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromText(scene, db, /*base_dir=*/""));
 }
 
@@ -160,7 +160,7 @@ TEST(XMLParser, ImportWithNS_UnqualifiedModelRef)
   const std::string scene_path = writeTempFile("scene_import_ns_bad.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -182,7 +182,7 @@ TEST(XMLParser, InvalidChildInClone)
   const std::string scene_path = writeTempFile("scene_bad_child.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -209,7 +209,7 @@ TEST(XMLParser, OverlayRemoveMissingComponent)
   const std::string scene_path = writeTempFile("scene_remove_missing.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -231,7 +231,7 @@ TEST(XMLParser, ContractModelUnsatisfied)
   const std::string scene_path = writeTempFile("scene_contract_bad.xml", scene);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -254,7 +254,7 @@ TEST(XMLParser, IncludePublishesModelForClone)
   const std::string scene_path = writeTempFile("scene_include.xml", scene_xml);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -281,7 +281,7 @@ TEST(XMLParser, ImportPublishesModelForClone)
   const std::string scene_path = writeTempFile("scene_import.xml", scene_xml);
 
   xml::EntityParser parser;
-  ginseng::database db;
+  ecs::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -318,7 +318,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
     const std::string scene_bad_path = writeTempFile("scene_overlay_bad.xml", scene_bad_xml);
 
     xml::EntityParser parser;
-    ginseng::database db;
+    ecs::Database db;
     ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_bad_path, db));
   }
 
@@ -334,7 +334,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
     const std::string scene_ok_path = writeTempFile("scene_overlay_ok.xml", scene_ok_xml);
 
     xml::EntityParser parser;
-    ginseng::database db;
+    ecs::Database db;
     ASSERT_TRUE(parser.loadEntitiesFromFile(scene_ok_path, db));
 
     auto ids = collectObjectIds(db);
@@ -354,7 +354,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
     const std::string scene_disable_path = writeTempFile("scene_overlay_disable.xml", scene_disable_xml);
 
     xml::EntityParser parser;
-    ginseng::database db;
+    ecs::Database db;
     ASSERT_TRUE(parser.loadEntitiesFromFile(scene_disable_path, db));
 
     auto ids = collectObjectIds(db);
@@ -691,8 +691,8 @@ TEST(XMLParser, FluidDomaineShapeComponent)
 
     </Root>)";
 
-  auto db = ginseng::database{};
-  auto eid = db.create_entity();
+  ecs::Database db;
+  auto eid = db.create();
 
   // 1. Parse string as XML document
   tinyxml2::XMLDocument doc;
@@ -716,11 +716,11 @@ TEST(XMLParser, FluidDomaineShapeComponent)
     }
   }
 
-  auto geom_shape = sodf::getComponentElement<components::StackedShapeComponent>(db, eid, "stacked_shape");
+  auto* geom_shape = db.get_element<components::StackedShapeComponent>(eid, "stacked_shape");
   ASSERT_NE(geom_shape, nullptr);           // shape must exist
   ASSERT_EQ(geom_shape->shapes.size(), 4);  // 4 stacked shapes
 
-  auto fluid_domain_shape = sodf::getComponentElement<components::DomainShapeComponent>(db, eid, "fluid/container");
+  auto* fluid_domain_shape = db.get_element<components::DomainShapeComponent>(eid, "fluid/container");
   ASSERT_NE(fluid_domain_shape, nullptr);            // shape must exist
   ASSERT_EQ(fluid_domain_shape->domains.size(), 4);  // 4 stacked shapes
   ASSERT_EQ(fluid_domain_shape->stacked_shape_id, "stacked_shape");
@@ -810,8 +810,8 @@ TEST(XMLParser, ContainerComponent)
     </Root>
   )";
 
-  auto db = ginseng::database{};
-  auto eid = db.create_entity();
+  ecs::Database db;
+  auto eid = db.create();
 
   // 1. Parse string as XML document
   tinyxml2::XMLDocument doc;
@@ -839,7 +839,7 @@ TEST(XMLParser, ContainerComponent)
     }
   }
 
-  auto container = sodf::getComponentElement<components::ContainerComponent>(db, eid, "container/A1");
+  auto container = db.get_element<components::ContainerComponent>(eid, "container/A1");
   ASSERT_NE(container, nullptr);  // shape must exist
   EXPECT_EQ(container->content_type, "water");
   EXPECT_NEAR(container->axis_bottom.x(), 1.0, 1e-8);
@@ -847,7 +847,7 @@ TEST(XMLParser, ContainerComponent)
   EXPECT_NEAR(container->axis_bottom.z(), 0.0, 1e-8);
   EXPECT_EQ(container->domain_shape_id, "fluid/container");
 
-  auto domain_shape = sodf::getComponentElement<components::DomainShapeComponent>(db, eid, container->domain_shape_id);
+  auto domain_shape = db.get_element<components::DomainShapeComponent>(eid, container->domain_shape_id);
   ASSERT_NE(domain_shape, nullptr);
   ASSERT_EQ(domain_shape->domains.size(), 4);
 }
@@ -876,7 +876,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
   )";
 
     xml::EntityParser parser;
-    auto db = ginseng::database{};
+    ecs::Database db;
     ASSERT_ANY_THROW(parser.loadEntitiesFromText(xml_txt, db));
   }
 
@@ -951,11 +951,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     )";
 
     xml::EntityParser parser;
-    auto db = ginseng::database{};
+    ecs::Database db;
     parser.loadEntitiesFromText(xml_txt, db);
 
-    std::unordered_map<std::string, ginseng::database::ent_id> id_map;
-    db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+    std::unordered_map<std::string, ecs::Database::entity_type> id_map;
+    db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
       id_map.insert({ object.id, id });
     });
 
@@ -964,8 +964,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& sid = id_map.begin()->first;
     auto& eid = id_map.begin()->second;
 
-    auto grasp = sodf::getComponentElement<components::ParallelGraspComponent>(db, eid, "grasp/handle");
-    auto tf_node = sodf::getComponentElement<components::TransformComponent>(db, eid, "grasp/handle");
+    auto grasp = db.get_element<components::ParallelGraspComponent>(eid, "grasp/handle");
+    auto tf_node = db.get_element<components::TransformComponent>(eid, "grasp/handle");
     ASSERT_NE(grasp, nullptr);
     ASSERT_NE(tf_node, nullptr);
 
@@ -1021,11 +1021,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     )";
 
     xml::EntityParser parser;
-    auto db = ginseng::database{};
+    ecs::Database db;
     parser.loadEntitiesFromText(xml_txt, db);
 
-    std::unordered_map<std::string, ginseng::database::ent_id> id_map;
-    db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+    std::unordered_map<std::string, ecs::Database::entity_type> id_map;
+    db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
       id_map.insert({ object.id, id });
     });
 
@@ -1034,8 +1034,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& sid = id_map.begin()->first;
     auto& eid = id_map.begin()->second;
 
-    auto grasp = sodf::getComponentElement<components::ParallelGraspComponent>(db, eid, "grasp");
-    auto tf_node = sodf::getComponentElement<components::TransformComponent>(db, eid, "grasp");
+    auto grasp = db.get_element<components::ParallelGraspComponent>(eid, "grasp");
+    auto tf_node = db.get_element<components::TransformComponent>(eid, "grasp");
     ASSERT_NE(grasp, nullptr);
     ASSERT_NE(tf_node, nullptr);
 
@@ -1089,11 +1089,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     )";
 
     xml::EntityParser parser;
-    auto db = ginseng::database{};
+    ecs::Database db;
     parser.loadEntitiesFromText(xml_txt, db);
 
-    std::unordered_map<std::string, ginseng::database::ent_id> id_map;
-    db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+    std::unordered_map<std::string, ecs::Database::entity_type> id_map;
+    db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
       id_map.insert({ object.id, id });
     });
 
@@ -1102,8 +1102,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     auto& sid = id_map.begin()->first;
     auto& eid = id_map.begin()->second;
 
-    auto grasp = sodf::getComponentElement<components::ParallelGraspComponent>(db, eid, "grasp");
-    auto tf_node = sodf::getComponentElement<components::TransformComponent>(db, eid, "grasp");
+    auto grasp = db.get_element<components::ParallelGraspComponent>(eid, "grasp");
+    auto tf_node = db.get_element<components::TransformComponent>(eid, "grasp");
     ASSERT_NE(grasp, nullptr);
     ASSERT_NE(tf_node, nullptr);
 
@@ -1302,12 +1302,12 @@ TEST(XMLParser, ComponentsForLoop)
     )";
 
   xml::EntityParser parser;
-  auto db = ginseng::database{};
+  ecs::Database db;
   parser.loadEntitiesFromText(xml_txt, db);
 
   // Find the object entity
-  std::unordered_map<std::string, ginseng::database::ent_id> id_map;
-  db.visit([&id_map](ginseng::database::ent_id id, components::ObjectComponent& object) {
+  std::unordered_map<std::string, ecs::Database::entity_type> id_map;
+  db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
     id_map.insert({ object.id, id });
   });
 
@@ -1321,7 +1321,7 @@ TEST(XMLParser, ComponentsForLoop)
 
   for (const auto& cid : expected_ids)
   {
-    auto* cont = sodf::getComponentElement<components::ContainerComponent>(db, eid, cid);
+    auto* cont = db.get_element<components::ContainerComponent>(eid, cid);
     ASSERT_NE(cont, nullptr) << "Missing container: " << cid;
     ASSERT_EQ(cont->volume, 0.0);
     ASSERT_EQ(cont->domain_shape_id, "fluid/well_250ul");

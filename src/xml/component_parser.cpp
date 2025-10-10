@@ -80,7 +80,7 @@ std::vector<std::vector<int>> buildTransitionTableFromXML(const tinyxml2::XMLEle
   return buildTransitionTableFromXML(trans_elem, state_labels, action_labels, -1);
 }
 
-void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   const std::string id = evalElementIdRequired(elem);
 
@@ -89,11 +89,11 @@ void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ginseng::datab
     throw std::runtime_error("StackedShape '" + std::string(id) + "' is empty at line " +
                              std::to_string(elem->GetLineNum()));
 
-  auto* stacked_shape_component = getOrCreateComponent<StackedShapeComponent>(db, eid);
+  auto* stacked_shape_component = db.get_or_add<StackedShapeComponent>(eid);
   stacked_shape_component->elements.emplace_back(id, std::move(stack));
 }
 
-void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   const std::string id = evalElementIdRequired(elem);
 
@@ -106,22 +106,22 @@ void parseParallelGraspComponent(const tinyxml2::XMLElement* elem, ginseng::data
   {
     auto grasp = parseParallelGrasp(elem);
 
-    auto* grasp_component = getOrCreateComponent<ParallelGraspComponent>(db, eid);
+    auto* grasp_component = db.get_or_add<ParallelGraspComponent>(eid);
     grasp_component->elements.emplace_back(id, std::move(grasp));
   }
 }
 
-void parseShapeComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseShapeComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   const std::string id = evalElementIdRequired(elem);
 
   auto shape = parseShape(elem);
 
-  auto* shape_component = getOrCreateComponent<ShapeComponent>(db, eid);
+  auto* shape_component = db.get_or_add<ShapeComponent>(eid);
   shape_component->elements.emplace_back(id, std::move(shape));
 }
 
-void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseLinkComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   Link link;
   const std::string id = evalElementIdRequired(elem);
@@ -178,7 +178,7 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
     }
   }
 
-  auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
+  auto* tf_component = db.get_or_add<TransformComponent>(eid);
 
   auto add_child_tf = [&](const tinyxml2::XMLElement* parent_elem, const char* suffix) {
     const std::string child_id = id + "/" + suffix;
@@ -213,11 +213,11 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ginseng::database& db,
     add_child_tf(inertial, "inertial");
 
   // Store to component
-  auto* component = getOrCreateComponent<LinkComponent>(db, eid);
+  auto* component = db.get_or_add<LinkComponent>(eid);
   component->elements.emplace_back(id, std::move(link));
 }
 
-void parseInsertionComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseInsertionComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   components::Insertion insertion;
   const std::string id = evalElementIdRequired(elem);
@@ -256,11 +256,11 @@ void parseInsertionComponent(const tinyxml2::XMLElement* elem, ginseng::database
   insertion.approach_distance = evalNumberAttributeRequired(dist, "value");
 
   // store to component
-  auto* component = getOrCreateComponent<InsertionComponent>(db, eid);
+  auto* component = db.get_or_add<InsertionComponent>(eid);
   component->elements.emplace_back(id, std::move(insertion));
 }
 
-void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   components::Touchscreen ts;
   const std::string id = evalElementIdRequired(elem);
@@ -298,11 +298,11 @@ void parseTouchscreenComponent(const tinyxml2::XMLElement* elem, ginseng::databa
   }
 
   // store to component
-  auto* component = getOrCreateComponent<TouchscreenComponent>(db, eid);
+  auto* component = db.get_or_add<TouchscreenComponent>(eid);
   component->elements.emplace_back(id, std::move(ts));
 }  // namespace xml
 
-void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseFSMComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   components::FSM fsm;
   const std::string id = evalElementIdRequired(elem);
@@ -359,11 +359,11 @@ void parseFSMComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, 
   }
 
   // store to component
-  auto* component = getOrCreateComponent<FSMComponent>(db, eid);
+  auto* component = db.get_or_add<FSMComponent>(eid);
   component->elements.emplace_back(id, std::move(fsm));
 }
 
-void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseActionMapComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   if (!elem->FirstChildElement("ActionMap"))
     return;
@@ -397,7 +397,7 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database
     }
 
     // Only after the entire ActionMap is successfully parsed, mutate ECS
-    auto* component = getOrCreateComponent<components::ActionMapComponent>(db, eid);
+    auto* component = db.get_or_add<components::ActionMapComponent>(eid);
 
     // If FSM id already exists, append to mappings
     auto it = std::find_if(component->elements.begin(), component->elements.end(),
@@ -415,7 +415,7 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, ginseng::database
   }
 }
 
-void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseContainerComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   Container container;
   const std::string id = evalElementIdRequired(elem);
@@ -464,9 +464,9 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
     }
   }
 
-  auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
+  auto* tf_component = db.get_or_add<TransformComponent>(eid);
 
-  auto* domain_shape = getComponentElement<components::DomainShapeComponent>(db, eid, container.domain_shape_id);
+  auto* domain_shape = db.get_element<components::DomainShapeComponent>(eid, container.domain_shape_id);
   if (!domain_shape)
     throw std::runtime_error("DomainShape id '" + container.domain_shape_id + "' not found in component");
 
@@ -485,7 +485,7 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   // Create virtual prismatic joint
   if (!container.liquid_level_joint_id.empty())
   {
-    auto* joint_component = getOrCreateComponent<JointComponent>(db, eid);
+    auto* joint_component = db.get_or_add<JointComponent>(eid);
     components::Joint joint;
     joint.type = components::JointType::PRISMATIC;
     joint.actuation = components::JointActuation::VIRTUAL;
@@ -521,60 +521,60 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, ginseng::database
   }
 
   // store to component
-  auto* component = getOrCreateComponent<ContainerComponent>(db, eid);
+  auto* component = db.get_or_add<ContainerComponent>(eid);
   component->elements.emplace_back(id, std::move(container));
 }
 
-void parseButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseButtonComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   auto btn = parseButton(elem);
 
   // validate link + joint exists in database
   {
-    auto component = db.get_component<components::LinkComponent*>(eid);
+    auto* component = db.get<components::LinkComponent>(eid);
     if (!component)
       throw std::runtime_error("LinkComponent does not exists, required by ButtonComponent");
 
-    auto link = getComponentElement(component->elements, btn.link_id);
+    auto* link = ecs::get_element(component->elements, btn.link_id);
     if (!link)
       throw std::runtime_error("No Link entry found for '" + btn.link_id + "' in LinkComponent");
   }
   {
-    auto component = db.get_component<components::JointComponent*>(eid);
+    auto* component = db.get<components::JointComponent>(eid);
     if (!component)
       throw std::runtime_error("JointComponent does not exists, required by ButtonComponent");
 
-    auto joint = getComponentElement(component->elements, btn.joint_id);
+    auto* joint = ecs::get_element(component->elements, btn.joint_id);
     if (!joint)
       throw std::runtime_error("No Joint entry found for '" + btn.joint_id + "' in JointComponent");
   }
 
-  auto* btn_component = getOrCreateComponent<ButtonComponent>(db, eid);
+  auto* btn_component = db.get_or_add<ButtonComponent>(eid);
   const std::string id = evalElementIdRequired(elem);
   btn_component->elements.emplace_back(id, std::move(btn));
 }
 
-void parseVirtualButtonComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseVirtualButtonComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   auto button = parseVirtualButton(elem);
 
-  auto* btn_component = getOrCreateComponent<VirtualButtonComponent>(db, eid);
+  auto* btn_component = db.get_or_add<VirtualButtonComponent>(eid);
   const std::string id = evalElementIdRequired(elem);
   btn_component->elements.emplace_back(id, std::move(button));
 }
 
-void parseJointComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseJointComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   auto joint = parseJoint(elem);
 
-  auto* joint_component = getOrCreateComponent<JointComponent>(db, eid);
+  auto* joint_component = db.get_or_add<JointComponent>(eid);
   const std::string id = evalElementIdRequired(elem);
   joint_component->elements.emplace_back(id, std::move(joint));
 }
 
-void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ginseng::database& db, EntityID eid)
+void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ecs::Database& db, ecs::EntityID eid)
 {
-  auto* stack_component = db.get_component<components::StackedShapeComponent*>(eid);
+  auto* stack_component = db.get<components::StackedShapeComponent>(eid);
   if (!stack_component)
     throw std::runtime_error("StackedShapeComponent missing from entity!");
 
@@ -593,7 +593,7 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ginse
   domain_shape.stacked_shape_id = stack_id;
 
   // Find the stack in the ECS
-  auto stacked_shapes_ptr = getComponentElement(stack_component->elements, domain_shape.stacked_shape_id);
+  auto* stacked_shapes_ptr = ecs::get_element(stack_component->elements, domain_shape.stacked_shape_id);
   if (!stacked_shapes_ptr)
     throw std::runtime_error("No StackedShape entry for id '" + domain_shape.stacked_shape_id +
                              "' in StackedShapeComponent");
@@ -654,14 +654,14 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* fluidElem, ginse
     domain_shape.domains.push_back(shape);
   }
 
-  auto* domain_shape_component = getOrCreateComponent<DomainShapeComponent>(db, eid);
+  auto* domain_shape_component = db.get_or_add<DomainShapeComponent>(eid);
   domain_shape_component->elements.emplace_back(id, std::move(domain_shape));
 }
 
-void parseProductComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseProductComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   // Note: the object id has already been populated prior this stage
-  auto* component = getOrCreateComponent<ObjectComponent>(db, eid);
+  auto* component = db.get_or_add<ObjectComponent>(eid);
 
   if (auto* name = elem->FirstChildElement("Name"))
     component->name = evalTextNode(name);
@@ -673,7 +673,7 @@ void parseProductComponent(const tinyxml2::XMLElement* elem, ginseng::database& 
     component->vendor = evalTextNode(vendor);
 }
 
-void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseOriginComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   const std::string id = evalElementIdRequired(elem);
 
@@ -721,7 +721,7 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
   {
     geometry::TransformNode frame = parseTransformNode(tf_elem);
 
-    auto* tf_component = getOrCreateComponent<TransformComponent>(db, eid);
+    auto* tf_component = db.get_or_add<TransformComponent>(eid);
 
     // Overwrite or insert as first entry
     if (tf_component->elements.empty())
@@ -729,7 +729,7 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
     else
       tf_component->elements[0] = std::make_pair(id, std::move(frame));
 
-    auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
+    auto* origin_component = db.get_or_add<OriginComponent>(eid);
     origin_component->origin = geometry::Transform{ .parent = frame.parent, .tf = frame.local };
   }
   else if (align_frames_elem)
@@ -741,7 +741,7 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
     if (const auto* tgt = align_frames_elem->FirstChildElement("Target"))
       align.target_tf = evalTextAttribute(tgt, "name", "");
 
-    auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
+    auto* origin_component = db.get_or_add<OriginComponent>(eid);
     origin_component->origin = align;
   }
   else if (align_pair_frames_elem)
@@ -775,12 +775,12 @@ void parseOriginComponent(const tinyxml2::XMLElement* elem, ginseng::database& d
       throw std::runtime_error("Missing source/target transforms in <AlignGeometricPair> at line " +
                                std::to_string(align_pair_frames_elem->GetLineNum()));
 
-    auto* origin_component = getOrCreateComponent<OriginComponent>(db, eid);
+    auto* origin_component = db.get_or_add<OriginComponent>(eid);
     origin_component->origin = align;
   }
 }
 
-void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database& db, EntityID eid)
+void parseTransformComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid)
 {
   // Skip if this element is <Origin>
   if (std::strcmp(elem->Name(), "Origin") == 0)
@@ -791,7 +791,7 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
     const std::string id = evalElementIdRequired(elem);
 
     // Check for duplicates manually if component exists
-    if (auto* transform_component = db.get_component<components::TransformComponent*>(eid))
+    if (auto* transform_component = db.get<components::TransformComponent>(eid))
     {
       auto it = std::find_if(transform_component->elements.begin(), transform_component->elements.end(),
                              [&](const auto& p) { return p.first == id; });
@@ -804,12 +804,12 @@ void parseTransformComponent(const tinyxml2::XMLElement* elem, ginseng::database
 
     geometry::TransformNode frame = parseTransformNode(transform_elem);
 
-    auto* component = getOrCreateComponent<components::TransformComponent>(db, eid);
+    auto* component = db.get_or_add<components::TransformComponent>(eid);
     component->elements.emplace_back(id, std::move(frame));
   }
 }
 
-void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, ginseng::database& db, EntityID eid)
+void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, ecs::Database& db, ecs::EntityID eid)
 {
   const tinyxml2::XMLElement* parent = derived_elem->Parent()->ToElement();
   if (!parent)
@@ -818,11 +818,11 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
 
   const std::string id = evalElementIdRequired(parent);
 
-  auto shape_component = db.get_component<components::ShapeComponent*>(eid);
+  auto* shape_component = db.get<components::ShapeComponent>(eid);
   if (!shape_component)
     throw std::runtime_error(std::string("ShapeComponent does not exists, required by ") + derived_elem->Name());
 
-  auto transform_component = db.get_component<components::TransformComponent*>(eid);
+  auto* transform_component = db.get<components::TransformComponent>(eid);
   if (!transform_component)
     throw std::runtime_error(std::string("TransformComponent does not exists, required by ") + derived_elem->Name());
 
@@ -852,7 +852,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
       throw std::runtime_error("ParallelGrasp <Shape> has empty 'id' at line " +
                                std::to_string(shape_elem->GetLineNum()));
 
-    auto shape = getComponentElement(shape_component->elements, shape_id);
+    auto* shape = ecs::get_element(shape_component->elements, shape_id);
     if (!shape)
       throw std::runtime_error("No Shape entry found for '" + shape_id + "' in ShapeComponent");
     shape_ptrs.push_back(shape);
@@ -872,8 +872,8 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
       if (!is2DShape(*shape_ptrs[i]) || !is2DShape(*shape_ptrs[i + 1]))
         throw std::runtime_error("ParallelGrasp: Only 2D shapes allowed in even-pair case.");
       // Get transforms
-      auto tf0 = getComponentElement(transform_component->elements, shape_ids[i]);
-      auto tf1 = getComponentElement(transform_component->elements, shape_ids[i + 1]);
+      auto* tf0 = ecs::get_element(transform_component->elements, shape_ids[i]);
+      auto* tf1 = ecs::get_element(transform_component->elements, shape_ids[i + 1]);
       if (!tf0 || !tf1)
         throw std::runtime_error("ParallelGrasp: Shape transform missing in TransformComponent.");
 
@@ -939,12 +939,11 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
     grasp.rotational_symmetry = static_cast<uint32_t>(num_pairs * 2);
 
     // Approach: use the sign between reference centroid and contact normal
-    Eigen::Vector3d to_virtual =
-        ref_centroid -
-        (getComponentElement(transform_component->elements, shape_ids[0])->local * getShapeCentroid(*shape_ptrs[0]));
+    Eigen::Vector3d to_virtual = ref_centroid - (ecs::get_element(transform_component->elements, shape_ids[0])->local *
+                                                 getShapeCentroid(*shape_ptrs[0]));
     Eigen::Vector3d normal = rot.col(2);
 
-    auto tf0 = getComponentElement(transform_component->elements, shape_ids[0]);
+    auto* tf0 = ecs::get_element(transform_component->elements, shape_ids[0]);
     Eigen::Vector3d normal_contact = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[0]);
 
     grasp.grasp_type =
@@ -956,7 +955,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
            (shape_ptrs[0]->type == geometry::ShapeType::Cylinder || shape_ptrs[0]->type == geometry::ShapeType::Box))
   {
     grasp.contact_shape_ids = { shape_ids[0] };
-    auto shape_tf = getComponentElement(transform_component->elements, shape_ids[0]);
+    auto* shape_tf = ecs::get_element(transform_component->elements, shape_ids[0]);
     if (!shape_tf)
       throw std::runtime_error("No Transform entry found for '" + shape_ids[0] + "' in TransformComponent");
 
@@ -1044,7 +1043,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLElement* derived_elem, gi
 
   transform_component->elements.emplace_back(id, std::move(transform));
 
-  auto* grasp_component = getOrCreateComponent<ParallelGraspComponent>(db, eid);
+  auto* grasp_component = db.get_or_add<ParallelGraspComponent>(eid);
   grasp_component->elements.emplace_back(id, std::move(grasp));
 }
 

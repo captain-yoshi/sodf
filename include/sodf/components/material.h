@@ -1,7 +1,7 @@
 #ifndef SODF_COMPONENTS_MATERIAL_H_
 #define SODF_COMPONENTS_MATERIAL_H_
 
-#include <sodf/ecs.h>
+#include <sodf/components/data_type.h>
 
 #include <vector>
 #include <utility>
