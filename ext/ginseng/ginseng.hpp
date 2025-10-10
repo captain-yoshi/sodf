@@ -910,18 +910,30 @@ public:
     using index_type = std::vector<entity>::size_type;
     using version_type = entity::version_type;
 
-    bool operator==(const ent_id& other) const
+    constexpr bool operator==(const ent_id& other) const
     {
       return index == other.index && version == other.version;
     }
 
-    index_type get_index() const
+    constexpr index_type get_index() const
     {
       return index;
     }
 
+    // Expose the version (generation) in a safe, inline way.
+    constexpr version_type get_version() const noexcept
+    {
+      return version;
+    }
+
+    // Safe factory: allows adapters to compose an ID without public ctors.
+    static constexpr ent_id compose(index_type i, version_type v) noexcept
+    {
+      return ent_id{ i, v };
+    }
+
   private:
-    ent_id(index_type i, version_type v) : index(i), version(v)
+    constexpr ent_id(index_type i, version_type v) : index(i), version(v)
     {
     }
 
