@@ -145,18 +145,17 @@ void parseLinkComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs
 
   link.collision = parseShape(collision_shape);
 
-  // Visual (required)
+  // Visual (optional)
   const auto* visual = elem->FirstChildElement("Visual");
-  if (!visual)
-    throw std::runtime_error("Link '" + std::string(id) + "' missing required <Visual> element at line " +
-                             std::to_string(elem->GetLineNum()));
+  if (visual)
+  {
+    const auto* visual_shape = visual->FirstChildElement("Shape");
+    if (!visual_shape)
+      throw std::runtime_error("Link '" + std::string(id) + "' <Visual> is missing <Shape> element at line " +
+                               std::to_string(visual->GetLineNum()));
 
-  const auto* visual_shape = visual->FirstChildElement("Shape");
-  if (!visual_shape)
-    throw std::runtime_error("Link '" + std::string(id) + "' <Visual> is missing <Shape> element at line " +
-                             std::to_string(visual->GetLineNum()));
-
-  link.visual = parseShape(visual_shape);
+    link.visual = parseShape(visual_shape);
+  }
 
   // Inertial (optional)
   const tinyxml2::XMLElement* inertial = elem->FirstChildElement("Inertial");
