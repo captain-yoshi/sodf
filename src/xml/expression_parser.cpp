@@ -116,6 +116,17 @@ static mu::value_type wrap_bor(mu::value_type a, mu::value_type b)
 {
   return static_cast<mu::value_type>(to_int_checked(a) | to_int_checked(b));
 }
+
+// Modulo operator
+static mu::value_type wrap_imod(mu::value_type a, mu::value_type b)
+{
+  const long long ia = to_int_checked(a);
+  const long long ib = to_int_checked(b);
+  if (ib == 0)
+    throw mu::Parser::exception_type("modulo by zero");
+  return static_cast<mu::value_type>(ia % ib);
+}
+
 }  // anonymous namespace
 
 void register_math_symbols(mu::Parser& parser)
@@ -155,6 +166,9 @@ void register_math_symbols(mu::Parser& parser)
 
   parser.DefineOprt("&", mu::fun_type2(&wrap_band), PRIO_AND, mu::oaLEFT, true);
   parser.DefineOprt("|", mu::fun_type2(&wrap_bor), PRIO_OR, mu::oaLEFT, true);
+
+  // arithmetic remainder
+  parser.DefineOprt("%", mu::fun_type2(&wrap_imod), mu::prMUL_DIV, mu::oaLEFT, true);
 }
 
 static mu::Parser& get_math_parser()
