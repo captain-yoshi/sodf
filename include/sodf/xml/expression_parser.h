@@ -5,6 +5,7 @@
 #include <string>
 
 #include <optional>
+#include <unordered_map>
 
 namespace sodf {
 namespace xml {
@@ -17,6 +18,9 @@ struct ExprEvalContext
   const tinyxml2::XMLElement* object_root;  // current <Object id="...">
   const tinyxml2::XMLElement* scope;        // element that owns the attribute being parsed
 };
+
+/// Math
+double evalMathWithVariables(const char* expr, const std::unordered_map<std::string, double>& vars);
 
 /// Numbers
 double evalNumberAttribute(const tinyxml2::XMLElement* elem, const char* attr, double fallback);
