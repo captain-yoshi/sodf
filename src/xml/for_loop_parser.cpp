@@ -1,4 +1,6 @@
 #include <sodf/xml/for_loop_parser.h>
+#include <sodf/xml/expression_parser.h>
+
 #include <cctype>
 
 #include <sstream>
@@ -17,14 +19,14 @@ std::vector<std::string> split(const std::string& s, char sep)
   return tokens;
 }
 
-std::string trim(const std::string& s)
+static std::string trim_copy(std::string s)
 {
-  auto start = s.begin(), end = s.end();
-  while (start != end && std::isspace(*start))
-    ++start;
-  while (end != start && std::isspace(*(end - 1)))
-    --end;
-  return std::string(start, end);
+  auto is_space = [](unsigned char c) { return std::isspace(c); };
+  while (!s.empty() && is_space(s.front()))
+    s.erase(s.begin());
+  while (!s.empty() && is_space(s.back()))
+    s.pop_back();
+  return s;
 }
 
 std::vector<std::string> expandCharTriplet(const std::string& start, const std::string& end, int step)
@@ -215,26 +217,49 @@ void expandForLoop(const tinyxml2::XMLElement* forElem,
 }
 std::string substituteVars(const std::string& input, const std::unordered_map<std::string, std::string>& ctx)
 {
-  std::string result = input;
+  std::string out = input;
   size_t pos = 0;
-  while ((pos = result.find('{', pos)) != std::string::npos)
+  while ((pos = out.find('{', pos)) != std::string::npos)
   {
-    size_t end = result.find('}', pos + 1);
+    size_t end = out.find('}', pos + 1);
     if (end == std::string::npos)
-      break;  // Malformed: no closing brace
-    std::string var = result.substr(pos + 1, end - pos - 1);
-    auto it = ctx.find(var);
-    if (it != ctx.end())
+      break;  // malformed, leave as-is
+
+    const std::string raw = out.substr(pos + 1, end - pos - 1);
+    const std::string expr = trim_copy(raw);  // <-- use this name everywhere
+
+    // Plain {var}
+    if (auto it = ctx.find(expr); it != ctx.end())
     {
-      result.replace(pos, end - pos + 1, it->second);
-      pos += it->second.size();  // Move past replacement
+      out.replace(pos, end - pos + 1, it->second);
+      pos += it->second.size();
+      continue;
     }
-    else
+
+    // Treat as mu expression over loop vars
+    std::unordered_map<std::string, double> numvars;
+    numvars.reserve(ctx.size());
+    for (const auto& kv : ctx)
+      numvars.emplace(kv.first, std::stod(kv.second));
+
+    try
     {
-      pos = end + 1;  // Skip this brace, var not found
+      const double v = evalMathWithVariables(expr.c_str(), numvars);  // <- correct name
+      std::ostringstream oss;
+      oss.setf(std::ios::fmtflags(0), std::ios::floatfield);
+      oss.precision(15);
+      oss << v;
+
+      const std::string repl = oss.str();
+      out.replace(pos, end - pos + 1, repl);
+      pos += repl.size();
+    }
+    catch (const std::exception& e)
+    {
+      throw std::runtime_error("ForLoop brace-eval failed for {" + expr + "}: " + e.what());
     }
   }
-  return result;
+  return out;
 }
 
 tinyxml2::XMLElement* cloneAndSubstitute(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc,
