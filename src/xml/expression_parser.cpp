@@ -86,6 +86,36 @@ Real wrap_atan2d(Real y, Real x)
 {
   return static_cast<Real>(::atan2((long double)y, (long double)x) * kRad2DegL);
 }
+
+// Strict integer checks for custom bitwise ops
+static bool is_intlike(mu::value_type x, mu::value_type tol = 1e-9)
+{
+  if (!std::isfinite(x))
+    return false;
+  // nearest integer as mu::value_type, then compare within tol
+  long long r = static_cast<long long>(std::llround(x));
+  return std::fabs(x - static_cast<mu::value_type>(r)) <= tol;
+}
+
+static long long to_int_checked(mu::value_type x)
+{
+  if (!is_intlike(x))
+    throw mu::Parser::exception_type("bitwise operator requires integer operands");
+  return static_cast<long long>(std::llround(x));
+}
+
+// Bitwise AND (Integers only)
+static mu::value_type wrap_band(mu::value_type a, mu::value_type b)
+{
+  const long long ia = to_int_checked(a);
+  const long long ib = to_int_checked(b);
+  return static_cast<mu::value_type>(ia & ib);
+}
+
+static mu::value_type wrap_bor(mu::value_type a, mu::value_type b)
+{
+  return static_cast<mu::value_type>(to_int_checked(a) | to_int_checked(b));
+}
 }  // anonymous namespace
 
 void register_math_symbols(mu::Parser& parser)
@@ -118,6 +148,13 @@ void register_math_symbols(mu::Parser& parser)
   parser.DefineFun("asind", mu::fun_type1(&wrap_asind));
   parser.DefineFun("acosd", mu::fun_type1(&wrap_acosd));
   parser.DefineFun("atan2d", mu::fun_type2(&wrap_atan2d));
+
+  // bitwise operators
+  constexpr int PRIO_AND = 4;
+  constexpr int PRIO_OR = 4;
+
+  parser.DefineOprt("&", mu::fun_type2(&wrap_band), PRIO_AND, mu::oaLEFT, true);
+  parser.DefineOprt("|", mu::fun_type2(&wrap_bor), PRIO_OR, mu::oaLEFT, true);
 }
 
 static mu::Parser& get_math_parser()
