@@ -788,6 +788,41 @@ double evalBareMath(const char* expr)
   }
 }
 
+double evalMathWithVariables(const char* expr, const std::unordered_map<std::string, double>& vars)
+{
+  if (!expr)
+    throw std::runtime_error("Null expression.");
+
+  try
+  {
+    mu::Parser p;
+    register_math_symbols(p);
+
+    // Keep owned storage for mu variables
+    std::vector<double> storage;
+    storage.reserve(vars.size());
+
+    // Keep names stable (mu stores pointers to the char buffer)
+    std::vector<std::string> names;
+    names.reserve(vars.size());
+
+    for (const auto& [name, val] : vars)
+    {
+      names.push_back(name);   // ensure stable c_str()
+      storage.push_back(val);  // own the value
+      p.DefineVar(names.back(), &storage.back());
+    }
+
+    p.SetExpr(expr);
+    return p.Eval();  // parser & storage are destroyed after return
+  }
+  catch (mu::Parser::exception_type& e)
+  {
+    // Normalize all mu errors to std::runtime_error so they don't terminate
+    throw std::runtime_error(std::string("muParser error while evaluating '") + expr + "': " + e.GetMsg());
+  }
+}
+
 double evalNumberExpr(const char* expr, const tinyxml2::XMLElement* scope)
 {
   if (!expr)
