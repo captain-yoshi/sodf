@@ -28,6 +28,8 @@ namespace geometry {
 
 enum class ShapeType
 {
+  None,
+
   // 2D + 3D
   Line,
 
@@ -49,7 +51,7 @@ enum class ShapeType
 
 struct Shape
 {
-  ShapeType type;
+  ShapeType type = ShapeType::None;
   std::vector<double> dimensions;
   std::vector<Eigen::Vector3d> axes;
   // Optional: additional data (e.g., list of points for polygons)
