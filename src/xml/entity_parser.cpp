@@ -3,7 +3,6 @@
 #include <sodf/component_type.h>
 #include <sodf/uri_resolver.h>
 #include <sodf/xml/utils.h>
-#include <sodf/xml/macros.h>
 #include <sodf/xml/entity_parser.h>
 #include <sodf/xml/component_parser.h>
 #include <sodf/xml/for_loop_parser.h>
@@ -51,7 +50,7 @@ using ObjectIndex = std::unordered_map<std::string, ObjectSource>;
 using SceneMap = std::unordered_map<std::string, SceneObject>;
 
 SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& object_index,
-                               const std::string& current_ns);
+                               const std::string& current_ns, const std::string& scene_base_dir);
 
 std::string overlay_key(const std::string& id, const std::string& slot)
 {
@@ -257,12 +256,16 @@ bool ends_with(const std::string& s, const std::string& suf)
 }
 
 void register_materialized_model(ObjectIndex& index, const std::string& qualified_id, const std::string& base_id,
-                                 const SceneObject& composed_obj)
+                                 const SceneObject& composed_obj, const std::string& base_dir)
 {
   // Make a fresh doc containing exactly the final components
   auto doc = std::make_unique<tinyxml2::XMLDocument>();
   auto* obj_elem = doc->NewElement("Object");
   obj_elem->SetAttribute("id", base_id.c_str());
+  if (!base_dir.empty())
+  {
+    obj_elem->SetAttribute("xml:base", base_dir.c_str());  // directory (absolute/canonical recommended)
+  }
   doc->InsertFirstChild(obj_elem);
 
   // Copy each final component XML under the new <Object>
@@ -379,13 +382,13 @@ void processImport(const tinyxml2::XMLElement* import_elem, ObjectIndex& object_
     {
       if (has_model_attr(obj_elem))
       {
-        SceneObject inst = composeSceneObject(obj_elem, object_index, full_ns);
-        register_materialized_model(object_index, qualify_id(full_ns, inst.id), inst.id, inst);
+        SceneObject inst = composeSceneObject(obj_elem, object_index, full_ns, including_file_dir);
+        register_materialized_model(object_index, qualify_id(full_ns, inst.id), inst.id, inst, inc_file_dir);
       }
       else if (!declares_required_overlay(obj_elem))
       {
         SceneObject m = composeModelObject(obj_elem, object_index, full_ns);
-        register_materialized_model(object_index, qualify_id(full_ns, m.id), m.id, m);
+        register_materialized_model(object_index, qualify_id(full_ns, m.id), m.id, m, inc_file_dir);
       }
       // else: contract model â†’ skip
     }
@@ -405,7 +408,7 @@ void processImport(const tinyxml2::XMLElement* import_elem, ObjectIndex& object_
   for (const auto* obj_elem = import_elem->FirstChildElement("Object"); obj_elem;
        obj_elem = obj_elem->NextSiblingElement("Object"))
   {
-    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns);
+    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns, including_file_dir);
     if (obj.id.empty())
     {
       throw std::runtime_error(std::string("Imported <Object> missing 'id' at line ") +
@@ -421,6 +424,13 @@ void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_inde
   const auto* root = doc->FirstChildElement("Root");
   if (!root)
     return;
+
+  // Stamp xml:base on <Root>
+  {
+    auto* root_nc = const_cast<tinyxml2::XMLElement*>(root);
+    if (!root_nc->Attribute("xml:base"))
+      root_nc->SetAttribute("xml:base", base_dir.c_str());
+  }
 
   // Handle <include> recursively
   for (const auto* incl = root->FirstChildElement("Include"); incl; incl = incl->NextSiblingElement("Include"))
@@ -517,13 +527,13 @@ void buildObjectIndex(const tinyxml2::XMLDocument* doc, ObjectIndex& object_inde
       // Plain model: safe to materialize without enforcement
       SceneObject m = composeModelObject(obj_elem, object_index, ns);
       const std::string qid = qualify_id(ns, m.id);
-      register_materialized_model(object_index, qid, m.id, m);
+      register_materialized_model(object_index, qid, m.id, m, base_dir);
     }
   }
 }
 
 SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& object_index,
-                               const std::string& current_ns)
+                               const std::string& current_ns, const std::string& scene_base_dir)
 {
   // --- Step 1: Build the base model (no overlays yet) ---
   SceneObject obj;
@@ -694,7 +704,7 @@ SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& ob
     ensure_owned(sc);
 
   const std::string self_model_qid = qualify_id(current_ns, obj.id);
-  register_materialized_model(object_index, self_model_qid, obj.id, obj);
+  register_materialized_model(object_index, self_model_qid, obj.id, obj, scene_base_dir);
 
   // Purge empty components
   obj.components.erase(
@@ -724,7 +734,7 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
     // Compose directly from the SCENE object element.
     // (This lets <Overlay>, <Remove>, clone rules, etc. on the scene instance be respected.)
     const std::string current_ns;  // scene file has no namespace by default
-    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns);
+    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns, base_dir);
 
     if (obj.id.empty())
       throw std::runtime_error("Scene <Object> is missing 'id'.");
@@ -733,12 +743,13 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
   }
 }
 
-void parseComponentSubElements(const tinyxml2::XMLElement* parent, ecs::Database& db, ecs::EntityID eid)
+void parseComponentSubElements(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* parent, ecs::Database& db,
+                               ecs::EntityID eid)
 {
   // Call every registered subcomponent parser with the parent element itself.
   for (const auto& subParseFunc : subParseFuncs)
   {
-    subParseFunc(parent, db, eid);
+    subParseFunc(doc, parent, db, eid);
   }
 }
 
@@ -768,8 +779,8 @@ void parseComponents(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* do
   else
   {
     // Standard component: parse and handle subcomponents
-    parseFuncs[parseFuncIdx](elem, db, eid);
-    parseComponentSubElements(elem, db, eid);
+    parseFuncs[parseFuncIdx](doc, elem, db, eid);
+    parseComponentSubElements(doc, elem, db, eid);
   }
 }
 

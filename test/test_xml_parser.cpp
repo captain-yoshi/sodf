@@ -378,7 +378,7 @@ TEST(XMLParser, ParseRectangleShape)
   const tinyxml2::XMLElement* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Rectangle);
   EXPECT_DOUBLE_EQ(shape.dimensions[0], 0.05);
@@ -402,7 +402,7 @@ TEST(XMLParser, ParseCircleShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Circle);
   EXPECT_DOUBLE_EQ(shape.dimensions[0], 0.025);
@@ -430,7 +430,7 @@ TEST(XMLParser, ParseTriangleShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Triangle);
   ASSERT_EQ(shape.vertices.size(), 3);
@@ -460,7 +460,7 @@ TEST(XMLParser, ParsePolygonShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Polygon);
   ASSERT_EQ(shape.vertices.size(), 4);
@@ -485,7 +485,7 @@ TEST(XMLParser, ParseBoxShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Box);
   ASSERT_EQ(shape.axes.size(), 3);
@@ -508,7 +508,7 @@ TEST(XMLParser, ParseCylinderShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Cylinder);
   ASSERT_EQ(shape.axes.size(), 2);
@@ -528,7 +528,7 @@ TEST(XMLParser, ParseSphereShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Sphere);
   // Spheres often have no axis, but you could assert shape.axes.size() == 0
@@ -546,7 +546,7 @@ TEST(XMLParser, ParseMeshShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Mesh);
 }
@@ -566,7 +566,7 @@ TEST(XMLParser, ParsePlaneShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Plane);
   ASSERT_EQ(shape.axes.size(), 3);
@@ -589,7 +589,7 @@ TEST(XMLParser, ParseConeShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Cone);
   ASSERT_EQ(shape.axes.size(), 2);
@@ -610,7 +610,7 @@ TEST(XMLParser, ParseLineShapeAnchor)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 1);
@@ -630,7 +630,7 @@ TEST(XMLParser, ParseLine2DShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
@@ -649,7 +649,7 @@ TEST(XMLParser, ParseLine3DShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(elem);
+  Shape shape = xml::parseShape(&doc, elem);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
@@ -708,11 +708,11 @@ TEST(XMLParser, FluidDomaineShapeComponent)
     std::string tag = child->Name();
     if (tag == "StackedShape")
     {
-      xml::parseStackedShapeComponent(child, db, eid);
+      xml::parseStackedShapeComponent(&doc, child, db, eid);
     }
     else if (tag == "FluidDomainShape")
     {
-      xml::parseFluidDomainShapeComponent(child, db, eid);
+      xml::parseFluidDomainShapeComponent(&doc, child, db, eid);
     }
   }
 
@@ -827,15 +827,15 @@ TEST(XMLParser, ContainerComponent)
     std::string tag = child->Name();
     if (tag == "StackedShape")
     {
-      xml::parseStackedShapeComponent(child, db, eid);
+      xml::parseStackedShapeComponent(&doc, child, db, eid);
     }
     else if (tag == "FluidDomainShape")
     {
-      xml::parseFluidDomainShapeComponent(child, db, eid);
+      xml::parseFluidDomainShapeComponent(&doc, child, db, eid);
     }
     else if (tag == "Container")
     {
-      xml::parseContainerComponent(child, db, eid);
+      xml::parseContainerComponent(&doc, child, db, eid);
     }
   }
 
