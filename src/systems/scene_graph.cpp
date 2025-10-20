@@ -116,36 +116,21 @@ void align_origin_transforms(ecs::Database& db, const ecs::ObjectEntityMap& map)
   });
 }
 
-// Find the unique root/global entity (tagged or parentless)
+// Find the unique root/global entity (tagged)
 std::optional<ecs::EntityID> find_root_frame_entity(ecs::Database& db)
 {
-  std::vector<ecs::EntityID> tagged, roots;
-  std::size_t ctr = 0;
-
-  db.each([&](ecs::EntityID id, const components::RootFrameTag&) {
-    if (ctr++)
-      throw std::runtime_error("Multiple RootFrameTag");
-    tagged.push_back(id);
-  });
-
-  db.each([&](ecs::EntityID id, const components::TransformComponent& tf) {
-    if (!tf.elements.empty() && tf.elements[0].second.parent.empty())
-      roots.push_back(id);
-  });
-
-  if (!tagged.empty())
-    return tagged.front();
-  if (roots.size() > 1)
-    throw std::runtime_error("Multiple root entities (origin.parent empty)");
-  if (!roots.empty())
-    return roots.front();
-  return std::nullopt;
+  std::vector<ecs::EntityID> tagged;
+  db.each([&](ecs::EntityID id, const components::RootFrameTag&) { tagged.push_back(id); });
+  if (tagged.empty())
+    return std::nullopt;  // no explicit global root
+  if (tagged.size() > 1)
+    throw std::runtime_error("Multiple RootFrameTag");
+  return tagged.front();
 }
 
 // Recursively update one frame’s global transform
 void update_global_transform(ecs::Database& db, ecs::EntityID id, components::TransformComponent& tf,
-                             std::size_t frame_idx, const ecs::ObjectEntityMap& obj_map,
-                             std::optional<ecs::EntityID> global_root)
+                             std::size_t frame_idx, const ecs::ObjectEntityMap& obj_map)
 {
   auto& kv = tf.elements[frame_idx];
   const std::string& frame_name = kv.first;
@@ -226,27 +211,8 @@ void update_global_transform(ecs::Database& db, ecs::EntityID id, components::Tr
       {
         if (!ptf->elements.empty())
         {
-          update_global_transform(db, parent_eid, *ptf, 0, obj_map, global_root);
+          update_global_transform(db, parent_eid, *ptf, 0, obj_map);
           frame.global = ptf->elements[0].second.global * frame.local;
-        }
-        else
-        {
-          frame.global = frame.local;
-        }
-      }
-      else
-      {
-        frame.global = frame.local;
-      }
-    }
-    else if (global_root && id != *global_root)
-    {
-      if (auto* rtf = db.get<components::TransformComponent>(*global_root))
-      {
-        if (!rtf->elements.empty())
-        {
-          update_global_transform(db, *global_root, *rtf, 0, obj_map, global_root);
-          frame.global = rtf->elements[0].second.global * frame.local;
         }
         else
         {
@@ -273,7 +239,7 @@ void update_global_transform(ecs::Database& db, ecs::EntityID id, components::Tr
     if (pit != tf.elements.end())
     {
       std::size_t pidx = static_cast<std::size_t>(std::distance(tf.elements.begin(), pit));
-      update_global_transform(db, id, tf, pidx, obj_map, global_root);
+      update_global_transform(db, id, tf, pidx, obj_map);
       frame.global = pit->second.global * frame.local;
     }
     else
@@ -288,22 +254,11 @@ void update_global_transform(ecs::Database& db, ecs::EntityID id, components::Tr
 void update_all_global_transforms(ecs::Database& db)
 {
   auto obj_map = make_object_entity_map(db);
-  auto global_root = find_root_frame_entity(db);
-
-  if (global_root)
-  {
-    if (auto* root_tf = db.get<components::TransformComponent>(*global_root))
-    {
-      for (std::size_t i = 0; i < root_tf->elements.size(); ++i)
-        update_global_transform(db, *global_root, *root_tf, i, obj_map, global_root);
-    }
-  }
+  auto global_root = find_root_frame_entity(db);  // keep for policy, may be nullopt
 
   db.each([&](ecs::EntityID id, components::TransformComponent& tf) {
-    if (global_root && id == *global_root)
-      return;
     for (std::size_t i = 0; i < tf.elements.size(); ++i)
-      update_global_transform(db, id, tf, i, obj_map, global_root);
+      update_global_transform(db, id, tf, i, obj_map);
   });
 }
 
