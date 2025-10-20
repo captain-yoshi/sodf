@@ -1,5 +1,6 @@
 #include "sodf/xml/element_parser.h"
 #include <sodf/xml/expression_parser.h>
+#include <sodf/xml/utils.h>
 
 namespace sodf {
 namespace xml {
@@ -327,14 +328,18 @@ geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
   return s;
 }
 
-geometry::Shape parseMeshShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
 {
   geometry::Shape s;
   s.type = geometry::ShapeType::Mesh;
   const auto* file = elem->FirstChildElement("Resource");
   if (!file)
     throw std::runtime_error("Mesh missing <Resource> at line " + std::to_string(elem->GetLineNum()));
+
   s.mesh_uri = evalTextAttributeRequired(file, "uri");
+
+  // if relative, change to absolute
+  s.mesh_uri = resolve_realtive_uri(file, doc, s.mesh_uri);
 
   if (const auto* scale = elem->FirstChildElement("Scale"))
   {
@@ -421,7 +426,7 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   return s;
 }
 
-geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
 {
   const std::string type_str = evalTextAttributeRequired(elem, "type");
   geometry::ShapeType type = geometry::shapeTypeFromString(type_str.c_str());
@@ -449,7 +454,7 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
     case geometry::ShapeType::Plane:
       return parsePlaneShape(elem);
     case geometry::ShapeType::Mesh:
-      return parseMeshShape(elem);
+      return parseMeshShape(doc, elem);
     case geometry::ShapeType::Line:
       return parseLineShape(elem);
     default:
@@ -457,7 +462,7 @@ geometry::Shape parseShape(const tinyxml2::XMLElement* elem)
   }
 }
 
-components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_elem)
+components::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* stacked_elem)
 {
   components::StackedShape stack;
 
@@ -486,7 +491,7 @@ components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_e
        shape_elem = shape_elem->NextSiblingElement("Shape"))
   {
     // Parse geometry with your existing function
-    geometry::Shape shape = parseShape(shape_elem);
+    geometry::Shape shape = parseShape(doc, shape_elem);
 
     const auto* trans_elem = shape_elem->FirstChildElement("Transform");
     Eigen::Isometry3d local_tf = Eigen::Isometry3d::Identity();
@@ -802,7 +807,7 @@ components::Joint parseJoint(const tinyxml2::XMLElement* joint_elem)
   throw std::runtime_error("Joint element is missing <Axis> or <Axes>");
 }
 
-components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem)
+components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
 {
   using namespace components;
   ParallelGrasp grasp;
@@ -838,7 +843,7 @@ components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem)
     const auto* shape = vs->FirstChildElement("Shape");
     if (!shape)
       throw std::runtime_error("<VirtualSurface> missing <Shape> at line " + std::to_string(vs->GetLineNum()));
-    grasp.canonical_surface = parseShape(shape);
+    grasp.canonical_surface = parseShape(doc, shape);
   }
   return grasp;
 }

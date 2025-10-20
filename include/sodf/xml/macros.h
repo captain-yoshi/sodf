@@ -12,22 +12,38 @@ namespace sodf {
 namespace xml {
 
 // forward declaration
-void parseActionMapComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseButtonComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseContainerComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseInsertionComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseFluidDomainShapeComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseFSMComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseJointComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseLinkComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseOriginComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseParallelGraspComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseProductComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseShapeComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseStackedShapeComponent(const tinyxml2::XMLElement* elem, ecs::Database& db, ecs::EntityID eid);
-void parseTouchscreenComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseTransformComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
-void parseVirtualButtonComponent(const tinyxml2::XMLElement* obj_elem, ecs::Database& db, ecs::EntityID eid);
+void parseActionMapComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                             ecs::EntityID eid);
+void parseButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                          ecs::EntityID eid);
+void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                             ecs::EntityID eid);
+void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                             ecs::EntityID eid);
+void parseFluidDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                                    ecs::Database& db, ecs::EntityID eid);
+void parseFSMComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                       ecs::EntityID eid);
+void parseJointComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                         ecs::EntityID eid);
+void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                        ecs::EntityID eid);
+void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                          ecs::EntityID eid);
+void parseParallelGraspComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                                 ecs::Database& db, ecs::EntityID eid);
+void parseProductComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                           ecs::EntityID eid);
+void parseShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                         ecs::EntityID eid);
+void parseStackedShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
+                                ecs::EntityID eid);
+void parseTouchscreenComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                               ecs::Database& db, ecs::EntityID eid);
+void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
+                             ecs::EntityID eid);
+void parseVirtualButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                                 ecs::Database& db, ecs::EntityID eid);
 
 /// List of component tags allowed directly under <Object>
 #define SODF_XML_COMPONENT_PARSERS(X)                                                                                  \
@@ -46,8 +62,8 @@ void parseVirtualButtonComponent(const tinyxml2::XMLElement* obj_elem, ecs::Data
   X(ParallelGrasp, parseParallelGraspComponent)                                                                        \
   X(Container, parseContainerComponent)                                                                                \
   /* Special: Control tags, not a true components. The handler does nothing. */                                        \
-  X(ForLoop, [](const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID) {})                                        \
-  X(Overlay, [](const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID) {})
+  X(ForLoop, [](const tinyxml2::XMLDocument*, const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID) {})          \
+  X(Overlay, [](const tinyxml2::XMLDocument*, const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID) {})
 
 /// Only valid as nested subcomponents, never directly under <Object>
 #define SODF_XML_SUBCOMPONENT_PARSERS(X)                                                                               \
@@ -107,7 +123,8 @@ inline std::optional<SceneSubComponentType> sceneSubComponentTypeFromString(cons
   return std::nullopt;
 }
 
-using ParseFunc = std::function<void(const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID)>;
+using ParseFunc =
+    std::function<void(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID)>;
 
 static const std::vector<ParseFunc> parseFuncs = {
 #define X(name, func) func,
@@ -115,7 +132,8 @@ static const std::vector<ParseFunc> parseFuncs = {
 #undef X
 };
 
-using SubParseFunc = std::function<void(const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID)>;
+using SubParseFunc =
+    std::function<void(const tinyxml2::XMLDocument*, const tinyxml2::XMLElement*, ecs::Database&, ecs::EntityID)>;
 
 static const std::vector<SubParseFunc> subParseFuncs = {
 #define X(name, func) func,
