@@ -161,7 +161,7 @@ void update_global_transform(ecs::Database& db, ecs::EntityID id, components::Tr
     {
       auto* joint = ecs::get_element(joints->elements, frame_name);
       if (!joint)
-        std::runtime_error("Cannot find joint element: " + frame_name);
+        throw std::runtime_error("Cannot find joint element: " + frame_name);
 
       switch (joint->type)
       {
