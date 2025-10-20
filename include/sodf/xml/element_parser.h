@@ -29,18 +29,18 @@ geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem);
-geometry::Shape parseMeshShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem);
 geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem);
-geometry::Shape parseShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem);
 
 geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform_elem);
-components::StackedShape parseStackedShape(const tinyxml2::XMLElement* stacked_elem);
+components::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* stacked_elem);
 components::Button parseButton(const tinyxml2::XMLElement* btn_elem);
 components::VirtualButton parseVirtualButton(const tinyxml2::XMLElement* vb_elem);
 components::Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem);
 components::Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem);
 components::Joint parseJoint(const tinyxml2::XMLElement* joint_elem);
-components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* grasp_elem);
+components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* grasp_elem);
 
 }  // namespace xml
 }  // namespace sodf
