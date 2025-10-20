@@ -2,6 +2,7 @@
 #define SODF_PHYSICS_FLUID_DOMAIN_SHAPE_H_
 
 #include <sodf/physics/domain_shape.h>
+#include <Eigen/Geometry>
 
 namespace sodf {
 namespace physics {
@@ -114,6 +115,116 @@ public:
 FluidSphericalSegmentShape FromBaseTop(double r1, double r2);
 FluidSphericalSegmentShape FromBaseHeight(double r1, double h);
 FluidSphericalSegmentShape FromBaseSphereRadius(double r1, double R);
+
+/// Signed tetra volume (a,b,c,d).
+double signedTetraVolume(const Eigen::Vector3d& a, const Eigen::Vector3d& b, const Eigen::Vector3d& c,
+                         const Eigen::Vector3d& d);
+
+/// Volume of a tetra clipped by plane z = h (keep z ≤ h), all in gravity space.
+double clippedTetraVolumeZleq(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1, const Eigen::Vector3d& p2,
+                              const Eigen::Vector3d& p3, double h, double epsilon = 1e-12);
+
+/**
+ * @brief Fluid domain for an arbitrary closed convex triangle mesh under gravity.
+ *
+ * - getFillVolume(h): exact volume below height h via tetra + half-space clipping (z ≤ h in gravity space)
+ * - getFillHeight(V): robust monotone inversion via bisection
+ *
+ * "Gravity space": a frame where +Z is aligned with gravity. The chosen base-plane point is z=0.
+ */
+class FluidConvexMeshShape : public DomainShape
+{
+public:
+  struct Tri
+  {
+    int a, b, c;
+  };  // triangle indices (CCW/outward for a closed convex mesh)
+
+  /**
+   * @brief Construct from WORLD-space mesh with known gravity and base-plane point.
+   * @param vertices_world Closed, convex, manifold mesh vertices in world space.
+   * @param tris           Triangle index list (CCW outward).
+   * @param gravity_world  Gravity direction in world coords (need not be unit; will be normalized).
+   * @param base_plane_point_world A point that defines where h=0 lives (e.g., tray inner bottom).
+   *
+   * This ctor computes max_fill_height in the initializer list so the DomainShape base is born correct.
+   */
+  FluidConvexMeshShape(const std::vector<Eigen::Vector3d>& vertices_world, const std::vector<Tri>& tris,
+                       const Eigen::Vector3d& gravity_world, const Eigen::Vector3d& base_plane_point_world);
+
+  /**
+   * @brief Construct from LOCAL mesh only. Call setState(...) later to set pose/gravity/base.
+   */
+  FluidConvexMeshShape(std::vector<Eigen::Vector3d> vertices_local, std::vector<Tri> tris_local);
+
+  // --- DomainShape virtuals ---
+  double getFillVolume(double fill_height) const override;
+  double getFillHeight(double fill_volume) const override;
+
+  // --- Runtime state updates (e.g., object orientation changes) ---
+  void setWorldPose(const Eigen::Isometry3d& T_wo);
+  void setGravityWorld(const Eigen::Vector3d& g_world);
+  void setBasePointWorld(const Eigen::Vector3d& p_world);
+
+  /// Convenience: set all at once (pose, gravity, base-point) then recompute.
+  void setState(const Eigen::Isometry3d& T_wo, const Eigen::Vector3d& g_world, const Eigen::Vector3d& p_base_world);
+
+  // Accessors (gravity-space, after preprocessing)
+  const std::vector<Eigen::Vector3d>& verticesG() const
+  {
+    return verts_g_;
+  }
+  const std::vector<Tri>& triangles() const
+  {
+    return tris_;
+  }
+  const Eigen::Matrix3d& R_world_to_g() const
+  {
+    return R_world_to_g_;
+  }
+
+private:
+  // ---- preprocessing / math helpers ----
+  static Eigen::Matrix3d makeWorldToGravity(const Eigen::Vector3d& g_world);
+
+  /// Compute max fill height from world-space inputs (used in initializer list).
+  static double computeMaxFillHeightAt(const std::vector<Eigen::Vector3d>& verts_w, const Eigen::Vector3d& g_world,
+                                       const Eigen::Vector3d& base_world);
+
+  /// Build tetrahedra by fanning each triangle with an interior point (LOCAL space indices).
+  void tetrahedralizeLocal_();
+
+  /// Compute polyhedron volume from local-space tetra fan (rigid-transform invariant).
+  void computeCapacityFromLocal_();
+
+  /// Recompute gravity-space data (R, verts_g_, z extents, max_fill_height_) from current state.
+  void updateGravitySpace_();
+
+private:
+  // ---------- Persistent (LOCAL) mesh data ----------
+  std::vector<Eigen::Vector3d> verts_local_;
+  std::vector<Tri> tris_;
+  Eigen::Vector3d interior_local_{ Eigen::Vector3d::Zero() };  // centroid
+  struct Tet
+  {
+    int a, b, c, d;
+  };                             // indices into verts_local_ plus interior as last
+  std::vector<Tet> tets_local_;  // built in local space (indices consistent forever)
+
+  // ---------- Runtime state (WORLD) ----------
+  Eigen::Isometry3d T_wo_{ Eigen::Isometry3d::Identity() };
+  Eigen::Vector3d g_world_{ 0, 0, 1 };
+  Eigen::Vector3d p_base_world_{ 0, 0, 0 };
+
+  // ---------- Cached gravity-space data ----------
+  Eigen::Matrix3d R_world_to_g_{ Eigen::Matrix3d::Identity() };
+  std::vector<Eigen::Vector3d> verts_g_;  // gravity-space verts, includes interior as last
+  double z_min_ = 0.0;
+  double z_max_ = 0.0;
+
+  // Numeric guard
+  static constexpr double kEps = 1e-12;
+};
 
 }  // namespace physics
 }  // namespace sodf

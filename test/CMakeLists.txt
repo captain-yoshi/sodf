@@ -2,6 +2,7 @@ set(SODF_TESTS
     test_alignment.cpp
     test_ecs.cpp
     test_fluid_domain_shape.cpp
+    test_fluid_domain_convex_mesh_shape.cpp
     test_uri_resolver.cpp
     test_xml_parser.cpp
     test_expression_parser.cpp
