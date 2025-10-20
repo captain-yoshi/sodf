@@ -242,5 +242,328 @@ FluidSphericalSegmentShape fromBaseSphereRadius(double r1, double R)
   return FluidSphericalSegmentShape(r1, r2, h);
 }
 
+double signedTetraVolume(const Eigen::Vector3d& a, const Eigen::Vector3d& b, const Eigen::Vector3d& c,
+                         const Eigen::Vector3d& d)
+{
+  return ((b - a).cross(c - a)).dot(d - a) / 6.0;
+}
+
+Eigen::Matrix3d FluidConvexMeshShape::makeWorldToGravity(const Eigen::Vector3d& g_world_in)
+{
+  Eigen::Vector3d z = g_world_in.normalized();  // target +Z
+  Eigen::Vector3d tmp = (std::abs(z.z()) < 0.9) ? Eigen::Vector3d::UnitZ() : Eigen::Vector3d::UnitX();
+  Eigen::Vector3d x = (tmp.cross(z)).normalized();
+  Eigen::Vector3d y = z.cross(x);
+  Eigen::Matrix3d R_g_to_world;
+  R_g_to_world.col(0) = x;
+  R_g_to_world.col(1) = y;
+  R_g_to_world.col(2) = z;
+  return R_g_to_world.transpose();  // world→g
+}
+
+double clippedTetraVolumeZleq(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1, const Eigen::Vector3d& p2,
+                              const Eigen::Vector3d& p3, double h, double epsilon)
+{
+  // Intersection of segment AB with plane z = h.
+  // Only called on crossing edges; clamp t just in case.
+  auto I = [h, epsilon](const Eigen::Vector3d& A, const Eigen::Vector3d& B) -> Eigen::Vector3d {
+    const double dz = (B.z() - A.z());
+    if (std::abs(dz) < epsilon)
+      return A;  // nearly horizontal; caller won't rely on this edge crossing
+    double t = (h - A.z()) / dz;
+    if (t < 0.0)
+      t = 0.0;
+    if (t > 1.0)
+      t = 1.0;
+    return A + t * (B - A);
+  };
+
+  // Classify vertices
+  std::array<Eigen::Vector3d, 4> P = { p0, p1, p2, p3 };
+  std::vector<int> below;
+  below.reserve(4);
+  std::vector<int> above;
+  above.reserve(4);
+  for (int i = 0; i < 4; ++i)
+  {
+    if (P[i].z() <= h + epsilon)
+      below.push_back(i);
+    else
+      above.push_back(i);
+  }
+
+  // Trivial cases
+  if (below.size() == 4)
+    return std::abs(signedTetraVolume(p0, p1, p2, p3));
+  if (below.empty())
+    return 0.0;
+
+  // 1-below / 3-above: the kept part is a small tetra with apex at the single below vertex
+  if (below.size() == 1)
+  {
+    const int ib = below[0];
+    const int a = above[0], b = above[1], c = above[2];
+    const Eigen::Vector3d v0 = P[ib];
+    const Eigen::Vector3d v1 = I(P[ib], P[a]);
+    const Eigen::Vector3d v2 = I(P[ib], P[b]);
+    const Eigen::Vector3d v3 = I(P[ib], P[c]);
+    return std::abs(signedTetraVolume(v0, v1, v2, v3));
+  }
+
+  // 3-below / 1-above: kept volume = full tetra − small tetra above the plane
+  if (below.size() == 3)
+  {
+    const int ia = above[0];  // the single vertex above h
+    const int b0 = below[0], b1 = below[1], b2 = below[2];
+
+    // intersections from the above vertex down to each below vertex
+    const Eigen::Vector3d q0 = I(P[ia], P[b0]);
+    const Eigen::Vector3d q1 = I(P[ia], P[b1]);
+    const Eigen::Vector3d q2 = I(P[ia], P[b2]);
+
+    const double v_full = std::abs(signedTetraVolume(p0, p1, p2, p3));
+    const double v_cap = std::abs(signedTetraVolume(P[ia], q0, q1, q2));
+    const double kept = v_full - v_cap;
+    return (kept > 0.0) ? kept : 0.0;
+  }
+
+  // 2-below / 2-above: hexahedron → decompose into 4 tets
+  {
+    const int i0 = below[0], i1 = below[1];
+    const int j0 = above[0], j1 = above[1];
+
+    const Eigen::Vector3d A0 = P[i0];
+    const Eigen::Vector3d A1 = P[i1];
+
+    // crossing edges
+    const Eigen::Vector3d L0 = I(P[i0], P[j0]);  // i0–j0
+    const Eigen::Vector3d L1 = I(P[i0], P[j1]);  // i0–j1
+    const Eigen::Vector3d U0 = I(P[i1], P[j0]);  // i1–j0
+    const Eigen::Vector3d U1 = I(P[i1], P[j1]);  // i1–j1
+
+    double v = 0.0;
+    v += std::abs(signedTetraVolume(A0, A1, L0, U0));
+    v += std::abs(signedTetraVolume(A0, L0, L1, U0));
+    v += std::abs(signedTetraVolume(A0, L1, U1, U0));
+    v += std::abs(signedTetraVolume(A0, A1, U0, U1));
+    return v;
+  }
+}
+
+double FluidConvexMeshShape::computeMaxFillHeightAt(const std::vector<Eigen::Vector3d>& verts_w,
+                                                    const Eigen::Vector3d& g_world, const Eigen::Vector3d& base_world)
+{
+  if (verts_w.empty())
+    return 0.0;
+  Eigen::Matrix3d R = makeWorldToGravity(g_world);
+  const double base_z = (R * base_world).z();
+
+  double zmax = -std::numeric_limits<double>::infinity();
+  for (const auto& v : verts_w)
+  {
+    const double z = (R * v).z() - base_z;  // height above the chosen base plane
+    if (z > zmax)
+      zmax = z;
+  }
+  if (!std::isfinite(zmax))
+    return 0.0;
+  return std::max(0.0, zmax);
+}
+
+// --------------------------- constructors ---------------------------
+
+FluidConvexMeshShape::FluidConvexMeshShape(const std::vector<Eigen::Vector3d>& vertices_world,
+                                           const std::vector<Tri>& tris, const Eigen::Vector3d& gravity_world,
+                                           const Eigen::Vector3d& base_plane_point_world)
+  : DomainShape(computeMaxFillHeightAt(vertices_world, gravity_world, base_plane_point_world))
+  , verts_local_(vertices_world)
+  ,  // treat provided world verts as initial "local"
+  tris_(tris)
+  , T_wo_(Eigen::Isometry3d::Identity())
+  , g_world_(gravity_world)
+  , p_base_world_(base_plane_point_world)
+{
+  if (verts_local_.size() < 4 || tris_.empty())
+    throw std::invalid_argument("FluidConvexMeshShape: need at least 4 vertices and some triangles");
+
+  // Interior (local) as centroid
+  interior_local_.setZero();
+  for (const auto& v : verts_local_)
+    interior_local_ += v;
+  interior_local_ /= static_cast<double>(verts_local_.size());
+
+  // Build local tets (indices stable forever in local space)
+  tetrahedralizeLocal_();
+
+  // Capacity (rigid-invariant) from local tets
+  computeCapacityFromLocal_();
+
+  // Build gravity-space cache & max_fill_height_ from current state
+  updateGravitySpace_();
+  // (max_fill_height_ already set by DomainShape base; updateGravitySpace_ recomputes it consistently)
+}
+
+FluidConvexMeshShape::FluidConvexMeshShape(std::vector<Eigen::Vector3d> vertices_local, std::vector<Tri> tris_local)
+  : DomainShape(0.0), verts_local_(std::move(vertices_local)), tris_(std::move(tris_local))
+{
+  if (verts_local_.size() < 4 || tris_.empty())
+    throw std::invalid_argument("FluidConvexMeshShape: need at least 4 vertices and some triangles");
+
+  interior_local_.setZero();
+  for (const auto& v : verts_local_)
+    interior_local_ += v;
+  interior_local_ /= static_cast<double>(verts_local_.size());
+
+  tetrahedralizeLocal_();
+  computeCapacityFromLocal_();
+  // Height will be computed when user calls setState(...) → updateGravitySpace_()
+}
+
+// --------------------------- preprocessing ---------------------------
+
+void FluidConvexMeshShape::tetrahedralizeLocal_()
+{
+  tets_local_.clear();
+  tets_local_.reserve(tris_.size());
+  // Interior will be appended conceptually as a virtual vertex at index N
+  const int N = static_cast<int>(verts_local_.size());
+  for (const auto& f : tris_)
+  {
+    tets_local_.push_back(Tet{ f.a, f.b, f.c, N });
+  }
+}
+
+void FluidConvexMeshShape::computeCapacityFromLocal_()
+{
+  // Sum abs volumes of local tets (interior + each face)
+  const int N = static_cast<int>(verts_local_.size());
+  double total = 0.0;
+  for (const auto& t : tets_local_)
+  {
+    const Eigen::Vector3d& a = verts_local_[t.a];
+    const Eigen::Vector3d& b = verts_local_[t.b];
+    const Eigen::Vector3d& c = verts_local_[t.c];
+    const Eigen::Vector3d d = interior_local_;  // implicit interior
+    total += std::abs(signedTetraVolume(a, b, c, d));
+  }
+  max_fill_volume_ = total;
+}
+
+void FluidConvexMeshShape::updateGravitySpace_()
+{
+  // Build world→g transform
+  R_world_to_g_ = makeWorldToGravity(g_world_);
+  const Eigen::Vector3d base_g = R_world_to_g_ * p_base_world_;
+
+  // Transform all verts into world then gravity, subtract base z so base plane → z=0
+  const int N = static_cast<int>(verts_local_.size());
+  verts_g_.resize(N + 1);  // +1 for interior
+
+  for (int i = 0; i < N; ++i)
+  {
+    const Eigen::Vector3d v_world = T_wo_ * verts_local_[i];
+    Eigen::Vector3d v_g = R_world_to_g_ * v_world;
+    v_g.z() -= base_g.z();
+    verts_g_[i] = v_g;
+  }
+  // Interior
+  const Eigen::Vector3d c_world = T_wo_ * interior_local_;
+  Eigen::Vector3d c_g = R_world_to_g_ * c_world;
+  c_g.z() -= base_g.z();
+  verts_g_[N] = c_g;
+
+  // Recompute z extents and height
+  z_min_ = std::numeric_limits<double>::infinity();
+  z_max_ = -std::numeric_limits<double>::infinity();
+  for (const auto& v : verts_g_)
+  {
+    z_min_ = std::min(z_min_, v.z());
+    z_max_ = std::max(z_max_, v.z());
+  }
+  if (std::abs(z_min_) < 1e-10)
+    z_min_ = 0.0;
+  max_fill_height_ = std::max(0.0, z_max_ - z_min_);
+}
+
+// --------------------------- queries ---------------------------
+
+double FluidConvexMeshShape::getFillVolume(double fill_height) const
+{
+  if (fill_height <= 0.0)
+    return 0.0;
+  if (fill_height >= max_fill_height_)
+    return max_fill_volume_;
+
+  const double h = std::clamp(fill_height, 0.0, max_fill_height_);
+
+  double vol = 0.0;
+  // Clip each local tet, but using GRAVITY-SPACE verts.
+  // Our local tetra list references three face verts and the interior (as last).
+  const int N = static_cast<int>(verts_g_.size()) - 1;  // interior index is N
+  (void)N;
+
+  for (const auto& t : tets_local_)
+  {
+    const Eigen::Vector3d& a = verts_g_[t.a];
+    const Eigen::Vector3d& b = verts_g_[t.b];
+    const Eigen::Vector3d& c = verts_g_[t.c];
+    const Eigen::Vector3d& d = verts_g_.back();  // interior is last
+    vol += clippedTetraVolumeZleq(a, b, c, d, h, kEps);
+  }
+  if (vol < 0.0)
+    vol = 0.0;
+  if (vol > max_fill_volume_)
+    vol = max_fill_volume_;
+  return vol;
+}
+
+double FluidConvexMeshShape::getFillHeight(double fill_volume) const
+{
+  if (fill_volume <= 0.0)
+    return 0.0;
+  if (fill_volume >= max_fill_volume_)
+    return max_fill_height_;
+
+  double lo = 0.0, hi = max_fill_height_;
+  for (int iter = 0; iter < 64; ++iter)
+  {
+    const double mid = 0.5 * (lo + hi);
+    const double v = getFillVolume(mid);
+    if (std::abs(v - fill_volume) <= kEps * std::max(1.0, max_fill_volume_))
+      return mid;
+    (v < fill_volume) ? lo = mid : hi = mid;
+  }
+  return 0.5 * (lo + hi);
+}
+
+// --------------------------- state setters ---------------------------
+
+void FluidConvexMeshShape::setWorldPose(const Eigen::Isometry3d& T_wo)
+{
+  T_wo_ = T_wo;
+  updateGravitySpace_();
+}
+
+void FluidConvexMeshShape::setGravityWorld(const Eigen::Vector3d& g_world)
+{
+  g_world_ = g_world.normalized();
+  updateGravitySpace_();
+}
+
+void FluidConvexMeshShape::setBasePointWorld(const Eigen::Vector3d& p_world)
+{
+  p_base_world_ = p_world;
+  updateGravitySpace_();
+}
+
+void FluidConvexMeshShape::setState(const Eigen::Isometry3d& T_wo, const Eigen::Vector3d& g_world,
+                                    const Eigen::Vector3d& p_base_world)
+{
+  T_wo_ = T_wo;
+  g_world_ = g_world.normalized();
+  p_base_world_ = p_base_world;
+  updateGravitySpace_();
+}
+
 }  // namespace physics
 }  // namespace sodf
