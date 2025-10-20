@@ -52,6 +52,28 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
         return c / vertices.size();
       }
 
+    case ShapeType::TriangularPrism:
+    {
+      // Option B: dimensions = { bw, bh, depth, u }
+      // axes = { base_x, base_y, depth_axis }
+      if (dimensions.size() < 4 || axes.size() < 3)
+        throw std::runtime_error("TriangularPrism requires dims{bw,bh,depth,u} and axes{base_x,base_y,depth_axis}");
+
+      const double bw = dimensions[0];
+      const double bh = dimensions[1];
+      const double d = dimensions[2];
+      const double u = dimensions[3];
+
+      const Eigen::Vector3d& base_x = axes[0];
+      const Eigen::Vector3d& base_y = axes[1];
+      const Eigen::Vector3d& depth_axis = axes[2];
+
+      // Base triangle centroid in the base plane:
+      // ( (0,0) + (bw,0) + (u,bh) ) / 3
+      Eigen::Vector2d c2((0.0 + bw + u) / 3.0, (0.0 + 0.0 + bh) / 3.0);
+      return c2.x() * base_x.normalized() + c2.y() * base_y.normalized() + (d * 0.5) * depth_axis.normalized();
+    }
+
     case ShapeType::Rectangle:
     case ShapeType::Circle:
     case ShapeType::Plane:
@@ -99,6 +121,11 @@ double shapeHeight(const Shape& shape)
   // Add more shape types as needed
   switch (shape.type)
   {
+    case ShapeType::TriangularPrism:
+      if (shape.dimensions.size() < 3)
+        throw std::runtime_error("TriangularPrism expects at least 3 dimensions");
+      return shape.dimensions[2];
+
     case ShapeType::SphericalSegment:
     case ShapeType::Cylinder:
     case ShapeType::Cone:
@@ -221,6 +248,11 @@ const Eigen::Vector3d& getShapeReferenceAxis(const geometry::Shape& shape)
   using ShapeType = geometry::ShapeType;
   switch (shape.type)
   {
+    case ShapeType::TriangularPrism:
+      // Base plane exists; expose in-plane "reference" axis (axes[1] = base_y)
+      if (shape.axes.size() < 2)
+        throw std::runtime_error("TriangularPrism requires axes[1] (base_y) for reference axis.");
+      return shape.axes[1];
     case ShapeType::Cylinder:
     case ShapeType::Cone:
     case ShapeType::SphericalSegment:
@@ -273,6 +305,15 @@ geometry::Shape truncateShapeToHeight(const geometry::Shape& shape, double new_h
 
   switch (shape.type)
   {
+    case geometry::ShapeType::TriangularPrism:
+    {
+      if (result.dimensions.size() < 3)
+        throw std::runtime_error("TriangularPrism expects at least 3 dimensions for truncation");
+      if (new_height <= 0.0)
+        throw std::runtime_error("TriangularPrism truncation: new height must be > 0");
+      result.dimensions[2] = new_height;  // update depth; keep u unchanged
+      break;
+    }
     case geometry::ShapeType::Cylinder:
       result.dimensions.at(1) = new_height;
       break;
@@ -332,6 +373,8 @@ ShapeType shapeTypeFromString(const std::string& str)
     return ShapeType::Polygon;
   if (str == "Box")
     return ShapeType::Box;
+  if (str == "TriangularPrism")
+    return ShapeType::TriangularPrism;
   if (str == "Cylinder")
     return ShapeType::Cylinder;
   if (str == "Sphere")
@@ -363,6 +406,8 @@ std::string shapeTypeToString(ShapeType type)
       return "Polygon";
     case ShapeType::Box:
       return "Box";
+    case ShapeType::TriangularPrism:
+      return "TriangularPrism";
     case ShapeType::Cylinder:
       return "Cylinder";
     case ShapeType::Sphere:

@@ -24,6 +24,7 @@ geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem);
+geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem);
