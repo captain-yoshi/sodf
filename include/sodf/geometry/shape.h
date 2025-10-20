@@ -17,6 +17,7 @@ namespace geometry {
 | Triangle          |                                 | normal, in-plane x-y       | 3 points   |                                                            |
 | Polygon           |                                 | normal, in-plane x-y       | N points   | Width and height are wrt. the centroid.                    |
 | Box               | width, depth, height            | width, depth, height       |            |                                                            |
+| TriangularPrism   | width, depth, height, offset    | width, depth, height       |            | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.            |
 | Cylinder          | radius, height                  | symmetry, ref base plane   |            |                                                            |
 | Sphere            | radius                          | (none)                     |            |                                                            |
 | Cone              | base_radius, top_radius, height | symmetry, ref base plane   |            | Frustum if top_radius > 0, cone if = 0.                    |
@@ -41,6 +42,7 @@ enum class ShapeType
 
   // 3D
   Box,
+  TriangularPrism,
   Cylinder,
   Sphere,
   Cone,

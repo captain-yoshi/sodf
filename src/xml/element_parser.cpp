@@ -223,6 +223,37 @@ geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
   return s;
 }
 
+geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem)
+{
+  geometry::Shape s;
+  s.type = geometry::ShapeType::TriangularPrism;
+
+  // Axes
+  Eigen::Vector3d ax = parseUnitVector(reqChild(elem, "AxisWidth", "TriangularPrism"));
+  Eigen::Vector3d ay = parseUnitVector(reqChild(elem, "AxisDepth", "TriangularPrism"));
+  Eigen::Vector3d az = parseUnitVector(reqChild(elem, "AxisHeight", "TriangularPrism"));
+  s.axes = { ax, ay, az };
+
+  // Dimensions
+  const auto* dims = reqChild(elem, "Dimensions", "TriangularPrism");
+  const double bw = evalNumberAttributeRequired(dims, "width");       // base_width along AxisWidth
+  const double bh = evalNumberAttributeRequired(dims, "depth");       // base_height along AxisDepth
+  const double height = evalNumberAttributeRequired(dims, "height");  // extrusion along AxisHeight
+
+  double u = 0.0;  // default: right-triangle (apex over A’s x)
+  (void)tryEvalNumberAttribute(dims, "apex_offset", &u);
+
+  if (bw <= 0.0 || bh <= 0.0 || height <= 0.0)
+    throw std::runtime_error("TriangularPrism <Dimensions> require positive width, depth, and height at line " +
+                             std::to_string(dims->GetLineNum()));
+
+  s.dimensions = { bw, bh, height, u };
+
+  // Validate orthonormal axes
+  validateAxesOrthonormal(s, elem);
+  return s;
+}
+
 geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
 {
   geometry::Shape s;
@@ -443,6 +474,8 @@ geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XML
       return parsePolygonShape(elem);
     case geometry::ShapeType::Box:
       return parseBoxShape(elem);
+    case geometry::ShapeType::TriangularPrism:
+      return parseTriangularPrismShape(elem);
     case geometry::ShapeType::Cylinder:
       return parseCylinderShape(elem);
     case geometry::ShapeType::Sphere:
