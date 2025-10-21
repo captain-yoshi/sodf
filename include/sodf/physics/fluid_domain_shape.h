@@ -183,8 +183,21 @@ public:
     return R_world_to_g_;
   }
 
+  // Compute the free-surface (single convex polygon) at given *height* (meters).
+  // Returns false if the plane does not intersect the mesh.
+  bool computeSectionPolygonAtHeight(double height_g, std::vector<Eigen::Vector3d>& out_world) const;
+
+  // Convenience: same, but from *volume*. Internally uses getFillHeight(volume).
+  bool computeSectionPolygonAtVolume(double fill_volume, std::vector<Eigen::Vector3d>& out_world) const;
+
+  // Build a watertight triangle list for the liquid volume at height h (gravity space).
+  // Output: world-space triangles in triplets of points. Returns false if empty.
+  bool buildFilledVolumeAtHeight(double height_g, std::vector<Eigen::Vector3d>& tri_list_world) const;
+
+  // Convenience: same from volume
+  bool buildFilledVolumeAtVolume(double fill_volume, std::vector<Eigen::Vector3d>& tri_list_world) const;
+
 private:
-  // ---- preprocessing / math helpers ----
   static Eigen::Matrix3d makeWorldToGravity(const Eigen::Vector3d& g_world);
 
   /// Compute max fill height from world-space inputs (used in initializer list).
@@ -199,6 +212,19 @@ private:
 
   /// Recompute gravity-space data (R, verts_g_, z extents, max_fill_height_) from current state.
   void updateGravitySpace_();
+
+  // Clip a convex polygon by z <= h in gravity space (Sutherland–Hodgman).
+  static void clipPolyZleq(double h, const std::vector<Eigen::Vector3d>& in, std::vector<Eigen::Vector3d>& out);
+
+  // Fan-triangulate a convex polygon (gravity space) into world-space triangles and append them.
+  void appendTriangulatedPolyToWorld(const std::vector<Eigen::Vector3d>& poly_g,
+                                     std::vector<Eigen::Vector3d>& tri_list_world, bool reverse_winding = false) const;
+
+  // Collect unique intersection points of the convex mesh with plane z = h (gravity space).
+  void intersectWithPlaneZ(double h, std::vector<Eigen::Vector3d>& out_pts_g) const;
+
+  // Order convex points (in gravity space) CCW to form a proper polygon.
+  static void orderConvexLoopXY(std::vector<Eigen::Vector3d>& pts);
 
 private:
   // ---------- Persistent (LOCAL) mesh data ----------
