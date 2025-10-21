@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(SODF_LIBRARY ${PROJECT_NAME})
 
 find_package(ament_cmake QUIET)
+find_package(assimp REQUIRED)
+
+include(cmake/assimp.cmake)
 
 # All vendored include directories (for BUILD_INTERFACE)
 set(quarticRootsFlocke_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/ext/quarticRootsFlocke/src)
@@ -43,11 +46,11 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE)
         sodf
       DEPENDS
         Eigen3
+        assimp
     )
 
     include_directories(
       ${catkin_INCLUDE_DIRS}
-      # other includes
     )
 
     install(DIRECTORY include/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
@@ -114,6 +117,7 @@ target_link_libraries(${PROJECT_NAME}
     ${MUPARSER_LIB}
     Eigen3::Eigen
     quarticRootsFlocke
+    assimp::assimp
 )
 
 # Public define so headers can see it
