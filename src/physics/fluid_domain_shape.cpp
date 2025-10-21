@@ -565,5 +565,260 @@ void FluidConvexMeshShape::setState(const Eigen::Isometry3d& T_wo, const Eigen::
   updateGravitySpace_();
 }
 
+// --- Collect edge/plane intersections and build a single convex loop ---
+void FluidConvexMeshShape::intersectWithPlaneZ(double h, std::vector<Eigen::Vector3d>& out_pts_g) const
+{
+  out_pts_g.clear();
+
+  auto addUnique = [&](const Eigen::Vector3d& p) {
+    for (const auto& q : out_pts_g)
+      if ((p - q).cwiseAbs().maxCoeff() < 1e-9)
+        return;  // de-dupe
+    out_pts_g.push_back(p);
+  };
+
+  auto I = [h](const Eigen::Vector3d& A, const Eigen::Vector3d& B) -> Eigen::Vector3d {
+    const double dz = (B.z() - A.z());
+    if (std::abs(dz) < kEps)
+      return A;  // parallel or coincident; caller only uses if crossing
+    const double t = (h - A.z()) / dz;
+    return A + t * (B - A);
+  };
+
+  // We need to visit each unique edge once. For simplicity (and because meshes are small),
+  // just walk all triangles and test their 3 edges; de-dup points with addUnique().
+  for (const auto& tri : tris_)
+  {
+    const Eigen::Vector3d& a = verts_g_[tri.a];
+    const Eigen::Vector3d& b = verts_g_[tri.b];
+    const Eigen::Vector3d& c = verts_g_[tri.c];
+
+    const Eigen::Vector3d* E[3][2] = { { &a, &b }, { &b, &c }, { &c, &a } };
+    for (int e = 0; e < 3; ++e)
+    {
+      const Eigen::Vector3d& p0 = *E[e][0];
+      const Eigen::Vector3d& p1 = *E[e][1];
+
+      const double d0 = p0.z() - h;
+      const double d1 = p1.z() - h;
+
+      // keep only proper crossings or touches
+      const bool cross = (d0 <= 0.0 && d1 >= 0.0) || (d0 >= 0.0 && d1 <= 0.0);
+      if (!cross)
+        continue;
+
+      // If both exactly on plane (rare), add both; otherwise add the intersection
+      if (std::abs(d0) < kEps && std::abs(d1) < kEps)
+      {
+        addUnique(p0);
+        addUnique(p1);
+      }
+      else if (std::abs(d0) < kEps)
+      {
+        addUnique(p0);
+      }
+      else if (std::abs(d1) < kEps)
+      {
+        addUnique(p1);
+      }
+      else
+      {
+        addUnique(I(p0, p1));
+      }
+    }
+  }
+}
+
+void FluidConvexMeshShape::orderConvexLoopXY(std::vector<Eigen::Vector3d>& pts)
+{
+  if (pts.size() <= 2)
+    return;
+  // centroid in XY
+  Eigen::Vector2d c(0, 0);
+  for (auto& p : pts)
+    c += p.head<2>();
+  c /= static_cast<double>(pts.size());
+
+  std::sort(pts.begin(), pts.end(), [&](const Eigen::Vector3d& A, const Eigen::Vector3d& B) {
+    const double a = std::atan2(A.y() - c.y(), A.x() - c.x());
+    const double b = std::atan2(B.y() - c.y(), B.x() - c.x());
+    return a < b;
+  });
+}
+
+bool FluidConvexMeshShape::computeSectionPolygonAtHeight(double height_g, std::vector<Eigen::Vector3d>& out_world) const
+{
+  out_world.clear();
+  if (height_g < 0.0 - kEps || height_g > max_fill_height_ + kEps)
+    return false;
+
+  // 1) Gather gravity-space intersections
+  std::vector<Eigen::Vector3d> pts_g;
+  intersectWithPlaneZ(height_g, pts_g);
+  if (pts_g.size() < 3)
+    return false;  // no polygon
+
+  // 2) Order as a convex CCW loop in XY plane (gravity space)
+  orderConvexLoopXY(pts_g);
+
+  // 3) Map back to WORLD: undo base-z shift and undo world→g rotation
+  Eigen::Vector3d base_g = R_world_to_g_ * p_base_world_;
+  Eigen::Matrix3d R_g_to_world = R_world_to_g_.transpose();
+
+  out_world.reserve(pts_g.size());
+  for (auto p : pts_g)
+  {
+    p.z() += base_g.z();
+    out_world.push_back(R_g_to_world * p);
+  }
+  return true;
+}
+
+bool FluidConvexMeshShape::computeSectionPolygonAtVolume(double fill_volume,
+                                                         std::vector<Eigen::Vector3d>& out_world) const
+{
+  if (fill_volume <= 0.0 || fill_volume > max_fill_volume_)
+  {
+    out_world.clear();
+    return false;
+  }
+  const double h = getFillHeight(fill_volume);
+  return computeSectionPolygonAtHeight(h, out_world);
+}
+
+void FluidConvexMeshShape::clipPolyZleq(double h, const std::vector<Eigen::Vector3d>& in,
+                                        std::vector<Eigen::Vector3d>& out)
+{
+  out.clear();
+  if (in.empty())
+    return;
+
+  auto inside = [h](const Eigen::Vector3d& P) { return P.z() <= h + kEps; };
+  auto I = [h](const Eigen::Vector3d& A, const Eigen::Vector3d& B) -> Eigen::Vector3d {
+    const double dz = (B.z() - A.z());
+    if (std::abs(dz) < kEps)
+      return A;
+    const double t = (h - A.z()) / dz;
+    return (A + t * (B - A)).eval();
+  };
+
+  Eigen::Vector3d S = in.back();
+  bool S_in = inside(S);
+  for (const auto& E : in)
+  {
+    const bool E_in = inside(E);
+    if (S_in && E_in)
+    {
+      // keep E
+      out.push_back(E);
+    }
+    else if (S_in && !E_in)
+    {
+      // leaving: add intersection
+      out.push_back(I(S, E));
+    }
+    else if (!S_in && E_in)
+    {
+      // entering: add intersection then E
+      out.push_back(I(S, E));
+      out.push_back(E);
+    }
+    else
+    {
+      // out→out: keep nothing
+    }
+    S = E;
+    S_in = E_in;
+  }
+}
+
+void FluidConvexMeshShape::appendTriangulatedPolyToWorld(const std::vector<Eigen::Vector3d>& poly_g,
+                                                         std::vector<Eigen::Vector3d>& tri_list_world,
+                                                         bool reverse_winding) const
+{
+  if (poly_g.size() < 3)
+    return;
+
+  // Undo base-z shift and world->g rotation
+  const Eigen::Vector3d base_g = R_world_to_g_ * p_base_world_;
+  const Eigen::Matrix3d R_g_to_world = R_world_to_g_.transpose();
+
+  auto toWorld = [&](Eigen::Vector3d p) {
+    p.z() += base_g.z();
+    return (R_g_to_world * p).eval();
+  };
+
+  // triangle fan (0, i, i+1)
+  for (size_t i = 1; i + 1 < poly_g.size(); ++i)
+  {
+    Eigen::Vector3d a = toWorld(poly_g[0]);
+    Eigen::Vector3d b = toWorld(poly_g[i]);
+    Eigen::Vector3d c = toWorld(poly_g[i + 1]);
+    if (reverse_winding)
+      std::swap(b, c);
+    tri_list_world.push_back(a);
+    tri_list_world.push_back(b);
+    tri_list_world.push_back(c);
+  }
+}
+
+bool FluidConvexMeshShape::buildFilledVolumeAtHeight(double height_g, std::vector<Eigen::Vector3d>& tri_list_world) const
+{
+  tri_list_world.clear();
+  if (height_g <= 0.0 + kEps)
+    return false;
+  if (height_g >= max_fill_height_ - kEps)
+  {
+    // Full container volume: clip at very high z to just take full mesh + cap at top height
+    // but we can also just set height_g = max_fill_height_.
+    height_g = max_fill_height_;
+  }
+
+  // 1) Clip every triangle by z <= h, triangulate each clipped polygon
+  std::vector<Eigen::Vector3d> tri_g(3), clipped_g;
+  for (const auto& f : tris_)
+  {
+    tri_g[0] = verts_g_[f.a];
+    tri_g[1] = verts_g_[f.b];
+    tri_g[2] = verts_g_[f.c];
+
+    clipPolyZleq(height_g, tri_g, clipped_g);
+    if (clipped_g.size() >= 3)
+    {
+      // Triangulate the (convex) clipped polygon and append to world
+      appendTriangulatedPolyToWorld(clipped_g, tri_list_world, /*reverse_winding=*/false);
+    }
+  }
+
+  // 2) Add top cap (free surface) – polygon is perpendicular to gravity
+  std::vector<Eigen::Vector3d> loop_g;
+  intersectWithPlaneZ(height_g, loop_g);
+  if (loop_g.size() >= 3)
+  {
+    orderConvexLoopXY(loop_g);
+    // Winding: the outward normal of the liquid volume on the top cap points **up** (+Z) in gravity space.
+    // Our fan (0,i,i+1) in XY CCW gives +Z normal, which is correct for a volume "inside".
+    appendTriangulatedPolyToWorld(loop_g, tri_list_world, /*reverse_winding=*/false);
+  }
+
+  return !tri_list_world.empty();
+}
+
+bool FluidConvexMeshShape::buildFilledVolumeAtVolume(double fill_volume,
+                                                     std::vector<Eigen::Vector3d>& tri_list_world) const
+{
+  if (fill_volume <= 0.0 + kEps)
+  {
+    tri_list_world.clear();
+    return false;
+  }
+  if (fill_volume >= max_fill_volume_ - kEps)
+  {
+    return buildFilledVolumeAtHeight(max_fill_height_, tri_list_world);
+  }
+  const double h = getFillHeight(fill_volume);
+  return buildFilledVolumeAtHeight(h, tri_list_world);
+}
+
 }  // namespace physics
 }  // namespace sodf
