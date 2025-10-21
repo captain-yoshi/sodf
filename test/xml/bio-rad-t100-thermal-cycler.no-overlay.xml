@@ -22,13 +22,13 @@
       </Transform>
       <Visual>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/visual/base_161k.dae"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/base_161k.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
       <Collision>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/base_161k.stl"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/collision/base_161k.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>
@@ -61,13 +61,13 @@
       </Transform>
       <Visual>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/visual/lid_34k.dae"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/lid_34k.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
       <Collision>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/lid_25k.stl"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/collision/lid_25k.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>
@@ -100,13 +100,13 @@
       </Transform>
       <Visual>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/handle_32k.dae"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/handle_32k.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
       <Collision>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/handle_22k.stl"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/collision/handle_22k.stl"/>
           <scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>

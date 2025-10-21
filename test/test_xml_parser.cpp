@@ -538,7 +538,7 @@ TEST(XMLParser, ParseMeshShape)
 {
   std::string xml_txt = R"(
     <Shape type="Mesh">
-      <Resource uri="package://some/path/mesh.stl"/>
+      <External uri="package://some/path/mesh.stl"/>
     </Shape>)";
 
   tinyxml2::XMLDocument doc;
@@ -984,7 +984,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
     ASSERT_TRUE(vshape.vertices.empty());
     ASSERT_EQ(3, vshape.axes.size());
-    ASSERT_TRUE(vshape.mesh_uri.empty());
+    ASSERT_FALSE(sodf::geometry::hasExternal(vshape));
+    ASSERT_FALSE(sodf::geometry::hasInline(vshape));
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, -1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, -1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
@@ -1053,7 +1054,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(3, vshape.axes.size());
     // ASSERT_TRUE(vshape.vertices.empty());
 
-    ASSERT_TRUE(vshape.mesh_uri.empty());
+    ASSERT_FALSE(sodf::geometry::hasExternal(vshape));
+    ASSERT_FALSE(sodf::geometry::hasInline(vshape));
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, 1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
@@ -1122,7 +1124,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(2, vshape.axes.size());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 0, 1)));
-    ASSERT_TRUE(vshape.mesh_uri.empty());
+    ASSERT_FALSE(sodf::geometry::hasExternal(vshape));
+    ASSERT_FALSE(sodf::geometry::hasInline(vshape));
     ASSERT_EQ(2, vshape.vertices.size());
     ASSERT_TRUE(vshape.vertices[0].isApprox(Eigen::Vector3d(-0.01, 0, 0)));
     ASSERT_TRUE(vshape.vertices[1].isApprox(Eigen::Vector3d(0.01, 0, 0)));
