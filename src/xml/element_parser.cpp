@@ -361,24 +361,96 @@ geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
 
 geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
 {
-  geometry::Shape s;
-  s.type = geometry::ShapeType::Mesh;
-  const auto* file = elem->FirstChildElement("Resource");
-  if (!file)
-    throw std::runtime_error("Mesh missing <Resource> at line " + std::to_string(elem->GetLineNum()));
+  using namespace sodf::geometry;
 
-  s.mesh_uri = evalTextAttributeRequired(file, "uri");
+  Shape s;
+  s.type = ShapeType::Mesh;
 
-  // if relative, change to absolute
-  s.mesh_uri = resolve_realtive_uri(file, doc, s.mesh_uri);
-
+  // --- Scale (optional, defaults to 1,1,1) ---
   if (const auto* scale = elem->FirstChildElement("Scale"))
   {
-    s.scale.x() = evalNumberAttributeRequired(scale, "x");
-    s.scale.y() = evalNumberAttributeRequired(scale, "y");
-    s.scale.z() = evalNumberAttributeRequired(scale, "z");
+    s.scale.x() = evalNumberAttribute(scale, "x", 1.0);
+    s.scale.y() = evalNumberAttribute(scale, "y", 1.0);
+    s.scale.z() = evalNumberAttribute(scale, "z", 1.0);
   }
-  // no axes to validate
+
+  const auto* external = elem->FirstChildElement("External");
+  const auto* internal = elem->FirstChildElement("Inline");
+
+  // Exclusivity check
+  const bool hasExternal = (external != nullptr);
+  const bool hasInline = (internal != nullptr);
+  if (hasExternal == hasInline)
+  {
+    // Either both present or both absent  error
+    throw std::runtime_error(
+        std::string("<Shape type='Mesh'> must contain exactly one of <External> or <Inline> at line ") +
+        std::to_string(elem->GetLineNum()));
+  }
+
+  // --- External URI form ---
+  if (hasExternal)
+  {
+    std::string uri = evalTextAttributeRequired(external, "uri");
+    uri = resolve_realtive_uri(external, doc, uri);
+    s.mesh = MeshRef{ std::move(uri) };
+    return s;
+  }
+
+  // --- Inline (inline mesh) form ---
+  // Required children
+  const auto* vs = internal->FirstChildElement("Vertices");
+  const auto* fs = internal->FirstChildElement("Faces");
+  if (!vs || !fs)
+  {
+    throw std::runtime_error(std::string("<Inline> must contain <Vertices> and <Faces> at line ") +
+                             std::to_string(internal->GetLineNum()));
+  }
+
+  auto M = std::make_shared<IndexedTriMesh>();
+  M->V.reserve(16);
+  M->F.reserve(32);
+
+  // Parse <Vertices><Vertex x="" y="" z=""/></Vertices>
+  for (const tinyxml2::XMLElement* v = vs->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
+  {
+    const double x = evalNumberAttributeRequired(v, "x");
+    const double y = evalNumberAttributeRequired(v, "y");
+    const double z = evalNumberAttributeRequired(v, "z");
+    M->V.emplace_back(x, y, z);
+  }
+
+  if (M->V.empty())
+  {
+    throw std::runtime_error(std::string("<Vertices> is empty at line ") + std::to_string(vs->GetLineNum()));
+  }
+
+  // Parse <Faces><Face a="" b="" c=""/></Faces> (0-based indices)
+  for (const tinyxml2::XMLElement* f = fs->FirstChildElement("Face"); f; f = f->NextSiblingElement("Face"))
+  {
+    const uint32_t a = evalUIntAttributeRequired(f, "a");
+    const uint32_t b = evalUIntAttributeRequired(f, "b");
+    const uint32_t c = evalUIntAttributeRequired(f, "c");
+    M->F.push_back({ a, b, c });
+  }
+
+  if (M->F.empty())
+  {
+    throw std::runtime_error(std::string("<Faces> is empty at line ") + std::to_string(fs->GetLineNum()));
+  }
+
+  // Validate indices
+  const uint32_t nV = static_cast<uint32_t>(M->V.size());
+  for (const auto& tri : M->F)
+  {
+    if (tri[0] >= nV || tri[1] >= nV || tri[2] >= nV)
+    {
+      throw std::runtime_error(std::string("Face index out of range in <Inline> mesh at line ") +
+                               std::to_string(fs->GetLineNum()));
+    }
+  }
+
+  s.mesh = std::move(M);
   return s;
 }
 

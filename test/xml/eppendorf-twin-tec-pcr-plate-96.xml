@@ -24,13 +24,13 @@
       </Transform>
       <Visual>
         <Shape type="Mesh">
-          <Resource uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
+          <External uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
       <Collision>
         <Shape type="Mesh">
-          <Resource uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
+          <External uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>

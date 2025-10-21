@@ -66,13 +66,13 @@ static const char* kModelXml = R"(<?xml version="1.0" encoding="utf-8"?>
     <Link id="link/base">
       <Visual>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/visual/base_161k.dae"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/base_161k.dae"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Visual>
       <Collision>
         <Shape type="Mesh">
-          <Resource uri="sodf://bio-rad/t100-thermal-cycler/collision/base_161k.stl"/>
+          <External uri="sodf://bio-rad/t100-thermal-cycler/collision/base_161k.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>

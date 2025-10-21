@@ -70,7 +70,7 @@ This lets you reference objects without hardcoding absolute/relative paths.
 Example in XML:
 
 ```xml
-<Resource uri="sodf://eppendorf/twin-tec-pcr-plate-96/collision/coarse.stl"/>
+<External uri="sodf://eppendorf/twin-tec-pcr-plate-96/collision/coarse.stl"/>
 ```
 
 ### Configure SODF_URI_PATH
