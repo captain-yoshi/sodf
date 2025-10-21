@@ -58,6 +58,7 @@ struct Shape
   std::vector<Eigen::Vector3d> axes;
   // Optional: additional data (e.g., list of points for polygons)
   std::vector<Eigen::Vector3d> vertices;
+  std::vector<Eigen::Vector3d> triangles;
   // Optional: mesh reference, etc.
   std::string mesh_uri;
   Eigen::Vector3d scale = { 1.0, 1.0, 1.0 };
