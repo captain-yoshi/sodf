@@ -1,6 +1,13 @@
 #ifndef SODF_GEOMETRY_SHAPE_H_
 #define SODF_GEOMETRY_SHAPE_H_
 
+#include <array>
+#include <vector>
+#include <string>
+#include <memory>
+#include <variant>
+#include <type_traits>
+
 #include <sodf/geometry/eigen.h>
 
 namespace sodf {
@@ -23,7 +30,12 @@ namespace geometry {
 | Cone              | base_radius, top_radius, height | symmetry, ref base plane   |            | Frustum if top_radius > 0, cone if = 0.                    |
 | SphericalSegment  | base_radius, top_radius, height | symmetry, ref base plane   |            | Cap if one radius = 0, segment if both > 0.                |
 | Plane             | width, height (optional)        | normal, in-plane x-y       |            | Bounded plane if width & height > 0, infinite if = 0.      |
-| Mesh              | (none)                          | (none, defined in file)    | mesh_uri   |                                                            |
+
+
+| Mesh              | Parameters       | Axes                    | Description / Notes                                      |
+| ------------------------------------ | ----------------------- | -------------------------------------------------------- |
+| External          | uri              | (none, defined in file) | Can be loaded via Assimp or simplify handeled externally |
+| Inline            | vertices, faces  | (none)                  | Direct in-memory mesh                                    |
 */
 // clang-format on
 
@@ -51,17 +63,30 @@ enum class ShapeType
   Mesh,
 };
 
+struct IndexedTriMesh
+{
+  std::vector<Eigen::Vector3d> V;          // vertcies
+  std::vector<std::array<uint32_t, 3>> F;  // CCW/outward
+};
+
+struct MeshRef
+{
+  std::string uri;  // asset identifier only (no scale)
+};
+
+using InlineMeshPtr = std::shared_ptr<const IndexedTriMesh>;
+
+using MeshSource = std::variant<std::monostate,  // no mesh
+                                MeshRef,         // external mesh by URI
+                                InlineMeshPtr>;  // inline mesh (heap)
 struct Shape
 {
   ShapeType type = ShapeType::None;
   std::vector<double> dimensions;
   std::vector<Eigen::Vector3d> axes;
-  // Optional: additional data (e.g., list of points for polygons)
-  std::vector<Eigen::Vector3d> vertices;
-  std::vector<Eigen::Vector3d> triangles;
-  // Optional: mesh reference, etc.
-  std::string mesh_uri;
-  Eigen::Vector3d scale = { 1.0, 1.0, 1.0 };
+  std::vector<Eigen::Vector3d> vertices;  // line, polygon bases...
+  Eigen::Vector3d scale{ 1, 1, 1 };       // per-instance scale
+  MeshSource mesh;                        // choose internal or external
 };
 
 bool is2DShape(const Shape& shape);
@@ -131,32 +156,111 @@ inline std::ostream& operator<<(std::ostream& os, ShapeType type)
   return os << shapeTypeToString(type);
 }
 
+inline std::ostream& operator<<(std::ostream& os, const MeshRef& mref)
+{
+  os << "MeshRef(uri='" << mref.uri << "')";
+  return os;
+}
+
+inline std::ostream& operator<<(std::ostream& os, const IndexedTriMesh& M)
+{
+  os << "IndexedTriMesh(V=" << M.V.size() << ", F=" << M.F.size() << ")";
+  return os;
+}
+
 inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
 {
-  os << "Shape(type=" << shape.type << ", dimensions=[";
+  os << "Shape(type=" << shape.type;
+
+  // dimensions
+  os << ", dimensions=[";
   for (size_t i = 0; i < shape.dimensions.size(); ++i)
   {
     os << shape.dimensions[i];
     if (i + 1 < shape.dimensions.size())
       os << ", ";
   }
-  os << "], axes=[";
+  os << "]";
+
+  // axes
+  os << ", axes=[";
   for (size_t i = 0; i < shape.axes.size(); ++i)
   {
-    os << shape.axes[i];
+    const auto& a = shape.axes[i];
+    os << "(" << a.x() << ", " << a.y() << ", " << a.z() << ")";
     if (i + 1 < shape.axes.size())
       os << ", ";
   }
-  os << "], vertices=[";
-  for (size_t i = 0; i < shape.vertices.size(); ++i)
+  os << "]";
+
+  // vertices
+  os << ", vertices=[";
+  // print up to first 4 vertices to keep logs readable
+  const size_t max_show = 4;
+  for (size_t i = 0; i < shape.vertices.size() && i < max_show; ++i)
   {
-    os << shape.vertices[i];
-    if (i + 1 < shape.vertices.size())
+    const auto& v = shape.vertices[i];
+    os << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")";
+    if (i + 1 < std::min(shape.vertices.size(), max_show))
       os << ", ";
   }
-  os << "], mesh_uri='" << shape.mesh_uri << "'";
-  os << ", scale=" << shape.scale.transpose() << ")";
+  if (shape.vertices.size() > max_show)
+  {
+    os << ", ... (+" << (shape.vertices.size() - max_show) << ")";
+  }
+  os << "]";
+
+  // mesh (variant)
+  os << ", mesh=";
+  std::visit(
+      [&](const auto& alt) {
+        using T = std::decay_t<decltype(alt)>;
+        if constexpr (std::is_same_v<T, std::monostate>)
+        {
+          os << "None";
+        }
+        else if constexpr (std::is_same_v<T, MeshRef>)
+        {
+          os << alt;  // MeshRef printer
+        }
+        else if constexpr (std::is_same_v<T, std::unique_ptr<const IndexedTriMesh>>)
+        {
+          if (alt)
+            os << *alt;
+          else
+            os << "InlineMesh(nullptr)";
+        }
+        else
+        {
+          os << "<unknown-mesh-alt>";
+        }
+      },
+      shape.mesh);
+
+  // scale
+  os << ", scale=(" << shape.scale.x() << ", " << shape.scale.y() << ", " << shape.scale.z() << ")";
+
+  os << ")";
   return os;
+}
+
+inline bool hasExternal(const Shape& s)
+{
+  return std::holds_alternative<MeshRef>(s.mesh);
+}
+inline bool hasInline(const Shape& s)
+{
+  return std::holds_alternative<InlineMeshPtr>(s.mesh);
+}
+inline const MeshRef* ext(const Shape& s)
+{
+  return std::get_if<MeshRef>(&s.mesh);
+}
+inline const IndexedTriMesh* inl(const Shape& s)
+{
+  if (const auto p = std::get_if<InlineMeshPtr>(&s.mesh))
+    return p->get();
+  return nullptr;
 }
 
 }  // namespace geometry
