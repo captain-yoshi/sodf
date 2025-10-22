@@ -97,9 +97,8 @@ struct StackedShapeEntry
 {
   geometry::Shape shape;
 
-  // relative_transform[i] encodes a pure yaw+z transform from
-  // top of segment (i-1) to base of segment i.
-  Eigen::Isometry3d relative_transform;
+  // Pose of this shape expressed in the stack/base frame.
+  Eigen::Isometry3d base_transform;
 };
 
 bool is2DShape(const Shape& shape);

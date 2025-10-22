@@ -575,54 +575,31 @@ components::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, con
   if (!dir_elem)
     throw std::runtime_error("<StackedShape> missing <AxisStackDirection> element at line " +
                              std::to_string(stacked_elem->GetLineNum()));
-  stack.axis_stack_direction = parseUnitVector(dir_elem);
-  stack.axis_stack_direction.normalize();
+  stack.axis_stack_direction = parseUnitVector(dir_elem).normalized();
 
   const tinyxml2::XMLElement* ref_elem = stacked_elem->FirstChildElement("AxisStackReference");
   if (!ref_elem)
     throw std::runtime_error("<StackedShape> missing <AxisStackReference> element at line " +
                              std::to_string(stacked_elem->GetLineNum()));
-  stack.axis_stack_reference = parseUnitVector(ref_elem);
-  stack.axis_stack_reference.normalize();
+  stack.axis_stack_reference = parseUnitVector(ref_elem).normalized();
 
   if (!geometry::areVectorsOrthonormal(stack.axis_stack_direction, stack.axis_stack_reference))
     throw std::runtime_error(std::string("Axes for StackedShape must be mutually orthonormal at line ") +
                              std::to_string(stacked_elem->GetLineNum()));
 
-  Eigen::Vector3d stack_point = Eigen::Vector3d::Zero();  // Current stacking position
-  Eigen::Vector3d stack_axis = Eigen::Vector3d::UnitZ();  // Default stacking axis (may be set per shape)
-
+  // --- shapes: optional <Transform>; defaults to Identity (absolute in stack frame) ---
   for (const tinyxml2::XMLElement* shape_elem = stacked_elem->FirstChildElement("Shape"); shape_elem;
        shape_elem = shape_elem->NextSiblingElement("Shape"))
   {
-    // Parse geometry with your existing function
     geometry::Shape shape = parseShape(doc, shape_elem);
 
-    const auto* trans_elem = shape_elem->FirstChildElement("Transform");
-    Eigen::Isometry3d local_tf = Eigen::Isometry3d::Identity();
-
+    const tinyxml2::XMLElement* trans_elem = shape_elem->FirstChildElement("Transform");
+    Eigen::Isometry3d T_abs = Eigen::Isometry3d::Identity();
     if (trans_elem)
-    {
-      // Manual position: use transform directly
-      local_tf = parseIsometry3D(trans_elem);
-    }
-    else
-    {
-      // Automatic stacking
-      const Eigen::Vector3d& axis_sym = getShapeSymmetryAxis(shape);
-      const Eigen::Vector3d& axis_ref = getShapeReferenceAxis(shape);
+      T_abs = parseIsometry3D(trans_elem);  // absolute w.r.t. stack/base frame
 
-      // Place base at current stack_point
-      local_tf.translation() = stack_point;
-      local_tf.linear() = geometry::buildIsometryFromZXAxes(Eigen::Vector3d::Zero(), axis_sym, axis_ref).linear();
-      // Update stack point for next shape
-      // stack_point = stack_point + axis * shapeHeight(shape);
-      stack_point = axis_sym * shapeHeight(shape);
-      stack_axis = axis_sym;
-    }
-
-    // Add shape to stack
-    stack.shapes.push_back({ shape, local_tf });
+    // Store absolute transform as-is (field name may still be 'relative_transform')
+    stack.shapes.push_back({ shape, T_abs });
   }
 
   return stack;
