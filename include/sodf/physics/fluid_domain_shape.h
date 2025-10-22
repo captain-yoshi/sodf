@@ -135,10 +135,8 @@ double clippedTetraVolumeZleq(const Eigen::Vector3d& p0, const Eigen::Vector3d& 
 class FluidConvexMeshShape : public DomainShape
 {
 public:
-  struct Tri
-  {
-    int a, b, c;
-  };  // triangle indices (CCW/outward for a closed convex mesh)
+  using Index = uint32_t;
+  using Tri = std::array<Index, 3>;
 
   /**
    * @brief Construct from WORLD-space mesh with known gravity and base-plane point.
@@ -233,7 +231,7 @@ private:
   Eigen::Vector3d interior_local_{ Eigen::Vector3d::Zero() };  // centroid
   struct Tet
   {
-    int a, b, c, d;
+    Index a, b, c, d;
   };                             // indices into verts_local_ plus interior as last
   std::vector<Tet> tets_local_;  // built in local space (indices consistent forever)
 
