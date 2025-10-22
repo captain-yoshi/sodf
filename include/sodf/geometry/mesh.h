@@ -12,6 +12,12 @@
 namespace sodf {
 namespace geometry {
 
+/*
+CONVENTION
+- All primitives are tessellated in a base-aligned frame with z E [0, H]
+  (i.e., base at z=0 and top at z=H; +Z is the height axis).
+*/
+
 inline void meshifyCylinder(double radius, double height, int sides, std::vector<Eigen::Vector3d>& V,
                             std::vector<TriangleMesh::Face>& F)
 {
