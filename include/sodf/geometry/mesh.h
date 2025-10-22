@@ -103,23 +103,35 @@ inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d
 {
   using Index = TriangleMesh::Index;
 
-  V = { { 0, 0, 0 }, { W, 0, 0 }, { W, L, 0 }, { 0, L, 0 }, { 0, 0, H }, { W, 0, H }, { W, L, H }, { 0, L, H } };
-  F.clear();
+  const double hx = 0.5 * W;
+  const double hy = 0.5 * L;
 
+  // Centered in X/Y, base-aligned in Z: z ∈ [0, H]
+  V = {
+    { -hx, -hy, 0 }, { +hx, -hy, 0 }, { +hx, +hy, 0 }, { -hx, +hy, 0 },  // 0..3 bottom
+    { -hx, -hy, H }, { +hx, -hy, H }, { +hx, +hy, H }, { -hx, +hy, H }   // 4..7 top
+  };
+
+  F.clear();
   auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
-  T(0, 1, 2);
-  T(0, 2, 3);  // bottom
-  T(4, 6, 5);
-  T(4, 7, 6);  // top
-  T(0, 4, 5);
-  T(0, 5, 1);
-  T(1, 5, 6);
-  T(1, 6, 2);
-  T(2, 6, 7);
-  T(2, 7, 3);
-  T(3, 7, 4);
-  T(3, 4, 0);
+  // Bottom (z=0), outward normal = -Z → reversed winding
+  T(0, 2, 1);
+  T(0, 3, 2);
+
+  // Top (z=H), outward normal = +Z
+  T(4, 5, 6);
+  T(4, 6, 7);
+
+  // Sides (CCW outward)
+  T(0, 1, 5);
+  T(0, 5, 4);  // -Y
+  T(1, 2, 6);
+  T(1, 6, 5);  // +X
+  T(2, 3, 7);
+  T(2, 7, 6);  // +Y
+  T(3, 0, 4);
+  T(3, 4, 7);  // -X
 }
 
 // Spherical segment (axis +Z), CCW outward
