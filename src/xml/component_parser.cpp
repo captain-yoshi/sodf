@@ -613,7 +613,7 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tiny
                              "' in StackedShapeComponent");
 
   // For each shape in the stack
-  for (const StackedShapeEntry& entry : (*stacked_shapes_ptr).shapes)
+  for (const geometry::StackedShapeEntry& entry : (*stacked_shapes_ptr).shapes)
   {
     // if (entry.shape.shape_map.empty())
     //   throw std::runtime_error("ShapeComponent for stack entry is empty!");

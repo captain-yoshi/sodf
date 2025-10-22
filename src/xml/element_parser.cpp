@@ -407,7 +407,7 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
                              std::to_string(internal->GetLineNum()));
   }
 
-  auto M = std::make_shared<IndexedTriMesh>();
+  auto M = std::make_shared<TriangleMesh>();
   M->V.reserve(16);
   M->F.reserve(32);
 

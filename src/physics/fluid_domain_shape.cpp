@@ -426,10 +426,10 @@ void FluidConvexMeshShape::tetrahedralizeLocal_()
   tets_local_.clear();
   tets_local_.reserve(tris_.size());
   // Interior will be appended conceptually as a virtual vertex at index N
-  const int N = static_cast<int>(verts_local_.size());
+  const Index N = static_cast<int>(verts_local_.size());
   for (const auto& f : tris_)
   {
-    tets_local_.push_back(Tet{ f.a, f.b, f.c, N });
+    tets_local_.push_back(Tet{ f[0], f[1], f[2], N });
   }
 }
 
@@ -589,9 +589,9 @@ void FluidConvexMeshShape::intersectWithPlaneZ(double h, std::vector<Eigen::Vect
   // just walk all triangles and test their 3 edges; de-dup points with addUnique().
   for (const auto& tri : tris_)
   {
-    const Eigen::Vector3d& a = verts_g_[tri.a];
-    const Eigen::Vector3d& b = verts_g_[tri.b];
-    const Eigen::Vector3d& c = verts_g_[tri.c];
+    const Eigen::Vector3d& a = verts_g_[tri[0]];
+    const Eigen::Vector3d& b = verts_g_[tri[1]];
+    const Eigen::Vector3d& c = verts_g_[tri[2]];
 
     const Eigen::Vector3d* E[3][2] = { { &a, &b }, { &b, &c }, { &c, &a } };
     for (int e = 0; e < 3; ++e)
@@ -778,9 +778,9 @@ bool FluidConvexMeshShape::buildFilledVolumeAtHeight(double height_g, std::vecto
   std::vector<Eigen::Vector3d> tri_g(3), clipped_g;
   for (const auto& f : tris_)
   {
-    tri_g[0] = verts_g_[f.a];
-    tri_g[1] = verts_g_[f.b];
-    tri_g[2] = verts_g_[f.c];
+    tri_g[0] = verts_g_[f[0]];
+    tri_g[1] = verts_g_[f[1]];
+    tri_g[2] = verts_g_[f[2]];
 
     clipPolyZleq(height_g, tri_g, clipped_g);
     if (clipped_g.size() >= 3)

@@ -1,8 +1,8 @@
-#ifndef LIQUID_BUILDER_H_
-#define LIQUID_BUILDER_H_
+#ifndef SODF_PHYSICS_LIQUID_BUILDER_H_
+#define SODF_PHYSICS_LIQUID_BUILDER_H_
 
-#include <sodf/geometry/mesh.h>
-#include <sodf/geometry/mesh_loader.h>
+#include <sodf/geometry/mesh.h>         // TriangleMesh + meshifyPrimitive
+#include <sodf/geometry/mesh_loader.h>  // loadMeshWithAssimp(uri, scale, TriangleMesh&)
 #include <sodf/geometry/shape.h>
 #include <sodf/physics/fluid_domain_shape.h>
 
@@ -20,42 +20,68 @@ inline std::unique_ptr<sodf::physics::FluidConvexMeshShape>
 buildFluidDomainFromShape(const sodf::geometry::Shape& s, const sodf::physics::TruncationContext& ctx,
                           int radial_res = 64, int axial_res = 16)
 {
+  using sodf::geometry::InlineMeshPtr;
+  using sodf::geometry::MeshRef;
+  using sodf::geometry::TriangleMesh;
   using sodf::physics::FluidConvexMeshShape;
 
   std::vector<Eigen::Vector3d> V;
-  std::vector<std::array<int, 3>> Fidx;
+  std::vector<TriangleMesh::Face> Fidx;  // uint32_t indices
 
-  // 1) Primitive → meshify; 2) Mesh → vertices/triangles or load via Assimp
-  const bool primitive = meshifyPrimitive(s, V, Fidx, radial_res, axial_res);
-  if (!primitive)
+  // 1) Primitive → mesh
+  if (!meshifyPrimitive(s, V, Fidx, radial_res, axial_res))
   {
+    // 2) Mesh source required
     if (s.type != sodf::geometry::ShapeType::Mesh)
       return nullptr;
 
-    if (!s.vertices.empty() && !s.triangles.empty())
+    // 2a) Inline mesh (shared_ptr<const TriangleMesh>)
+    if (const auto pm = std::get_if<InlineMeshPtr>(&s.mesh))
     {
-      V = s.vertices;
-      Fidx.reserve(s.triangles.size());
-      for (auto t : s.triangles)
-        Fidx.push_back({ int(t[0]), int(t[1]), int(t[2]) });
+      if (!*pm)
+        return nullptr;
+      const TriangleMesh& M = **pm;
+
+      V.assign(M.V.begin(), M.V.end());
+      Fidx.reserve(M.F.size());
+      for (const auto& f : M.F)
+        Fidx.push_back({ f[0], f[1], f[2] });
+
+      // Per-instance scale for inline meshes
+      if (s.scale != Eigen::Vector3d(1.0, 1.0, 1.0))
+      {
+        for (auto& p : V)
+          p = p.cwiseProduct(s.scale);
+      }
+    }
+    // 2b) External mesh (by URI)
+    else if (const auto mref = std::get_if<MeshRef>(&s.mesh))
+    {
+      TriangleMesh M;
+      if (!sodf::geometry::loadMeshWithAssimp(mref->uri, s.scale, M))
+        return nullptr;
+
+      V = std::move(M.V);
+      Fidx.reserve(M.F.size());
+      for (const auto& f : M.F)
+        Fidx.push_back({ f[0], f[1], f[2] });
     }
     else
     {
-      sodf::geometry::ResolvedMesh RM;
-      if (!sodf::geometry::loadMeshWithAssimp(s.mesh_uri, s.scale, RM))
-        return nullptr;
-      V.swap(RM.vertices);
-      Fidx.reserve(RM.triangles.size());
-      for (const auto& t : RM.triangles)
-        Fidx.push_back({ t.x(), t.y(), t.z() });
+      // Neither inline nor external provided
+      return nullptr;
     }
   }
 
-  // Convert to domain triangles
+  // Convert to domain triangles (prefer making Tri = std::array<uint32_t,3>)
   std::vector<FluidConvexMeshShape::Tri> F;
   F.reserve(Fidx.size());
-  for (auto& t : Fidx)
+  for (const auto& t : Fidx)
+  {
     F.push_back({ t[0], t[1], t[2] });
+    // If Tri is still int[3], use:
+    // F.push_back({ int(t[0]), int(t[1]), int(t[2]) });
+  }
 
   auto domain = std::make_unique<FluidConvexMeshShape>(std::move(V), std::move(F));
   domain->setState(ctx.T_wo, ctx.g_world, ctx.base_world);
@@ -65,4 +91,4 @@ buildFluidDomainFromShape(const sodf::geometry::Shape& s, const sodf::physics::T
 }  // namespace physics
 }  // namespace sodf
 
-#endif  // LIQUID_BUILDER_H_
+#endif  // SODF_PHYSICS_LIQUID_BUILDER_H_
