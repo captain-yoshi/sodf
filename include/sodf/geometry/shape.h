@@ -63,10 +63,13 @@ enum class ShapeType
   Mesh,
 };
 
-struct IndexedTriMesh
+struct TriangleMesh
 {
-  std::vector<Eigen::Vector3d> V;          // vertcies
-  std::vector<std::array<uint32_t, 3>> F;  // CCW/outward
+  using Index = uint32_t;
+  using Face = std::array<Index, 3>;
+
+  std::vector<Eigen::Vector3d> V;  // vertcies
+  std::vector<Face> F;             // CCW/outward
 };
 
 struct MeshRef
@@ -74,7 +77,8 @@ struct MeshRef
   std::string uri;  // asset identifier only (no scale)
 };
 
-using InlineMeshPtr = std::shared_ptr<const IndexedTriMesh>;
+using TriangleMeshPtr = std::shared_ptr<const TriangleMesh>;
+using InlineMeshPtr = std::shared_ptr<const TriangleMesh>;
 
 using MeshSource = std::variant<std::monostate,  // no mesh
                                 MeshRef,         // external mesh by URI
@@ -87,6 +91,15 @@ struct Shape
   std::vector<Eigen::Vector3d> vertices;  // line, polygon bases...
   Eigen::Vector3d scale{ 1, 1, 1 };       // per-instance scale
   MeshSource mesh;                        // choose internal or external
+};
+
+struct StackedShapeEntry
+{
+  geometry::Shape shape;
+
+  // relative_transform[i] encodes a pure yaw+z transform from
+  // top of segment (i-1) to base of segment i.
+  Eigen::Isometry3d relative_transform;
 };
 
 bool is2DShape(const Shape& shape);
@@ -135,7 +148,7 @@ inline double inferTopRadiusFromHeight(double r1, double h)
   if (r1 < 0 || h <= 0)
     throw std::invalid_argument("Base radius must be non-negative and height > 0");
 
-  // From: R = (r2² + h² - r1²) / (2h) ⇒ isolate r2
+  // From: R = (r2^2 + h^2 - r1^2) / (2h) -> isolate r2
   // Assume same sphere used for both ends
   double R = (r1 * r1 + h * h) / (2 * h);
 
@@ -162,7 +175,7 @@ inline std::ostream& operator<<(std::ostream& os, const MeshRef& mref)
   return os;
 }
 
-inline std::ostream& operator<<(std::ostream& os, const IndexedTriMesh& M)
+inline std::ostream& operator<<(std::ostream& os, const TriangleMesh& M)
 {
   os << "IndexedTriMesh(V=" << M.V.size() << ", F=" << M.F.size() << ")";
   return os;
@@ -223,7 +236,7 @@ inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
         {
           os << alt;  // MeshRef printer
         }
-        else if constexpr (std::is_same_v<T, std::unique_ptr<const IndexedTriMesh>>)
+        else if constexpr (std::is_same_v<T, std::unique_ptr<const TriangleMesh>>)
         {
           if (alt)
             os << *alt;
@@ -256,9 +269,9 @@ inline const MeshRef* ext(const Shape& s)
 {
   return std::get_if<MeshRef>(&s.mesh);
 }
-inline const IndexedTriMesh* inl(const Shape& s)
+inline const TriangleMesh* inl(const Shape& s)
 {
-  if (const auto p = std::get_if<InlineMeshPtr>(&s.mesh))
+  if (const auto p = std::get_if<TriangleMeshPtr>(&s.mesh))
     return p->get();
   return nullptr;
 }

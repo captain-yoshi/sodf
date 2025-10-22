@@ -18,15 +18,9 @@ struct ShapeComponent
   ElementMap<std::string, geometry::Shape> elements;
 };
 
-struct StackedShapeEntry
-{
-  geometry::Shape shape;
-  Eigen::Isometry3d relative_transform;  // relative to previous shape base
-};
-
 struct StackedShape
 {
-  std::vector<StackedShapeEntry> shapes;
+  std::vector<geometry::StackedShapeEntry> shapes;
 
   Eigen::Vector3d axis_stack_direction;
   Eigen::Vector3d axis_stack_reference;

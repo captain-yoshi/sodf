@@ -2,6 +2,9 @@
 #define SODF_GEOMETRY_MESH_H_
 
 #include <vector>
+#include <unordered_map>
+#include <cmath>
+#include <limits>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <sodf/geometry/shape.h>
@@ -10,86 +13,101 @@ namespace sodf {
 namespace geometry {
 
 inline void meshifyCylinder(double radius, double height, int sides, std::vector<Eigen::Vector3d>& V,
-                            std::vector<std::array<int, 3>>& F)
+                            std::vector<TriangleMesh::Face>& F)
 {
+  using Index = TriangleMesh::Index;
+
   V.clear();
   F.clear();
   sides = std::max(3, sides);
-  // rings: bottom z=0, top z=height
+
+  // two rings: z=0 and z=height
   for (int r = 0; r < 2; ++r)
   {
-    double z = (r == 0) ? 0.0 : height;
+    const double z = (r == 0) ? 0.0 : height;
     for (int i = 0; i < sides; ++i)
     {
-      double a = 2.0 * M_PI * i / sides;
+      const double a = 2.0 * M_PI * i / sides;
       V.emplace_back(radius * std::cos(a), radius * std::sin(a), z);
     }
   }
-  // caps centers
-  int iBotC = (int)V.size();
+
+  const Index iBotC = static_cast<Index>(V.size());
   V.emplace_back(0, 0, 0);
-  int iTopC = (int)V.size();
+  const Index iTopC = static_cast<Index>(V.size());
   V.emplace_back(0, 0, height);
 
-  auto addTri = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
+  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
   // side quads
   for (int i = 0; i < sides; ++i)
   {
-    int i0 = i, i1 = (i + 1) % sides;
-    int j0 = i + sides, j1 = ((i + 1) % sides) + sides;
-    addTri(i0, i1, j1);
-    addTri(i0, j1, j0);
+    const Index i0 = static_cast<Index>(i);
+    const Index i1 = static_cast<Index>((i + 1) % sides);
+    const Index j0 = static_cast<Index>(i + sides);
+    const Index j1 = static_cast<Index>(((i + 1) % sides) + sides);
+    T(i0, i1, j1);
+    T(i0, j1, j0);
   }
-  // bottom cap (fan, CCW when seen from +Z)
+  // bottom cap (CCW when seen from +Z)
   for (int i = 1; i + 1 < sides; ++i)
-    addTri(iBotC, i, i + 1);
+    T(iBotC, static_cast<Index>(i), static_cast<Index>(i + 1));
   // top cap (CCW from +Z)
   for (int i = 1; i + 1 < sides; ++i)
-    addTri(iTopC, sides + i + 1, sides + i);
+    T(iTopC, static_cast<Index>(sides + i + 1), static_cast<Index>(sides + i));
 }
 
 inline void meshifyConeFrustum(double r0, double r1, double h, int sides, std::vector<Eigen::Vector3d>& V,
-                               std::vector<std::array<int, 3>>& F)
+                               std::vector<TriangleMesh::Face>& F)
 {
+  using Index = TriangleMesh::Index;
+
   V.clear();
   F.clear();
   sides = std::max(3, sides);
+
   for (int r = 0; r < 2; ++r)
   {
-    double z = (r == 0) ? 0.0 : h;
-    double rr = (r == 0) ? r0 : r1;
+    const double z = (r == 0) ? 0.0 : h;
+    const double rr = (r == 0) ? r0 : r1;
     for (int i = 0; i < sides; ++i)
     {
-      double a = 2.0 * M_PI * i / sides;
+      const double a = 2.0 * M_PI * i / sides;
       V.emplace_back(rr * std::cos(a), rr * std::sin(a), z);
     }
   }
-  int iBotC = (int)V.size();
+
+  const Index iBotC = static_cast<Index>(V.size());
   V.emplace_back(0, 0, 0);
-  int iTopC = (int)V.size();
+  const Index iTopC = static_cast<Index>(V.size());
   V.emplace_back(0, 0, h);
 
-  auto addTri = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
+  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
   for (int i = 0; i < sides; ++i)
   {
-    int i0 = i, i1 = (i + 1) % sides;
-    int j0 = i + sides, j1 = ((i + 1) % sides) + sides;
-    addTri(i0, i1, j1);
-    addTri(i0, j1, j0);
+    const Index i0 = static_cast<Index>(i);
+    const Index i1 = static_cast<Index>((i + 1) % sides);
+    const Index j0 = static_cast<Index>(i + sides);
+    const Index j1 = static_cast<Index>(((i + 1) % sides) + sides);
+    T(i0, i1, j1);
+    T(i0, j1, j0);
   }
   for (int i = 1; i + 1 < sides; ++i)
-    addTri(iBotC, i, i + 1);
+    T(iBotC, static_cast<Index>(i), static_cast<Index>(i + 1));
   for (int i = 1; i + 1 < sides; ++i)
-    addTri(iTopC, sides + i + 1, sides + i);
+    T(iTopC, static_cast<Index>(sides + i + 1), static_cast<Index>(sides + i));
 }
 
-inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d>& V, std::vector<std::array<int, 3>>& F)
+inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F)
 {
+  using Index = TriangleMesh::Index;
+
   V = { { 0, 0, 0 }, { W, 0, 0 }, { W, L, 0 }, { 0, L, 0 }, { 0, 0, H }, { W, 0, H }, { W, L, H }, { 0, L, H } };
-  auto T = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
   F.clear();
+
+  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
+
   T(0, 1, 2);
   T(0, 2, 3);  // bottom
   T(4, 6, 5);
@@ -104,114 +122,107 @@ inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d
   T(3, 4, 0);
 }
 
-// Build a closed, convex spherical segment solid whose axis is +Z.
-// Inputs: a1 = base radius at z=0, a2 = top radius at z=H, H = height.
-// Produces: vertices V and triangle indices F (CCW when viewed from outside).
+// Spherical segment (axis +Z), CCW outward
 inline void meshifySphericalSegment(double a1, double a2, double H, int radial_res, int axial_res,
-                                    std::vector<Eigen::Vector3d>& V, std::vector<std::array<int, 3>>& F)
+                                    std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F)
 {
+  using Index = TriangleMesh::Index;
+
   V.clear();
   F.clear();
   radial_res = std::max(3, radial_res);
   axial_res = std::max(1, axial_res);
   const double eps = 1e-12;
 
-  // --- Same geometry as your volume/height code ---
-  const double z0 = (a2 * a2 - a1 * a1 + H * H) / (2.0 * H);     // center offset from base plane
-  const double r = std::sqrt(std::max(0.0, a1 * a1 + z0 * z0));  // sphere radius
+  const double z0 = (a2 * a2 - a1 * a1 + H * H) / (2.0 * H);
+  const double r = std::sqrt(std::max(0.0, a1 * a1 + z0 * z0));
 
   auto ring_radius = [&](double z) -> double {
-    // radius at plane z (0..H)
     const double ah2 = r * r - (z0 - z) * (z0 - z);
     return (ah2 > 0.0) ? std::sqrt(ah2) : 0.0;
   };
 
-  // --- Create axial rings (z from 0..H) ---
-  // ring k has z = k*H/axial_res and nk = radial_res vertices
-  std::vector<int> ring_start(axial_res + 1);
+  // rings
+  std::vector<Index> ring_start(axial_res + 1);
   for (int k = 0; k <= axial_res; ++k)
   {
-    const double z = (double)k * H / (double)axial_res;
+    const double z = double(k) * H / double(axial_res);
     const double rk = ring_radius(z);
-    ring_start[k] = (int)V.size();
+    ring_start[k] = static_cast<Index>(V.size());
 
     for (int i = 0; i < radial_res; ++i)
     {
-      const double a = 2.0 * M_PI * (double)i / (double)radial_res;
+      const double a = 2.0 * M_PI * double(i) / double(radial_res);
       V.emplace_back(rk * std::cos(a), rk * std::sin(a), z);
     }
   }
 
-  // --- Optional centers for planar caps (when radius > 0) ---
+  // cap centers
   const bool have_base_cap = (a1 > eps);
   const bool have_top_cap = (a2 > eps);
 
-  int base_center_idx = -1, top_center_idx = -1;
+  Index base_center_idx = std::numeric_limits<Index>::max();
+  Index top_center_idx = std::numeric_limits<Index>::max();
   if (have_base_cap)
   {
-    base_center_idx = (int)V.size();
+    base_center_idx = static_cast<Index>(V.size());
     V.emplace_back(0, 0, 0);
   }
   if (have_top_cap)
   {
-    top_center_idx = (int)V.size();
+    top_center_idx = static_cast<Index>(V.size());
     V.emplace_back(0, 0, H);
   }
 
-  auto addTri = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
+  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
-  // --- Side band (spherical surface): connect ring k to k+1 ---
+  // side band
   for (int k = 0; k < axial_res; ++k)
   {
-    const int r0 = ring_start[k];
-    const int r1 = ring_start[k + 1];
+    const Index r0 = ring_start[k];
+    const Index r1 = ring_start[k + 1];
     for (int i = 0; i < radial_res; ++i)
     {
-      const int i0 = i;
-      const int i1 = (i + 1) % radial_res;
+      const Index i0 = static_cast<Index>(i);
+      const Index i1 = static_cast<Index>((i + 1) % radial_res);
 
-      // vertices on lower and upper rings
-      const int v00 = r0 + i0;
-      const int v01 = r0 + i1;
-      const int v10 = r1 + i0;
-      const int v11 = r1 + i1;
+      const Index v00 = r0 + i0;
+      const Index v01 = r0 + i1;
+      const Index v10 = r1 + i0;
+      const Index v11 = r1 + i1;
 
-      // CCW when viewed from outside (radial outward normal)
-      // two triangles: (v00, v10, v11) and (v00, v11, v01)
-      addTri(v00, v10, v11);
-      addTri(v00, v11, v01);
+      T(v00, v10, v11);
+      T(v00, v11, v01);
     }
   }
 
-  // --- Base planar cap at z=0 (normal points DOWN, so CCW from below) ---
+  // base cap (normal -Z)
   if (have_base_cap)
   {
-    const int rB = ring_start[0];
+    const Index rB = ring_start[0];
     for (int i = 0; i < radial_res; ++i)
     {
-      const int i0 = i;
-      const int i1 = (i + 1) % radial_res;
-      // From below, CCW is (center, next, cur). From above, that appears CW (as desired for outward -Z)
-      addTri(base_center_idx, rB + i1, rB + i0);
+      const Index i0 = static_cast<Index>(i);
+      const Index i1 = static_cast<Index>((i + 1) % radial_res);
+      T(base_center_idx, rB + i1, rB + i0);
     }
   }
 
-  // --- Top planar cap at z=H (normal points UP, so CCW from above) ---
+  // top cap (normal +Z)
   if (have_top_cap)
   {
-    const int rT = ring_start[axial_res];
+    const Index rT = ring_start[axial_res];
     for (int i = 0; i < radial_res; ++i)
     {
-      const int i0 = i;
-      const int i1 = (i + 1) % radial_res;
-      // From above, CCW is (center, cur, next)
-      addTri(top_center_idx, rT + i0, rT + i1);
+      const Index i0 = static_cast<Index>(i);
+      const Index i1 = static_cast<Index>((i + 1) % radial_res);
+      T(top_center_idx, rT + i0, rT + i1);
     }
   }
 }
 
 inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
-                             std::vector<std::array<int, 3>>& F, int radial_res = 64, int axial_res = 16)
+                             std::vector<TriangleMesh::Face>& F, int radial_res = 64, int axial_res = 16)
 {
   switch (s.type)
   {
@@ -221,8 +232,7 @@ inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector
     case geometry::ShapeType::Cone:
       meshifyConeFrustum(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, V, F);
       return true;
-    case geometry::ShapeType::TriangularPrism:
-      // treat as a box W (dim0) × L (dim1) × H (dim2) if that maps for you
+    case geometry::ShapeType::TriangularPrism:  // approximate as box: W=dim0, L=dim1, H=dim2
       meshifyBox(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), V, F);
       return true;
     case geometry::ShapeType::SphericalSegment:
@@ -232,7 +242,6 @@ inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector
       meshifyBox(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), V, F);
       return true;
     case geometry::ShapeType::Mesh:
-      return false;
     default:
       return false;
   }
