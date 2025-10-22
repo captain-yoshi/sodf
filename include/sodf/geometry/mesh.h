@@ -99,6 +99,66 @@ inline void meshifyConeFrustum(double r0, double r1, double h, int sides, std::v
     T(iTopC, static_cast<Index>(sides + i + 1), static_cast<Index>(sides + i));
 }
 
+// Triangular prism with your convention:
+// - Z = height axis
+// - X = extrusion/depth (thickness)
+// - Y = base-axis of the triangle (triangle lies in the YZ plane)
+// Parameters: W (base width along +Y), D (extrusion thickness along X), H (triangle height along +Z), u (apex offset along +Y)
+inline void meshifyTriangularPrism(double W, double D, double H, double u, std::vector<Eigen::Vector3d>& V,
+                                   std::vector<TriangleMesh::Face>& F)
+{
+  using Index = TriangleMesh::Index;
+  V.clear();
+  F.clear();
+
+  const double x0 = -0.5 * D;  // lower cap (−X)
+  const double x1 = +0.5 * D;  // upper cap (+X)
+
+  // Base triangle in the YZ plane:
+  //   A = (x, y=0,   z=0)
+  //   B = (x, y=W,   z=0)
+  //   C = (x, y=u,   z=H)
+  const Eigen::Vector3d A0(x0, 0.0, 0.0);
+  const Eigen::Vector3d B0(x0, W, 0.0);
+  const Eigen::Vector3d C0(x0, u, H);
+
+  const Eigen::Vector3d A1(x1, 0.0, 0.0);
+  const Eigen::Vector3d B1(x1, W, 0.0);
+  const Eigen::Vector3d C1(x1, u, H);
+
+  const Index iA0 = static_cast<Index>(V.size());
+  V.push_back(A0);
+  const Index iB0 = static_cast<Index>(V.size());
+  V.push_back(B0);
+  const Index iC0 = static_cast<Index>(V.size());
+  V.push_back(C0);
+  const Index iA1 = static_cast<Index>(V.size());
+  V.push_back(A1);
+  const Index iB1 = static_cast<Index>(V.size());
+  V.push_back(B1);
+  const Index iC1 = static_cast<Index>(V.size());
+  V.push_back(C1);
+
+  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
+
+  // Caps:
+  // x = -D/2 cap faces −X → reverse winding vs +X
+  T(iA0, iC0, iB0);
+  // x = +D/2 cap faces +X
+  T(iA1, iB1, iC1);
+
+  // Side quads split into triangles, connecting ring at x0 to ring at x1
+  // Edge AB
+  T(iA0, iB0, iB1);
+  T(iA0, iB1, iA1);
+  // Edge BC
+  T(iB0, iC0, iC1);
+  T(iB0, iC1, iB1);
+  // Edge CA
+  T(iC0, iA0, iA1);
+  T(iC0, iA1, iC1);
+}
+
 inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F)
 {
   using Index = TriangleMesh::Index;
@@ -244,9 +304,15 @@ inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector
     case geometry::ShapeType::Cone:
       meshifyConeFrustum(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, V, F);
       return true;
-    case geometry::ShapeType::TriangularPrism:  // approximate as box: W=dim0, L=dim1, H=dim2
-      meshifyBox(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), V, F);
+    case geometry::ShapeType::TriangularPrism:
+    {
+      const double W = s.dimensions.at(0);
+      const double D = s.dimensions.at(1);
+      const double H = s.dimensions.at(2);
+      const double u = (s.dimensions.size() > 3) ? s.dimensions[3] : 0.0;
+      meshifyTriangularPrism(W, D, H, u, V, F);
       return true;
+    }
     case geometry::ShapeType::SphericalSegment:
       meshifySphericalSegment(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, axial_res, V, F);
       return true;
