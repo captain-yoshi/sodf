@@ -19,6 +19,8 @@
 #include <sodf/components/touchscreen.h>
 #include <sodf/components/transform.h>
 
+#include <sodf/physics/liquid_builder.h>
+
 namespace sodf {
 namespace xml {
 
@@ -657,6 +659,26 @@ void parseFluidDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tiny
         double top_radius = geom.dimensions.at(1);
         double height = geom.dimensions.at(2);
         shape = std::make_shared<physics::FluidConeShape>(base_radius, top_radius, height);
+        break;
+      }
+      case geometry::ShapeType::Mesh:
+      {
+        sodf::physics::TruncationContext ctx;
+        ctx.T_wo = entry.base_transform;         // world pose of this stack layer
+        ctx.g_world = Eigen::Vector3d(0, 0, 1);  // gravity (+Z) unless you have a different convention
+        ctx.base_world = entry.base_transform * Eigen::Vector3d::Zero();  // h=0 passes through the entry origin
+
+        // Adjust tessellation as you prefer; these are good defaults.
+        constexpr int radial_res = 64;
+        constexpr int axial_res = 16;
+
+        auto dom_unique = sodf::physics::buildFluidDomainFromShape(geom, ctx, radial_res, axial_res);
+        if (!dom_unique)
+          throw std::runtime_error("Failed to build FluidConvexMeshShape for <Mesh> in stack '" + stack_id + "' (id='" +
+                                   id + "').");
+
+        // Convert unique_ptr -> shared_ptr and upcast to DomainShapePtr.
+        shape = std::shared_ptr<sodf::physics::FluidConvexMeshShape>(dom_unique.release());
         break;
       }
       // Add more shape types as needed.
