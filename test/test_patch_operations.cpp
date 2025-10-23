@@ -107,7 +107,7 @@ static const char* kOverlayXml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Root sodf_version="0.0.7">
   <Overlay id="hmi-fw-2.4.3" slot="hmi" target="bio-rad:t100-thermal-cycler">
     <!-- Direct components introduced by overlay -->
-    <Shape id="shape/ui_button" type="Rectangle">
+    <Shape id="shape/ui_button" type="Rectangle" origin="AABBCenter">
       <AxisNormal x="1.0" y="0.0" z="0.0"/>
       <AxisWidth x="0.0" y="1.0" z="0.0"/>
       <AxisHeight x="0.0" y="0.0" z="1.0"/>

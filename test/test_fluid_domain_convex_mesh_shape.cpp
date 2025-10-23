@@ -9,7 +9,12 @@
 
 #include <sodf/physics/fluid_domain_shape.h>
 
+#include <sodf/geometry/mesh.h>
+
 using namespace sodf::physics;
+using namespace sodf::geometry;
+
+using Index = sodf::geometry::TriangleMesh::Index;
 
 constexpr double VOLUME_EPS = 1e-9;  // looser than analytic tests; meshes can approximate
 constexpr double HEIGHT_EPS = 1e-8;
@@ -20,26 +25,35 @@ static void makeBoxMesh(double W, double L, double H, std::vector<Eigen::Vector3
                         std::vector<FluidConvexMeshShape::Tri>& F)
 {
   V = {
-    { 0, 0, 0 }, { W, 0, 0 }, { W, L, 0 }, { 0, L, 0 },  // bottom
-    { 0, 0, H }, { W, 0, H }, { W, L, H }, { 0, L, H }   // top
+    { 0.0, 0.0, 0.0 }, { W, 0.0, 0.0 }, { W, L, 0.0 }, { 0.0, L, 0.0 },  // bottom  (0,1,2,3)
+    { 0.0, 0.0, H },   { W, 0.0, H },   { W, L, H },   { 0.0, L, H }     // top     (4,5,6,7)
   };
-  // 12 triangles (two per face)
-  auto tri = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
-  // bottom (0,1,2,3) CCW seen from below -> outward is -Z, but signed volumes are abs() in code
-  tri(0, 1, 2);
-  tri(0, 2, 3);
-  // top (4,5,6,7)
-  tri(4, 6, 5);
-  tri(4, 7, 6);
+
+  F.clear();
+  F.reserve(12);
+
+  auto tri = [&F](Index a, Index b, Index c) { F.emplace_back(TriangleMesh::Face{ a, b, c }); };
+
+  // bottom (0,1,2,3)  CCW seen from below -> outward is -Z; volumes are |…| later, so OK
+  tri(Index{ 0 }, Index{ 1 }, Index{ 2 });
+  tri(Index{ 0 }, Index{ 2 }, Index{ 3 });
+
+  // top (4,5,6,7)     CCW seen from above -> outward is +Z
+  tri(Index{ 4 }, Index{ 6 }, Index{ 5 });
+  tri(Index{ 4 }, Index{ 7 }, Index{ 6 });
+
   // sides
-  tri(0, 4, 5);
-  tri(0, 5, 1);
-  tri(1, 5, 6);
-  tri(1, 6, 2);
-  tri(2, 6, 7);
-  tri(2, 7, 3);
-  tri(3, 7, 4);
-  tri(3, 4, 0);
+  tri(Index{ 0 }, Index{ 4 }, Index{ 5 });
+  tri(Index{ 0 }, Index{ 5 }, Index{ 1 });
+
+  tri(Index{ 1 }, Index{ 5 }, Index{ 6 });
+  tri(Index{ 1 }, Index{ 6 }, Index{ 2 });
+
+  tri(Index{ 2 }, Index{ 6 }, Index{ 7 });
+  tri(Index{ 2 }, Index{ 7 }, Index{ 3 });
+
+  tri(Index{ 3 }, Index{ 7 }, Index{ 4 });
+  tri(Index{ 3 }, Index{ 4 }, Index{ 0 });
 }
 
 // Regular N-gon area with circumradius r
@@ -48,7 +62,7 @@ static double regularNgonArea(int N, double r)
   return 0.5 * N * r * r * std::sin(2.0 * M_PI / N);
 }
 
-static void makePrismMesh_RegularNgon(int N, double r, double H, std::vector<Eigen::Vector3d>& V,
+static void makePrismMesh_RegularNgon(Index N, double r, double H, std::vector<Eigen::Vector3d>& V,
                                       std::vector<FluidConvexMeshShape::Tri>& F)
 {
   V.clear();
@@ -65,7 +79,7 @@ static void makePrismMesh_RegularNgon(int N, double r, double H, std::vector<Eig
     double ang = 2.0 * M_PI * i / N;
     V.emplace_back(r * std::cos(ang), r * std::sin(ang), H);
   }
-  auto addTri = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
+  auto addTri = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
   // side quads as two tris
   for (int i = 0; i < N; ++i)
@@ -83,7 +97,7 @@ static void makePrismMesh_RegularNgon(int N, double r, double H, std::vector<Eig
     addTri(N, N + i, N + i + 1);
 }
 
-static void makeFrustumMesh_RegularNgon(int N, double r0, double r1, double H, std::vector<Eigen::Vector3d>& V,
+static void makeFrustumMesh_RegularNgon(Index N, double r0, double r1, double H, std::vector<Eigen::Vector3d>& V,
                                         std::vector<FluidConvexMeshShape::Tri>& F)
 {
   V.clear();
@@ -99,20 +113,20 @@ static void makeFrustumMesh_RegularNgon(int N, double r0, double r1, double H, s
     double ang = 2.0 * M_PI * i / N;
     V.emplace_back(r1 * std::cos(ang), r1 * std::sin(ang), H);  // top
   }
-  auto addTri = [&](int a, int b, int c) { F.push_back({ a, b, c }); };
+  auto addTri = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
-  for (int i = 0; i < N; ++i)
+  for (Index i = 0; i < N; ++i)
   {
-    int i0 = i, i1 = (i + 1) % N;
-    int j0 = i + N, j1 = ((i + 1) % N) + N;
+    Index i0 = i, i1 = (i + 1) % N;
+    Index j0 = i + N, j1 = ((i + 1) % N) + N;
     addTri(i0, i1, j1);
     addTri(i0, j1, j0);
   }
   // bottom fan
-  for (int i = 1; i + 1 < N; ++i)
+  for (Index i = 1; i + 1 < N; ++i)
     F.push_back({ 0, i + 1, i });
   // top fan
-  for (int i = 1; i + 1 < N; ++i)
+  for (Index i = 1; i + 1 < N; ++i)
     F.push_back({ N, N + i, N + i + 1 });
 }
 

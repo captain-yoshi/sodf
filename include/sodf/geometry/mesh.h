@@ -12,6 +12,153 @@
 namespace sodf {
 namespace geometry {
 
+// origin policy application for meshified primitives
+namespace {
+
+// AABB (min/max) and center
+struct AABB
+{
+  Eigen::Vector3d min, max;
+};
+inline AABB computeAABB(const std::vector<Eigen::Vector3d>& V)
+{
+  if (V.empty())
+    return { { 0, 0, 0 }, { 0, 0, 0 } };
+  Eigen::Vector3d mn = V[0], mx = V[0];
+  for (const auto& p : V)
+  {
+    mn = mn.cwiseMin(p);
+    mx = mx.cwiseMax(p);
+  }
+  return { mn, mx };
+}
+inline Eigen::Vector3d aabbCenter(const AABB& bb)
+{
+  return 0.5 * (bb.min + bb.max);
+}
+
+// Collect indices of vertices that lie on the base plane z = zmin (within eps)
+inline std::vector<size_t> baseVertices(const std::vector<Eigen::Vector3d>& V, double zmin, double eps)
+{
+  std::vector<size_t> idx;
+  idx.reserve(V.size());
+  for (size_t i = 0; i < V.size(); ++i)
+    if (std::abs(V[i].z() - zmin) <= eps)
+      idx.push_back(i);
+  return idx;
+}
+
+// Base-center: center of the base polygon (use average of base vertices; robust and simple)
+inline Eigen::Vector3d baseCenterXY(const std::vector<Eigen::Vector3d>& V, double zmin, double eps)
+{
+  const auto idx = baseVertices(V, zmin, eps);
+  if (idx.empty())
+  {
+    // Fallback: use base AABB center in XY at z=zmin
+    AABB bb = computeAABB(V);
+    return { 0.5 * (bb.min.x() + bb.max.x()), 0.5 * (bb.min.y() + bb.max.y()), zmin };
+  }
+  Eigen::Vector2d acc(0, 0);
+  for (size_t i : idx)
+    acc += V[i].head<2>();
+  acc /= double(idx.size());
+  return { acc.x(), acc.y(), zmin };
+}
+
+// Signed volume and centroid via tetrahedra from origin (assumes closed, outward CCW)
+struct VolumeMoments
+{
+  double V = 0.0;
+  Eigen::Vector3d C = Eigen::Vector3d::Zero();  // sum of (tetra centroid * signed volume)
+};
+
+inline VolumeMoments accumulateVolumeMoments(const std::vector<Eigen::Vector3d>& V,
+                                             const std::vector<geometry::TriangleMesh::Face>& F)
+{
+  using Face = geometry::TriangleMesh::Face;
+  VolumeMoments m;
+  for (const Face& f : F)
+  {
+    const Eigen::Vector3d& a = V[f[0]];
+    const Eigen::Vector3d& b = V[f[1]];
+    const Eigen::Vector3d& c = V[f[2]];
+    // Signed volume of tetra (0,a,b,c) = (a · (b × c)) / 6
+    double vol6 = a.dot(b.cross(c));
+    double vol = vol6 / 6.0;
+    Eigen::Vector3d tet_centroid = (a + b + c) / 4.0;  // centroid of tetra (0,a,b,c)
+    m.V += vol;
+    m.C += vol * tet_centroid;
+  }
+  return m;
+}
+
+inline bool computeVolumeCentroid(const std::vector<Eigen::Vector3d>& V,
+                                  const std::vector<geometry::TriangleMesh::Face>& F, Eigen::Vector3d& out_centroid)
+{
+  auto M = accumulateVolumeMoments(V, F);
+  if (!std::isfinite(M.V) || std::abs(M.V) < 1e-18)
+    return false;
+  out_centroid = M.C / M.V;
+  return std::isfinite(out_centroid.x()) && std::isfinite(out_centroid.y()) && std::isfinite(out_centroid.z());
+}
+
+}  // anonymous namespace
+
+inline void applyOriginPolicyToMeshifiedPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
+                                                  const std::vector<geometry::TriangleMesh::Face>& F)
+{
+  using geometry::OriginPolicy;
+  if (V.empty())
+    return;
+
+  switch (s.origin)
+  {
+    case OriginPolicy::Native:
+      // No-op
+      return;
+
+    case OriginPolicy::AABBCenter:
+    {
+      AABB bb = computeAABB(V);
+      const Eigen::Vector3d ctr = aabbCenter(bb);
+      for (auto& p : V)
+        p -= ctr;
+      return;
+    }
+
+    case OriginPolicy::BaseCenter:
+    {
+      // Use actual base plane z = min z (robust to tiny numerical deviations)
+      AABB bb = computeAABB(V);
+      const double zmin = bb.min.z();
+      const double eps = std::max(1e-12, 1e-6 * (bb.max - bb.min).norm());
+      const Eigen::Vector3d bctr = baseCenterXY(V, zmin, eps);
+      for (auto& p : V)
+        p -= bctr;
+      return;
+    }
+
+    case OriginPolicy::VolumeCentroid:
+    {
+      Eigen::Vector3d C;
+      if (computeVolumeCentroid(V, F, C))
+      {
+        for (auto& p : V)
+          p -= C;
+      }
+      else
+      {
+        // Fallback to AABBCenter if centroid cannot be computed (open mesh / degenerate)
+        AABB bb = computeAABB(V);
+        const Eigen::Vector3d ctr = aabbCenter(bb);
+        for (auto& p : V)
+          p -= ctr;
+      }
+      return;
+    }
+  }
+}
+
 /*
 CONVENTION
 - All primitives are tessellated in a base-aligned frame with z E [0, H]
@@ -105,32 +252,38 @@ inline void meshifyConeFrustum(double r0, double r1, double h, int sides, std::v
     T(iTopC, static_cast<Index>(sides + i + 1), static_cast<Index>(sides + i));
 }
 
-// Triangular prism with your convention:
-// - Z = height axis
-// - X = extrusion/depth (thickness)
-// - Y = base-axis of the triangle (triangle lies in the YZ plane)
-// Parameters: W (base width along +Y), D (extrusion thickness along X), H (triangle height along +Z), u (apex offset along +Y)
+// Triangular prism (base in XY, extruded along +Z), with
+//   X = triangle height D
+//   Y = base width W
+//   Z = extrusion/height H
+// Apex projection offset u along the base (Y) with 0<=u<=W.
+//
+// Base triangle at z=0:
+//   A = (0, 0, 0)
+//   B = (0, W, 0)          // base along +Y
+//   C = (D, u, 0)          // apex at +X, offset u along Y
 inline void meshifyTriangularPrism(double W, double D, double H, double u, std::vector<Eigen::Vector3d>& V,
                                    std::vector<TriangleMesh::Face>& F)
 {
-  using Index = TriangleMesh::Index;
+  using Index = geometry::TriangleMesh::Index;
   V.clear();
   F.clear();
 
-  const double x0 = -0.5 * D;  // lower cap (−X)
-  const double x1 = +0.5 * D;  // upper cap (+X)
+  // (Optional) input checks:
+  // if (!(W > 0.0 && D > 0.0 && H > 0.0) || u < 0.0 || u > W)
+  //   throw std::runtime_error("TriangularPrism: invalid (W>0,D>0,H>0, 0<=u<=W)");
 
-  // Base triangle in the YZ plane:
-  //   A = (x, y=0,   z=0)
-  //   B = (x, y=W,   z=0)
-  //   C = (x, y=u,   z=H)
-  const Eigen::Vector3d A0(x0, 0.0, 0.0);
-  const Eigen::Vector3d B0(x0, W, 0.0);
-  const Eigen::Vector3d C0(x0, u, H);
+  const double z0 = 0.0, z1 = H;
 
-  const Eigen::Vector3d A1(x1, 0.0, 0.0);
-  const Eigen::Vector3d B1(x1, W, 0.0);
-  const Eigen::Vector3d C1(x1, u, H);
+  // z = 0
+  const Eigen::Vector3d A0(0.0, 0.0, z0);
+  const Eigen::Vector3d B0(0.0, W, z0);
+  const Eigen::Vector3d C0(D, u, z0);
+
+  // z = H
+  const Eigen::Vector3d A1(0.0, 0.0, z1);
+  const Eigen::Vector3d B1(0.0, W, z1);
+  const Eigen::Vector3d C1(D, u, z1);
 
   const Index iA0 = static_cast<Index>(V.size());
   V.push_back(A0);
@@ -147,22 +300,17 @@ inline void meshifyTriangularPrism(double W, double D, double H, double u, std::
 
   auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
 
-  // Caps:
-  // x = -D/2 cap faces −X → reverse winding vs +X
-  T(iA0, iC0, iB0);
-  // x = +D/2 cap faces +X
-  T(iA1, iB1, iC1);
+  // Caps: bottom faces −Z (reverse), top faces +Z (CCW)
+  T(iA0, iC0, iB0);  // z=0
+  T(iA1, iB1, iC1);  // z=H
 
-  // Side quads split into triangles, connecting ring at x0 to ring at x1
-  // Edge AB
+  // Sides
   T(iA0, iB0, iB1);
-  T(iA0, iB1, iA1);
-  // Edge BC
+  T(iA0, iB1, iA1);  // AB
   T(iB0, iC0, iC1);
-  T(iB0, iC1, iB1);
-  // Edge CA
+  T(iB0, iC1, iB1);  // BC
   T(iC0, iA0, iA1);
-  T(iC0, iA1, iC1);
+  T(iC0, iA1, iC1);  // CA
 }
 
 inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F)
@@ -302,14 +450,20 @@ inline void meshifySphericalSegment(double a1, double a2, double H, int radial_r
 inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
                              std::vector<TriangleMesh::Face>& F, int radial_res = 64, int axial_res = 16)
 {
+  bool ok = false;
+
   switch (s.type)
   {
     case geometry::ShapeType::Cylinder:
       meshifyCylinder(s.dimensions.at(0), s.dimensions.at(1), radial_res, V, F);
-      return true;
+      ok = true;
+      break;
+
     case geometry::ShapeType::Cone:
       meshifyConeFrustum(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, V, F);
-      return true;
+      ok = true;
+      break;
+
     case geometry::ShapeType::TriangularPrism:
     {
       const double W = s.dimensions.at(0);
@@ -317,18 +471,39 @@ inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector
       const double H = s.dimensions.at(2);
       const double u = (s.dimensions.size() > 3) ? s.dimensions[3] : 0.0;
       meshifyTriangularPrism(W, D, H, u, V, F);
-      return true;
+      ok = true;
+      break;
     }
+
     case geometry::ShapeType::SphericalSegment:
       meshifySphericalSegment(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, axial_res, V, F);
-      return true;
+      ok = true;
+      break;
+
     case geometry::ShapeType::Box:
       meshifyBox(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), V, F);
-      return true;
+      ok = true;
+      break;
+
     case geometry::ShapeType::Mesh:
     default:
-      return false;
+      return false;  // not a primitive
   }
+
+  if (!ok)
+    return false;
+
+  // 1) Apply origin policy (translates vertices so (0,0,0) matches the policy)
+  applyOriginPolicyToMeshifiedPrimitive(s, V, F);
+
+  // 2) Apply per-instance non-uniform scale around the origin (safe since origin now at 0)
+  if (s.scale != Eigen::Vector3d(1, 1, 1))
+  {
+    for (auto& p : V)
+      p = p.cwiseProduct(s.scale);
+  }
+
+  return true;
 }
 
 }  // namespace geometry
