@@ -430,76 +430,77 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
 
 geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
 {
+  using namespace tinyxml2;
+
   geometry::Shape s;
   s.type = geometry::ShapeType::Line;
 
-  std::string anchor;
-  (void)tryEvalTextAttribute(elem, "anchor", &anchor);
-
   const auto* axis_elem = elem->FirstChildElement("AxisDirection");
-  const auto* len_elem = elem->FirstChildElement("Length");
+  const auto* dims_elem = elem->FirstChildElement("Dimensions");
   const auto* vtx_elem = elem->FirstChildElement("Vertex");
 
-  const bool use_axis_length = (axis_elem && len_elem);
+  const bool use_axis_dims = (axis_elem && dims_elem);
   const bool use_vertices = (vtx_elem != nullptr);
 
-  if (use_axis_length && use_vertices)
-    throw std::runtime_error("Line: Specify either (AxisDirection + Length) or two Vertex tags, not both.");
+  if (use_axis_dims && use_vertices)
+    throw std::runtime_error(
+        "Line: Specify either (AxisDirection + <Dimensions length=\"...\"/>) or two <Vertex> tags, not both.");
 
-  if (use_axis_length)
+  if (use_axis_dims)
   {
-    if (anchor.empty())
-      anchor = "center";
-
+    // Parse axis and require <Dimensions length="...">
     Eigen::Vector3d axis = parseUnitVector(axis_elem);
     s.axes.push_back(axis);
 
-    double length = evalNumberAttributeRequired(len_elem, "value");
-    if (length <= 0)
-      throw std::runtime_error("Line: Length must be positive.");
+    if (!dims_elem->FindAttribute("length"))
+      throw std::runtime_error("Line: <Dimensions> must include a 'length' attribute.");
+    const double length = evalNumberAttributeRequired(dims_elem, "length");
+    if (!(length > 0.0))
+      throw std::runtime_error("Line: length must be positive.");
 
-    const Eigen::Vector3d n = axis.normalized();
-    if (anchor == "begin")
-    {
-      s.vertices.emplace_back(0.0, 0.0, 0.0);
-      s.vertices.emplace_back(n * length);
-    }
-    else if (anchor == "center")
-    {
-      s.vertices.emplace_back(-0.5 * n * length);
-      s.vertices.emplace_back(0.5 * n * length);
-    }
-    else
-    {
-      throw std::runtime_error("Line: Unknown anchor '" + anchor + "'. Allowed: begin, center.");
-    }
+    // Store length in Shape::dimensions[0]; DO NOT create vertices.
+    s.dimensions.clear();
+    s.dimensions.push_back(length);
+
+    // Optional: keep axes sanity check
+    validateAxesOrthonormal(s, elem);
   }
   else if (use_vertices)
   {
-    for (const auto* v = vtx_elem; v; v = v->NextSiblingElement("Vertex"))
+    // Exactly two vertices
+    std::array<const XMLElement*, 2> Vxml{};
+    int count = 0;
+    for (auto* v = vtx_elem; v && count < 2; v = v->NextSiblingElement("Vertex"))
+      Vxml[count++] = v;
+
+    if (count != 2 || Vxml[1] == nullptr)
+      throw std::runtime_error("Line: Must have exactly two <Vertex> tags.");
+
+    s.vertices.reserve(2);
+    for (int i = 0; i < 2; ++i)
     {
-      double x = evalNumberAttributeRequired(v, "x");
-      double y = evalNumberAttributeRequired(v, "y");
+      const auto* v = Vxml[i];
+      const double x = evalNumberAttributeRequired(v, "x");
+      const double y = evalNumberAttributeRequired(v, "y");
       double z = 0.0;
-      tryEvalNumberAttribute(v, "z", &z);
+      const bool z_present = (v->FindAttribute("z") != nullptr);
+      if (z_present)
+        tryEvalNumberAttribute(v, "z", &z);
       s.vertices.emplace_back(x, y, z);
     }
-    if (s.vertices.size() != 2)
-      throw std::runtime_error("Line: Must have exactly 2 Vertex tags.");
 
-    const bool z0 = (s.vertices[0].z() == 0.0 && s.vertices[1].z() == 0.0);
-    const bool zN = (s.vertices[0].z() != 0.0 || s.vertices[1].z() != 0.0);
-    if (!z0 && !zN)
-      throw std::runtime_error("Line: Vertices must either both have z=0 or both specify z values.");
+    // Either both specify z or neither
+    const bool z0 = (Vxml[0]->FindAttribute("z") != nullptr);
+    const bool z1 = (Vxml[1]->FindAttribute("z") != nullptr);
+    if (z0 != z1)
+      throw std::runtime_error("Line: Either both vertices specify 'z' or neither does.");
   }
   else
   {
-    throw std::runtime_error("Line: Must specify either (AxisDirection + Length) or two Vertex tags.");
+    throw std::runtime_error(
+        "Line: Provide either (AxisDirection + <Dimensions length=\"...\"/>) or two <Vertex> tags.");
   }
 
-  // If we set s.axes for Axis+Length, validate unit length.
-  if (!s.axes.empty())
-    validateAxesOrthonormal(s, elem);
   return s;
 }
 
