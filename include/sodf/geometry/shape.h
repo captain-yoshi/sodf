@@ -63,6 +63,25 @@ enum class ShapeType
   Mesh,
 };
 
+// Where to place the local origin (0,0,0) for a shape/mesh
+//
+// Semantics:
+// - Native            : Do not adjust; use vertices/URI frame as-authored.
+// - BaseCenter        : Base-aligned (zE[0,H]), origin at base center (x_mid,y_mid,z=0).
+// - BaseMinCornerXY   : Base at z=0; origin at base AABB min corner (x_min,y_min,0).
+// - BaseMaxCornerXY   : Base at z=0; origin at base AABB max corner (x_max,y_max,0).
+// - AABBCenter        : Origin at full-shape AABB geometric center.
+// - VolumeCentroid : Origin at (volume/area) centroid (fallback: AABBCenter).
+enum class OriginPolicy
+{
+  Native = 0,
+  BaseCenter,
+  // BaseMinCornerXY,
+  // BaseMaxCornerXY,
+  AABBCenter,
+  VolumeCentroid,
+};
+
 struct TriangleMesh
 {
   using Index = uint32_t;
@@ -91,6 +110,8 @@ struct Shape
   std::vector<Eigen::Vector3d> vertices;  // line, polygon bases...
   Eigen::Vector3d scale{ 1, 1, 1 };       // per-instance scale
   MeshSource mesh;                        // choose internal or external
+
+  OriginPolicy origin = OriginPolicy::Native;
 };
 
 struct StackedShapeEntry
@@ -100,6 +121,120 @@ struct StackedShapeEntry
   // Pose of this shape expressed in the stack/base frame.
   Eigen::Isometry3d base_transform;
 };
+
+inline bool isPrimitive(geometry::ShapeType t)
+{
+  using geometry::ShapeType;
+  switch (t)
+  {
+    case ShapeType::None:
+    case ShapeType::Mesh:
+      return false;
+    default:
+      return true;
+  }
+}
+
+inline bool isPrimitive2D(geometry::ShapeType t)
+{
+  using geometry::ShapeType;
+  switch (t)
+  {
+    case ShapeType::Line:  // 2D or 3D; counted as 2D-capable
+    case ShapeType::Rectangle:
+    case ShapeType::Circle:
+    case ShapeType::Polygon:
+    case ShapeType::Triangle:
+    case ShapeType::Plane:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool isPrimitive3D(geometry::ShapeType t)
+{
+  using geometry::ShapeType;
+  switch (t)
+  {
+    case ShapeType::Line:  // 2D or 3D; counted as 3D-capable
+    case ShapeType::Box:
+    case ShapeType::TriangularPrism:
+    case ShapeType::Cylinder:
+    case ShapeType::Sphere:
+    case ShapeType::Cone:
+    case ShapeType::SphericalSegment:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool isPrimitive(const geometry::Shape& s)
+{
+  return isPrimitive(s.type);
+}
+inline bool isPrimitive2D(const geometry::Shape& s)
+{
+  return isPrimitive2D(s.type);
+}
+inline bool isPrimitive3D(const geometry::Shape& s)
+{
+  return isPrimitive3D(s.type);
+}
+
+inline bool primitiveHasDimensions(const geometry::Shape& s)
+{
+  return !s.dimensions.empty();
+}
+inline bool primitiveHasVertices(const geometry::Shape& s)
+{
+  return !s.vertices.empty();
+}
+
+// Dimension-less by SPEC: shapes that are not defined via `dimensions[]`.
+inline bool isDimensionless(geometry::ShapeType t)
+{
+  using geometry::ShapeType;
+  switch (t)
+  {
+    case ShapeType::Polygon:
+    case ShapeType::Triangle:
+    case ShapeType::Mesh:
+    case ShapeType::None:
+      return true;  // not dimension-led by design
+    default:
+      return false;  // supports/uses dimensions
+  }
+}
+
+// Dimension-less by INSTANCE: either the type is dimension-less by spec,
+// or this instance simply has no dimensions filled in.
+inline bool isDimensionless(const geometry::Shape& s)
+{
+  if (isDimensionless(s.type))
+    return true;                // spec says no dims
+  return s.dimensions.empty();  // no dims provided in this instance
+}
+
+inline bool hasExternalMesh(const Shape& s)
+{
+  return std::holds_alternative<MeshRef>(s.mesh);
+}
+inline bool hasInlineMesh(const Shape& s)
+{
+  return std::holds_alternative<InlineMeshPtr>(s.mesh);
+}
+inline const MeshRef* getExternalMesh(const Shape& s)
+{
+  return std::get_if<MeshRef>(&s.mesh);
+}
+inline const TriangleMesh* getInlineMesh(const Shape& s)
+{
+  if (const auto p = std::get_if<TriangleMeshPtr>(&s.mesh))
+    return p->get();
+  return nullptr;
+}
 
 bool is2DShape(const Shape& shape);
 double shapeHeight(const Shape& shape);
@@ -254,25 +389,6 @@ inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
 
   os << ")";
   return os;
-}
-
-inline bool hasExternal(const Shape& s)
-{
-  return std::holds_alternative<MeshRef>(s.mesh);
-}
-inline bool hasInline(const Shape& s)
-{
-  return std::holds_alternative<InlineMeshPtr>(s.mesh);
-}
-inline const MeshRef* ext(const Shape& s)
-{
-  return std::get_if<MeshRef>(&s.mesh);
-}
-inline const TriangleMesh* inl(const Shape& s)
-{
-  if (const auto p = std::get_if<TriangleMeshPtr>(&s.mesh))
-    return p->get();
-  return nullptr;
 }
 
 }  // namespace geometry
