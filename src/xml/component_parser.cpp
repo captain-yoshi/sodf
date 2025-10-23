@@ -136,7 +136,7 @@ void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLEle
   const tinyxml2::XMLElement* bbox = elem->FirstChildElement("BoundingBox");
   if (bbox)
     if (const auto* shape = bbox->FirstChildElement("Shape"))
-      link.bbox = parseBoxShape(shape);
+      link.bbox = parseShape(doc, shape);
 
   // Collision (required)
   const auto* collision = elem->FirstChildElement("Collision");

@@ -193,32 +193,6 @@ geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
   s.dimensions.push_back(depth);
   s.dimensions.push_back(height);
 
-  // Anchor (default: center)
-  // std::string anchor = elem->Attribute("anchor") ? elem->Attribute("anchor") : "center";
-  // // Allowed: center, bottom, top
-  // //  - center:  box spans [-w/2,+w/2], [-d/2,+d/2], [-h/2,+h/2] about origin
-  // //  - bottom:  origin at bottom face center -> center is +h/2 along height axis
-  // //  - top:     origin at top face center    -> center is -h/2 along height axis
-  // if (anchor == "center")
-  // {
-  //   s.origin_offset = Eigen::Vector3d::Zero();
-  // }
-  // else if (anchor == "bottom")
-  // {
-  //   s.origin_offset = 0.5 * height * az;
-  // }
-  // else if (anchor == "top")
-  // {
-  //   s.origin_offset = -0.5 * height * az;
-  // }
-  // else
-  // {
-  //   throw std::runtime_error("Box: Unknown anchor '" + anchor +
-  //                            "'. Allowed: center, bottom, top. "
-  //                            "At line " +
-  //                            std::to_string(elem->GetLineNum()));
-  // }
-
   validateAxesOrthonormal(s, elem);
   return s;
 }
@@ -529,42 +503,151 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   return s;
 }
 
+void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, const tinyxml2::XMLElement* elem)
+{
+  using geometry::OriginPolicy;
+  using geometry::ShapeType;
+
+  const std::string line = std::to_string(elem->GetLineNum());
+
+  // (1) Mesh: origin must be unset or Native
+  if (s.type == ShapeType::Mesh)
+  {
+    if (!origin_present)
+      return;  // OK
+    if (s.origin == OriginPolicy::Native)
+      return;  // OK
+    throw std::runtime_error("Mesh 'origin' must be 'Native' or omitted (line " + line + ")");
+  }
+
+  // Non-mesh primitives only below
+  if (!isPrimitive(s.type))
+    return;  // ShapeType::None etc.
+
+  const bool has_dims = primitiveHasDimensions(s);
+  const bool has_verts = primitiveHasVertices(s);
+
+  // (3) 3D primitives cannot have vertices -> must use Mesh
+  if (s.type != ShapeType::Line && isPrimitive3D(s.type) && has_verts)
+  {
+    throw std::runtime_error("3D primitives cannot use <Vertices> (except Line). Use type='Mesh' instead (line " +
+                             line + ")");
+  }
+
+  // (2) Primitives with dimensions: origin required and must be != Native
+  if (has_dims)
+  {
+    if (!origin_present)
+    {
+      throw std::runtime_error("Primitive with <Dimensions> requires explicit 'origin' attribute (line " + line + ")");
+    }
+    if (s.origin == OriginPolicy::Native)
+    {
+      throw std::runtime_error("Primitive with <Dimensions> must have origin != 'Native' (line " + line + ")");
+    }
+    return;  // OK
+  }
+
+  // 2D vertex-authored primitives: only Native or omitted
+  if (has_verts)
+  {
+    if (!origin_present)
+      return;  // OK
+    if (s.origin == OriginPolicy::Native)
+      return;  // OK
+    throw std::runtime_error("Vertex-authored primitive allows only origin='Native' or no attribute (line " + line +
+                             ")");
+  }
+
+  // If neither dims nor vertices are provided for a primitive, it's ill-formed
+  throw std::runtime_error("Primitive is missing authoring data (<Dimensions> or <Vertices>) (line " + line + ")");
+}
+
+std::optional<geometry::OriginPolicy> parseOriginPolicyAttr(const tinyxml2::XMLElement* elem)
+{
+  const char* raw = elem->Attribute("origin");
+  if (!raw)
+    return std::nullopt;
+
+  using geometry::OriginPolicy;
+  std::string_view v(raw);
+
+  if (v == "Native")
+    return OriginPolicy::Native;
+  if (v == "BaseCenter")
+    return OriginPolicy::BaseCenter;
+  if (v == "AABBCenter")
+    return OriginPolicy::AABBCenter;
+  if (v == "VolumeCentroid")
+    return OriginPolicy::VolumeCentroid;
+
+  throw std::runtime_error(std::string("Unknown origin policy '") + std::string(v) + "' at line " +
+                           std::to_string(elem->GetLineNum()));
+}
+
 geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
 {
   const std::string type_str = evalTextAttributeRequired(elem, "type");
   geometry::ShapeType type = geometry::shapeTypeFromString(type_str.c_str());
 
+  geometry::Shape s;
   switch (type)
   {
     case geometry::ShapeType::Rectangle:
-      return parseRectangleShape(elem);
+      s = parseRectangleShape(elem);
+      break;
     case geometry::ShapeType::Circle:
-      return parseCircleShape(elem);
+      s = parseCircleShape(elem);
+      break;
     case geometry::ShapeType::Triangle:
-      return parseTriangleShape(elem);
+      s = parseTriangleShape(elem);
+      break;
     case geometry::ShapeType::Polygon:
-      return parsePolygonShape(elem);
+      s = parsePolygonShape(elem);
+      break;
     case geometry::ShapeType::Box:
-      return parseBoxShape(elem);
+      s = parseBoxShape(elem);
+      break;
     case geometry::ShapeType::TriangularPrism:
-      return parseTriangularPrismShape(elem);
+      s = parseTriangularPrismShape(elem);
+      break;
     case geometry::ShapeType::Cylinder:
-      return parseCylinderShape(elem);
+      s = parseCylinderShape(elem);
+      break;
     case geometry::ShapeType::Sphere:
-      return parseSphereShape(elem);
+      s = parseSphereShape(elem);
+      break;
     case geometry::ShapeType::Cone:
-      return parseConeShape(elem);
+      s = parseConeShape(elem);
+      break;
     case geometry::ShapeType::SphericalSegment:
-      return parseSphericalSegmentShape(elem);
+      s = parseSphericalSegmentShape(elem);
+      break;
     case geometry::ShapeType::Plane:
-      return parsePlaneShape(elem);
+      s = parsePlaneShape(elem);
+      break;
     case geometry::ShapeType::Mesh:
-      return parseMeshShape(doc, elem);
+      s = parseMeshShape(doc, elem);
+      break;
     case geometry::ShapeType::Line:
-      return parseLineShape(elem);
+      s = parseLineShape(elem);
+      break;
     default:
       throw std::runtime_error("Unknown shape type in parseShapeElement at line " + std::to_string(elem->GetLineNum()));
   }
+
+  // Parse optional origin attribute
+  const auto origin_attr = parseOriginPolicyAttr(elem);
+  const bool origin_present = origin_attr.has_value();
+  if (origin_present)
+  {
+    s.origin = *origin_attr;  // default was Native; overwrite if present
+  }
+
+  // Enforce your rules
+  validateOriginAuthoring(s, origin_present, elem);
+
+  return s;
 }
 
 components::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* stacked_elem)

@@ -366,7 +366,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
 TEST(XMLParser, ParseRectangleShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Rectangle">
+    <Shape type="Rectangle" origin="AABBCenter">
       <AxisNormal x="1.0" y="0.0" z="0.0"/>
       <AxisWidth x="0.0" y="1.0" z="0.0"/>
       <AxisHeight x="0.0" y="0.0" z="1.0"/>
@@ -391,7 +391,7 @@ TEST(XMLParser, ParseRectangleShape)
 TEST(XMLParser, ParseCircleShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Circle">
+    <Shape type="Circle" origin="AABBCenter">
       <AxisNormal x="0.0" y="0.0" z="1.0"/>
       <AxisMajor x="1.0" y="0.0" z="0.0"/>
       <Dimensions radius="0.025"/>
@@ -414,7 +414,7 @@ TEST(XMLParser, ParseCircleShape)
 TEST(XMLParser, ParseTriangleShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Triangle">
+    <Shape type="Triangle" origin="Native">
       <AxisNormal x="0.0" y="0.0" z="1.0"/>
       <AxisX x="1.0" y="0.0" z="0.0"/>
       <AxisY x="0.0" y="1.0" z="0.0"/>
@@ -443,7 +443,7 @@ TEST(XMLParser, ParseTriangleShape)
 TEST(XMLParser, ParsePolygonShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Polygon">
+    <Shape type="Polygon" origin="Native">
       <AxisNormal x="0.0" y="0.0" z="1.0"/>
       <AxisX x="1.0" y="0.0" z="0.0"/>
       <AxisY x="0.0" y="1.0" z="0.0"/>
@@ -473,7 +473,7 @@ TEST(XMLParser, ParsePolygonShape)
 TEST(XMLParser, ParseBoxShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Box">
+    <Shape type="Box" origin="AABBCenter">
       <AxisWidth x="1.0" y="0.0" z="0.0"/>
       <AxisDepth x="0.0" y="1.0" z="0.0"/>
       <AxisHeight x="0.0" y="0.0" z="1.0"/>
@@ -497,7 +497,7 @@ TEST(XMLParser, ParseBoxShape)
 TEST(XMLParser, ParseCylinderShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Cylinder">
+    <Shape type="Cylinder" origin="AABBCenter">
       <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
       <AxisReference x="1.0" y="0.0" z="0.0"/>
       <Dimensions radius="0.012" height="0.20"/>
@@ -519,7 +519,7 @@ TEST(XMLParser, ParseCylinderShape)
 TEST(XMLParser, ParseSphereShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Sphere">
+    <Shape type="Sphere" origin="AABBCenter">
       <Dimensions radius="0.015"/>
     </Shape>)";
 
@@ -554,7 +554,7 @@ TEST(XMLParser, ParseMeshShape)
 TEST(XMLParser, ParsePlaneShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Plane">
+    <Shape type="Plane" origin="AABBCenter">
       <AxisNormal x="0.0" y="0.0" z="1.0"/>
       <AxisX x="1.0" y="0.0" z="0.0"/>
       <AxisY x="0.0" y="1.0" z="0.0"/>
@@ -578,7 +578,7 @@ TEST(XMLParser, ParsePlaneShape)
 TEST(XMLParser, ParseConeShape)
 {
   std::string xml_txt = R"(
-    <Shape type="Cone">
+    <Shape type="Cone" origin="AABBCenter">
       <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
       <AxisReference x="1.0" y="0.0" z="0.0"/>
       <Dimensions base_radius="0.01" top_radius="0.002" height="0.025"/>
@@ -600,9 +600,9 @@ TEST(XMLParser, ParseConeShape)
 TEST(XMLParser, ParseLineShapeAnchor)
 {
   std::string xml_txt = R"(
-    <Shape type="Line" anchor="center">
+    <Shape type="Line" anchor="center" origin="AABBCenter">
       <AxisDirection x="0.0" y="1.0" z="0.0"/>
-      <Length value="0.15"/>
+      <Dimensions length="0.15"/>
     </Shape>)";
 
   tinyxml2::XMLDocument doc;
@@ -615,6 +615,7 @@ TEST(XMLParser, ParseLineShapeAnchor)
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 1);
   EXPECT_EQ(shape.axes[0], Eigen::Vector3d(0.0, 1.0, 0.0));  // AxisDirection
+  EXPECT_NEAR(shape.dimensions[0], 0.15, 1e-12);
 }
 
 TEST(XMLParser, ParseLine2DShape)
@@ -634,6 +635,10 @@ TEST(XMLParser, ParseLine2DShape)
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
+  EXPECT_NEAR(shape.vertices[0].x(), 1.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[0].y(), 4.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[1].x(), 1.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[1].y(), 2.0, 1e-12);
 }
 
 TEST(XMLParser, ParseLine3DShape)
@@ -653,6 +658,12 @@ TEST(XMLParser, ParseLine3DShape)
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
+  EXPECT_NEAR(shape.vertices[0].x(), 1.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[0].y(), 2.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[0].z(), 3.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[1].x(), 6.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[1].y(), 3.0, 1e-12);
+  EXPECT_NEAR(shape.vertices[1].z(), 4.0, 1e-12);
 }
 
 TEST(XMLParser, FluidDomaineShapeComponent)
@@ -663,22 +674,22 @@ TEST(XMLParser, FluidDomaineShapeComponent)
       <StackedShape id="stacked_shape">
         <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
         <AxisStackReference x="0.0" y="1.0" z="0.0"/>
-        <Shape type="SphericalSegment">
+        <Shape type="SphericalSegment" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
         </Shape>
-        <Shape type="Cone">
+        <Shape type="Cone" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
         </Shape>
-        <Shape type="Cone">
+        <Shape type="Cone" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
         </Shape>
-        <Shape type="Cylinder">
+        <Shape type="Cylinder" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions radius="0.00275" height="0.0040"/>
@@ -770,22 +781,22 @@ TEST(XMLParser, ContainerComponent)
       <StackedShape id="stacked_shape">
         <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
         <AxisStackReference x="0.0" y="1.0" z="0.0"/>
-        <Shape type="SphericalSegment">
+        <Shape type="SphericalSegment" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
         </Shape>
-        <Shape type="Cone">
+        <Shape type="Cone" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
         </Shape>
-        <Shape type="Cone">
+        <Shape type="Cone" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
         </Shape>
-        <Shape type="Cylinder">
+        <Shape type="Cylinder" origin="AABBCenter">
           <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
           <AxisReference x="1.0" y="0.0" z="0.0"/>
           <Dimensions radius="0.00275" height="0.0040"/>
@@ -887,7 +898,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
       <Object id="test">
 
         <!-- FRONT SURFACE (normal +X) -->
-        <Shape id="area/front/handle" type="Rectangle">
+        <Shape id="area/front/handle" type="Rectangle" origin="AABBCenter">
           <Transform parent="root">
             <Position x="-0.01" y="-0.3" z="0.7"/> <!-- +0.01 along X -->
             <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
@@ -899,7 +910,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </Shape>
 
         <!-- BACK SURFACE (normal -X) -->
-        <Shape id="area/back/handle" type="Rectangle">
+        <Shape id="area/back/handle" type="Rectangle" origin="AABBCenter">
           <Transform parent="root">
             <Position x="0.01" y="-0.3" z="0.7"/> <!-- -0.01 along X -->
             <Orientation roll="0.0" pitch="0.0" yaw="pi"/>
@@ -911,7 +922,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </Shape>
 
         <!-- LEFT SURFACE (normal -Y) -->
-        <Shape id="area/left/handle" type="Rectangle">
+        <Shape id="area/left/handle" type="Rectangle" origin="AABBCenter">
           <Transform parent="root">
             <Position x="0.0" y="-0.29" z="0.7"/> <!-- -0.01 along Y -->
             <Orientation roll="0.0" pitch="0.0" yaw="-pi/2"/>
@@ -923,7 +934,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
         </Shape>
 
         <!-- RIGHT SURFACE (normal +Y) -->
-        <Shape id="area/right/handle" type="Rectangle">
+        <Shape id="area/right/handle" type="Rectangle" origin="AABBCenter">
           <Transform parent="root">
             <Position x="0.0" y="-0.31" z="0.7"/> <!-- +0.01 along Y -->
             <Orientation roll="0.0" pitch="0.0" yaw="+pi/2"/>
@@ -984,8 +995,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(0.05, vshape.dimensions.at(1));
     ASSERT_TRUE(vshape.vertices.empty());
     ASSERT_EQ(3, vshape.axes.size());
-    ASSERT_FALSE(sodf::geometry::hasExternal(vshape));
-    ASSERT_FALSE(sodf::geometry::hasInline(vshape));
+    ASSERT_FALSE(sodf::geometry::hasExternalMesh(vshape));
+    ASSERT_FALSE(sodf::geometry::hasInlineMesh(vshape));
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, -1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, -1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
@@ -996,7 +1007,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     <Root>
       <Object id="test">
 
-        <Shape id="box" type="Box">
+        <Shape id="box" type="Box" origin="AABBCenter">
           <Transform parent="root">
             <Position x="0.0" y="-0.3" z="0.1"/>
             <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
@@ -1054,8 +1065,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(3, vshape.axes.size());
     // ASSERT_TRUE(vshape.vertices.empty());
 
-    ASSERT_FALSE(sodf::geometry::hasExternal(vshape));
-    ASSERT_FALSE(sodf::geometry::hasInline(vshape));
+    ASSERT_FALSE(sodf::geometry::hasExternalMesh(vshape));
+    ASSERT_FALSE(sodf::geometry::hasInlineMesh(vshape));
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(0, 0, 1)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 1, 0)));
     ASSERT_TRUE(vshape.axes[2].isApprox(Eigen::Vector3d(-1, 0, 0)));
@@ -1066,7 +1077,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     <Root>
       <Object id="test">
 
-        <Shape id="cylinder" type="Cylinder">
+        <Shape id="cylinder" type="Cylinder" origin="AABBCenter">
           <Transform parent="root">
             <Position x="0.0" y="0.0" z="1.0"/>
             <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
@@ -1124,8 +1135,8 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     ASSERT_EQ(2, vshape.axes.size());
     ASSERT_TRUE(vshape.axes[0].isApprox(Eigen::Vector3d(1, 0, 0)));
     ASSERT_TRUE(vshape.axes[1].isApprox(Eigen::Vector3d(0, 0, 1)));
-    ASSERT_FALSE(sodf::geometry::hasExternal(vshape));
-    ASSERT_FALSE(sodf::geometry::hasInline(vshape));
+    ASSERT_FALSE(sodf::geometry::hasExternalMesh(vshape));
+    ASSERT_FALSE(sodf::geometry::hasInlineMesh(vshape));
     ASSERT_EQ(2, vshape.vertices.size());
     ASSERT_TRUE(vshape.vertices[0].isApprox(Eigen::Vector3d(-0.01, 0, 0)));
     ASSERT_TRUE(vshape.vertices[1].isApprox(Eigen::Vector3d(0.01, 0, 0)));
@@ -1260,22 +1271,22 @@ TEST(XMLParser, ComponentsForLoop)
         <StackedShape id="stacked_shape">
           <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
           <AxisStackReference x="0.0" y="1.0" z="0.0"/>
-          <Shape type="SphericalSegment">
+          <Shape type="SphericalSegment" origin="AABBCenter">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
           </Shape>
-          <Shape type="Cone">
+          <Shape type="Cone" origin="AABBCenter">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
           </Shape>
-          <Shape type="Cone">
+          <Shape type="Cone" origin="AABBCenter">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
           </Shape>
-          <Shape type="Cylinder">
+          <Shape type="Cylinder" origin="AABBCenter">
             <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
             <AxisReference x="1.0" y="0.0" z="0.0"/>
             <Dimensions radius="0.00275" height="0.0040"/>
