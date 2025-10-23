@@ -103,6 +103,62 @@ inline bool exportTriangleMesh(const Shape& shape, int radial_res, int axial_res
   return (!out.V.empty() && !out.F.empty());
 }
 
+// Binary STL writer from a flat triangle list: [A0,B0,C0, A1,B1,C1, ...]
+inline bool exportTriangleListToBinarySTL(const std::vector<Eigen::Vector3d>& tri_list, const std::string& path)
+{
+  if (tri_list.size() < 3 || (tri_list.size() % 3) != 0)
+    return false;
+
+  std::ofstream ofs(path, std::ios::binary);
+  if (!ofs)
+    return false;
+
+  // 80-byte header
+  char header[80] = {};
+  std::snprintf(header, sizeof(header), "sodf-export-trilist");
+  ofs.write(header, 80);
+
+  const uint32_t triCount = static_cast<uint32_t>(tri_list.size() / 3);
+  ofs.write(reinterpret_cast<const char*>(&triCount), 4);
+
+  auto write_f32 = [&](float f) { ofs.write(reinterpret_cast<const char*>(&f), 4); };
+
+  for (size_t t = 0; t < tri_list.size(); t += 3)
+  {
+    const Eigen::Vector3d& a = tri_list[t + 0];
+    const Eigen::Vector3d& b = tri_list[t + 1];
+    const Eigen::Vector3d& c = tri_list[t + 2];
+
+    Eigen::Vector3d n = (b - a).cross(c - a);
+    const double len = n.norm();
+    if (len > 0.0)
+      n /= len;
+    else
+      n.setZero();
+
+    // normal
+    write_f32(static_cast<float>(n.x()));
+    write_f32(static_cast<float>(n.y()));
+    write_f32(static_cast<float>(n.z()));
+    // vertices
+    write_f32(static_cast<float>(a.x()));
+    write_f32(static_cast<float>(a.y()));
+    write_f32(static_cast<float>(a.z()));
+    write_f32(static_cast<float>(b.x()));
+    write_f32(static_cast<float>(b.y()));
+    write_f32(static_cast<float>(b.z()));
+    write_f32(static_cast<float>(c.x()));
+    write_f32(static_cast<float>(c.y()));
+    write_f32(static_cast<float>(c.z()));
+
+    // attribute byte count
+    uint16_t abc = 0;
+    ofs.write(reinterpret_cast<const char*>(&abc), 2);
+  }
+
+  return ofs.good();
+}
+
 // Binary STL writer
 inline bool exportTriangleMeshToBinarySTL(const TriangleMesh& M, const std::string& path)
 {
@@ -258,6 +314,26 @@ inline bool exportShapeToUriAsSTL(const Shape& shape, const std::string& out_uri
     return false;
 
   const bool ok = exportTriangleMeshToBinarySTL(M, path);
+  if (ok && out_path)
+    *out_path = path;
+  return ok;
+}
+
+inline bool exportTriangleListToUriAsSTL(const std::vector<Eigen::Vector3d>& tri_list, const std::string& out_uri,
+                                         std::string* out_path = nullptr)
+{
+  auto path_opt = resolve_output_path_for_write(out_uri);
+  if (!path_opt)
+    return false;
+
+  const std::string& path = *path_opt;
+
+  std::error_code ec;
+  std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+  if (ec)
+    return false;
+
+  const bool ok = exportTriangleListToBinarySTL(tri_list, path);
   if (ok && out_path)
     *out_path = path;
   return ok;
