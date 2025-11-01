@@ -1,5 +1,5 @@
 #include <sodf/geometry/alignment.h>
-#include <sodf/conversion.h>
+#include <sodf/geometry/frame.h>
 
 #include <gtest/gtest.h>
 
@@ -20,11 +20,11 @@ TEST(Geometry, alignCenterFrames)
   auto frame = alignCenterFrames(wTa, wTb, xTc, xTd, 1e-06);
 
   xTc.translation() = Eigen::Vector3d(0, 0, 0);
-  xTc.rotate(sodf::RPY(0, 0, M_PI_4).linear());
+  xTc.rotate(RPY(0, 0, M_PI_4).linear());
   xTc.translate(Eigen::Vector3d(0, -0.0182843, 1));
 
   xTd.translation() = Eigen::Vector3d(0, 0, 0);
-  xTd.rotate(sodf::RPY(0, 0, M_PI_4).linear());
+  xTd.rotate(RPY(0, 0, M_PI_4).linear());
   xTd.translate(Eigen::Vector3d(0, 0.01, 1));
 
   frame = alignCenterFrames(wTa, wTb, xTc, xTd, 1e-06);

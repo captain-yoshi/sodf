@@ -1,7 +1,7 @@
 #ifndef SODF_PHYSICS_LIQUID_BUILDER_H_
 #define SODF_PHYSICS_LIQUID_BUILDER_H_
 
-#include <sodf/geometry/mesh.h>         // TriangleMesh + meshifyPrimitive
+#include <sodf/geometry/mesh_shape.h>   // TriangleMesh + meshifyPrimitive
 #include <sodf/geometry/mesh_loader.h>  // loadMeshWithAssimp(uri, scale, TriangleMesh&)
 #include <sodf/geometry/shape.h>
 #include <sodf/physics/fluid_domain_shape.h>

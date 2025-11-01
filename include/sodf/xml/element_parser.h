@@ -35,7 +35,7 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem);
 geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem);
 
 geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform_elem);
-components::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* stacked_elem);
+geometry::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* stacked_elem);
 components::Button parseButton(const tinyxml2::XMLElement* btn_elem);
 components::VirtualButton parseVirtualButton(const tinyxml2::XMLElement* vb_elem);
 components::Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem);

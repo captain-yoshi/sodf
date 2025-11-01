@@ -12,7 +12,7 @@
 #include <Eigen/Geometry>
 
 #include <sodf/geometry/shape.h>        // Shape, MeshRef, InlineMeshPtr, TriangleMesh
-#include <sodf/geometry/mesh.h>         // meshifyPrimitive(...)
+#include <sodf/geometry/mesh_shape.h>   // meshifyPrimitive(...)
 #include <sodf/geometry/mesh_loader.h>  // loadMeshWithAssimp(...)
 #include <sodf/uri_resolver.h>          // resolve_resource_uri(...) (for reading)
                                         // we’ll add our own writer-side resolver

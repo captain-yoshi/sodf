@@ -18,17 +18,9 @@ struct ShapeComponent
   ElementMap<std::string, geometry::Shape> elements;
 };
 
-struct StackedShape
-{
-  std::vector<geometry::StackedShapeEntry> shapes;
-
-  Eigen::Vector3d axis_stack_direction;
-  Eigen::Vector3d axis_stack_reference;
-};
-
 struct StackedShapeComponent
 {
-  ElementMap<std::string, StackedShape> elements;
+  ElementMap<std::string, geometry::StackedShape> elements;
 };
 
 }  // namespace components

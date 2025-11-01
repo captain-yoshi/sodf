@@ -1,7 +1,7 @@
 #ifndef SODF_GEOMETRY_MESH_LOADER_H_
 #define SODF_GEOMETRY_MESH_LOADER_H_
 
-#include <sodf/geometry/mesh.h>
+#include <sodf/geometry/mesh_shape.h>
 #include <sodf/uri_resolver.h>
 
 #include <Eigen/Geometry>
