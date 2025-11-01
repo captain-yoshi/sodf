@@ -4,40 +4,28 @@
 #include <array>
 #include <vector>
 #include <string>
-#include <memory>
-#include <variant>
 #include <type_traits>
 
-#include <sodf/geometry/eigen.h>
+#include <Eigen/Geometry>
+
+#include <sodf/geometry/mesh.h>
 
 namespace sodf {
 namespace geometry {
 
-// clang-format off
-/*
-| ShapeType         | Dimensions                      | Axes                       | Vertices   | Description / Notes                                        |
-|-------------------|---------------------------------|----------------------------|------------|------------------------------------------------------------|
-| Line              | length (optional)               | direction                  | 2 points   | Works for 2D or 3D. Z vertices = 0 for 2D.                 |
-|                   |                                 |                            |            | Bounded if length > 0, infinite if = 0.                    |
-| Rectangle         | width, height                   | normal, width, height      |            |                                                            |
-| Circle            | radius                          | normal, major              |            |                                                            |
-| Triangle          |                                 | normal, in-plane x-y       | 3 points   |                                                            |
-| Polygon           |                                 | normal, in-plane x-y       | N points   | Width and height are wrt. the centroid.                    |
-| Box               | width, depth, height            | width, depth, height       |            |                                                            |
-| TriangularPrism   | width, depth, height, offset    | width, depth, height       |            | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.            |
-| Cylinder          | radius, height                  | symmetry, ref base plane   |            |                                                            |
-| Sphere            | radius                          | (none)                     |            |                                                            |
-| Cone              | base_radius, top_radius, height | symmetry, ref base plane   |            | Frustum if top_radius > 0, cone if = 0.                    |
-| SphericalSegment  | base_radius, top_radius, height | symmetry, ref base plane   |            | Cap if one radius = 0, segment if both > 0.                |
-| Plane             | width, height (optional)        | normal, in-plane x-y       |            | Bounded plane if width & height > 0, infinite if = 0.      |
+// Where to place the local origin (0,0,0) for shapes
+enum class OriginPolicy
+{
+  Native = 0,      // Do not adjust; use vertices/URI frame as-authored.
+                   // Cannot be used for primitives with dimensions.
+  BaseCenter,      // Base-aligned (zE[0,H]), origin at base center (x_mid,y_mid,z=0).
+  AABBCenter,      // Origin at full-shape AABB geometric center.
+  VolumeCentroid,  // Origin at (volume/area) centroid (fallback: AABBCenter).
 
+  // BaseMinCornerXY,    // Base at z=0; origin at base AABB min corner (x_min,y_min,0).
+  // BaseMaxCornerXY,    // Base at z=0; origin at base AABB max corner (x_max,y_max,0).
 
-| Mesh              | Parameters       | Axes                    | Description / Notes                                      |
-| ------------------------------------ | ----------------------- | -------------------------------------------------------- |
-| External          | uri              | (none, defined in file) | Can be loaded via Assimp or simplify handeled externally |
-| Inline            | vertices, faces  | (none)                  | Direct in-memory mesh                                    |
-*/
-// clang-format on
+};
 
 enum class ShapeType
 {
@@ -49,59 +37,42 @@ enum class ShapeType
   // 2D
   Rectangle,
   Circle,
-  Polygon,
   Triangle,
+  Polygon,
 
   // 3D
+  Plane,
   Box,
   TriangularPrism,
   Cylinder,
   Sphere,
   Cone,
   SphericalSegment,
-  Plane,
   Mesh,
 };
 
-// Where to place the local origin (0,0,0) for a shape/mesh
-//
-// Semantics:
-// - Native            : Do not adjust; use vertices/URI frame as-authored.
-// - BaseCenter        : Base-aligned (zE[0,H]), origin at base center (x_mid,y_mid,z=0).
-// - BaseMinCornerXY   : Base at z=0; origin at base AABB min corner (x_min,y_min,0).
-// - BaseMaxCornerXY   : Base at z=0; origin at base AABB max corner (x_max,y_max,0).
-// - AABBCenter        : Origin at full-shape AABB geometric center.
-// - VolumeCentroid : Origin at (volume/area) centroid (fallback: AABBCenter).
-enum class OriginPolicy
-{
-  Native = 0,
-  BaseCenter,
-  // BaseMinCornerXY,
-  // BaseMaxCornerXY,
-  AABBCenter,
-  VolumeCentroid,
-};
+// clang-format off
+/*
+| ShapeType         | Dimensions                          | Axes (canonical X, Y, Z)   | Vertices           | Description / Notes                                      |
+|-------------------|-------------------------------------|----------------------------|--------------------|----------------------------------------------------------|
+| Line              | length                              | direction                  | 2 points (2D/3D)   | Works for 2D or 3D. Z vertices = 0 for 2D.               |
+|                   |                                     |                            |                    | Bounded if length > 0, infinite if = 0.                  |
+| Rectangle         | width, height                       | height, width, normal      | 4 points           |                                                          |
+| Circle            | radius                              | reference x-y, normal      | -                  |                                                          |
+| Triangle          | base, altitude, apex_offset         | altitude, base, normal     | 3 points           |                                                          |
+| Polygon           | - (dimentionless)                   | x, y, normal               | N points           | Width and height are wrt. the centroid.                  |
+| Plane             | width, height (optional)            | reference x-y, normal,     | -                  | Bounded plane if width & height > 0, infinite if = 0.    |
+| Box               | width, depth, height                | depth, width, height       | -                  |                                                          |
+| TriangularPrism   | base, altitude, height, apex_offset | altitude, base, height     | -                  | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.          |
+| Cylinder          | radius, height                      | reference x-y, symmetry    | -                  |                                                          |
+| Sphere            | radius                              | (none)                     | -                  |                                                          |
+| Cone              | base_radius, top_radius, height     | reference x-y, symmetry    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
+| SphericalSegment  | base_radius, top_radius, height     | reference x-y, symmetry    | -                  | Cap if one radius = 0, segment if both > 0.              |
+| Mesh              | - (dimensionless)                   | x, y, z                    | External URI or    | Use as-authored local frame, or override with AxisX/Y/Z; |
+|                   |                                     |                            | TriangleMesh (V,F) | Supports indexed triangles; units = meters               |
+*/
+// clang-format on
 
-struct TriangleMesh
-{
-  using Index = uint32_t;
-  using Face = std::array<Index, 3>;
-
-  std::vector<Eigen::Vector3d> V;  // vertcies
-  std::vector<Face> F;             // CCW/outward
-};
-
-struct MeshRef
-{
-  std::string uri;  // asset identifier only (no scale)
-};
-
-using TriangleMeshPtr = std::shared_ptr<const TriangleMesh>;
-using InlineMeshPtr = std::shared_ptr<const TriangleMesh>;
-
-using MeshSource = std::variant<std::monostate,  // no mesh
-                                MeshRef,         // external mesh by URI
-                                InlineMeshPtr>;  // inline mesh (heap)
 struct Shape
 {
   ShapeType type = ShapeType::None;
@@ -120,6 +91,14 @@ struct StackedShapeEntry
 
   // Pose of this shape expressed in the stack/base frame.
   Eigen::Isometry3d base_transform;
+};
+
+struct StackedShape
+{
+  std::vector<geometry::StackedShapeEntry> shapes;
+
+  // Eigen::Vector3d axis_stack_direction;
+  // Eigen::Vector3d axis_stack_reference;
 };
 
 inline bool isPrimitive(geometry::ShapeType t)
@@ -237,7 +216,7 @@ inline const TriangleMesh* getInlineMesh(const Shape& s)
 }
 
 bool is2DShape(const Shape& shape);
-double shapeHeight(const Shape& shape);
+double getShapeHeight(const Shape& shape);
 
 double shapeBaseRadius(const geometry::Shape& shape);
 double shapeTopRadius(const geometry::Shape& shape);
@@ -265,10 +244,6 @@ inline double inferSegmentHeightFromRadii(double r1, double r2)
   if (r1 == r2)
     throw std::invalid_argument("Radii are equal: height is undefined for flat spherical cap");
 
-  // Solve for h such that sphere exists
-  // R = (r2² + h² - r1²) / (2h)
-  // Rearranged into: 2Rh = r2² + h² - r1² ⇒ Quadratic in h
-
   double num = r2 * r2 - r1 * r1;
   double den = 2 * std::sqrt((r1 * r1 + r2 * r2) / 2.0);  // Safe initial guess for R
   double h = std::abs(num / den);                         // Approximate; could refine if needed
@@ -294,9 +269,95 @@ inline double inferTopRadiusFromHeight(double r1, double h)
   return R * std::sin(phi);
 }
 
+inline double inferBaseRadiusFromHeight(double r2, double h)
+{
+  if (r2 < 0.0 || h <= 0.0)
+    throw std::invalid_argument("Top radius must be non-negative and height > 0");
+
+  // Mirror of inferTopRadiusFromHeight:
+  // Use the same sphere radius estimate and advance by pm h/R in angle space.
+  // R = (r^2 + h^2) / (2h)
+  const double R = (r2 * r2 + h * h) / (2.0 * h);
+
+  if (!(R > 0.0) || !std::isfinite(R))
+    throw std::invalid_argument("Invalid curvature derived from top radius and height");
+
+  // theta2 = asin(r2 / R);  phi1 = theta2 - h/R  -> r1 = R * sin(phi1)
+  const double x = std::clamp(r2 / R, -1.0, 1.0);
+  const double theta2 = std::asin(x);
+  const double phi1 = theta2 - (h / R);
+
+  const double r1 = R * std::sin(phi1);
+  if (r1 < 0.0)
+    return 0.0;  // guard tiny negatives from FP error
+  return r1;
+}
+
 Eigen::Vector3d getShapeCentroid(const Shape& shape);
 ShapeType shapeTypeFromString(const std::string& str);
 std::string shapeTypeToString(ShapeType type);
+
+// Helpers ---------------------------------------------------------------------
+
+inline const char* originPolicyToString(OriginPolicy p)
+{
+  switch (p)
+  {
+    case OriginPolicy::Native:
+      return "Native";
+    case OriginPolicy::BaseCenter:
+      return "BaseCenter";
+    case OriginPolicy::AABBCenter:
+      return "AABBCenter";
+    case OriginPolicy::VolumeCentroid:
+      return "VolumeCentroid";
+    default:
+      return "<unknown-origin>";
+  }
+}
+
+// Canonical semantic labels for axes per shape type.
+// Returns a span-like triplet of const char* for (X,Y,Z).
+struct AxisLabels
+{
+  const char* X;
+  const char* Y;
+  const char* Z;
+};
+
+inline AxisLabels shapeAxisLabels(ShapeType t)
+{
+  using ST = ShapeType;
+  switch (t)
+  {
+    case ST::Rectangle:  // axes = [Height (X), Width (Y), Normal (Z)]
+    case ST::Triangle:
+    case ST::Polygon:
+      return { "Height", "Width", "Normal" };
+    case ST::Circle:
+      return { "RefX", "RefY", "Normal" };
+    case ST::Plane:
+      return { "RefX", "RefY", "Normal" };
+    case ST::Box:  // axes = [Depth (X), Width (Y), Height (Z)]
+      return { "Depth", "Width", "Height" };
+    case ST::TriangularPrism:  // axes = [Altitude (X), Base (Y), Height (Z)]
+      return { "Altitude", "Base", "Height" };
+    case ST::Cylinder:  // axes = [RefX, RefY, Symmetry]
+    case ST::Cone:
+    case ST::SphericalSegment:
+      return { "RefX", "RefY", "Symmetry" };
+    case ST::Mesh:
+      return { "X", "Y", "Z" };  // mesh frame as-authored unless overridden
+    case ST::Line:
+      return { "Dir", "(n/a)", "(n/a)" };
+    case ST::Sphere:
+      return { "(none)", "(none)", "(none)" };
+    default:
+      return { "X", "Y", "Z" };
+  }
+}
+
+// Printers --------------------------------------------------------------------
 
 inline std::ostream& operator<<(std::ostream& os, ShapeType type)
 {
@@ -317,7 +378,14 @@ inline std::ostream& operator<<(std::ostream& os, const TriangleMesh& M)
 
 inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
 {
-  os << "Shape(type=" << shape.type;
+  // Fixed formatting for compact, deterministic logs
+  auto flags = os.flags();
+  auto prec = os.precision();
+  os.setf(std::ios::fixed, std::ios::floatfield);
+  os.precision(6);
+
+  os << "Shape(type=" << shape.type << ", origin=" << originPolicyToString(shape.origin) << ", scale=("
+     << shape.scale.x() << ", " << shape.scale.y() << ", " << shape.scale.z() << ")";
 
   // dimensions
   os << ", dimensions=[";
@@ -329,20 +397,28 @@ inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
   }
   os << "]";
 
-  // axes
-  os << ", axes=[";
-  for (size_t i = 0; i < shape.axes.size(); ++i)
+  // axes with semantic labels
+  const auto labels = shapeAxisLabels(shape.type);
+  os << ", axes={";
+  if (!shape.axes.empty())
   {
-    const auto& a = shape.axes[i];
-    os << "(" << a.x() << ", " << a.y() << ", " << a.z() << ")";
-    if (i + 1 < shape.axes.size())
-      os << ", ";
+    // Print up to first 3 axes, labelled
+    const size_t n = std::min<size_t>(shape.axes.size(), 3);
+    for (size_t i = 0; i < n; ++i)
+    {
+      const auto& a = shape.axes[i];
+      const char* name = (i == 0 ? labels.X : i == 1 ? labels.Y : labels.Z);
+      os << name << "=(" << a.x() << ", " << a.y() << ", " << a.z() << ")";
+      if (i + 1 < n)
+        os << ", ";
+    }
+    if (shape.axes.size() > 3)
+      os << ", ...+" << (shape.axes.size() - 3);
   }
-  os << "]";
+  os << "}";
 
-  // vertices
+  // vertices (limit)
   os << ", vertices=[";
-  // print up to first 4 vertices to keep logs readable
   const size_t max_show = 4;
   for (size_t i = 0; i < shape.vertices.size() && i < max_show; ++i)
   {
@@ -352,9 +428,7 @@ inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
       os << ", ";
   }
   if (shape.vertices.size() > max_show)
-  {
-    os << ", ... (+" << (shape.vertices.size() - max_show) << ")";
-  }
+    os << ", ...+" << (shape.vertices.size() - max_show);
   os << "]";
 
   // mesh (variant)
@@ -384,10 +458,10 @@ inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
       },
       shape.mesh);
 
-  // scale
-  os << ", scale=(" << shape.scale.x() << ", " << shape.scale.y() << ", " << shape.scale.z() << ")";
-
   os << ")";
+  // restore stream state
+  os.flags(flags);
+  os.precision(prec);
   return os;
 }
 

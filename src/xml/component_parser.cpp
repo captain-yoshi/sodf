@@ -19,7 +19,8 @@
 #include <sodf/components/touchscreen.h>
 #include <sodf/components/transform.h>
 
-#include <sodf/physics/liquid_builder.h>
+#include <sodf/physics/domain_shape.h>
+#include <sodf/geometry/frame.h>
 
 namespace sodf {
 namespace xml {
@@ -124,6 +125,58 @@ void parseShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLEl
 
   auto* shape_component = db.get_or_add<ShapeComponent>(eid);
   shape_component->elements.emplace_back(id, std::move(shape));
+}
+
+void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
+                               ecs::EntityID eid)
+{
+  using namespace components;
+  (void)doc;
+  if (!elem)
+    throw std::runtime_error("parseDomainShapeComponent: null <DomainShape> element");
+
+  // ----- id (required) -----
+  const std::string id = evalElementIdRequired(elem);
+
+  // ----- type (optional, default: Fluid) -----
+  auto parseDomainType = [](const char* t) -> physics::DomainType {
+    if (!t || !*t)
+      return physics::DomainType::Fluid;
+    std::string s(t);
+    for (auto& c : s)
+      c = static_cast<char>(std::tolower(c));
+    if (s == "fluid")
+      return physics::DomainType::Fluid;
+    throw std::runtime_error("Unsupported DomainShape type='" + std::string(t) + "'");
+  };
+  const physics::DomainType dtype = parseDomainType(elem->Attribute("type"));
+
+  // ----- <StackedShapeRef id="..."/> (optional but validated if present) -----
+  std::string stacked_shape_id;
+  const auto* ssr = elem->FirstChildElement("StackedShapeRef");
+  if (!ssr)
+    throw std::runtime_error("StackedShapeRef element required in <DomainShape> element");
+
+  stacked_shape_id = evalTextAttributeRequired(ssr, "id");
+  if (stacked_shape_id.empty())
+    throw std::runtime_error("Empty 'id' in <StackedShapeRef> for DomainShape '" + id + "' at line " +
+                             std::to_string(ssr->GetLineNum()));
+
+  auto* stacked_shape = db.get_element<StackedShapeComponent>(eid, stacked_shape_id);
+  if (!stacked_shape)
+    throw std::runtime_error("No StackedShape entry found for '" + stacked_shape_id +
+                             "' in StackedShapeComponent (referenced by DomainShape '" + id + "')");
+
+  // ----- Build component payload -----
+  physics::DomainShape ds(*stacked_shape, dtype);
+  ds.type = dtype;
+  ds.stacked_shape_id = stacked_shape_id;
+
+  // ----- Store to ECS -----
+  auto* comp = db.get_or_add<components::DomainShapeComponent>(eid);
+  if (!comp)
+    throw std::runtime_error("get_or_add<DomainShapeComponent> failed for DomainShape '" + id + "'");
+  comp->elements.emplace_back(id, std::move(ds));
 }
 
 void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
@@ -233,37 +286,54 @@ void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
   // AxisInsertion (required)
   const auto* axis1 = elem->FirstChildElement("AxisInsertion");
   if (!axis1)
-    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <AxisInsertion> element at line " +
+  {
+    throw std::runtime_error("Insertion '" + id + "' missing <AxisInsertion> element at line " +
                              std::to_string(elem->GetLineNum()));
+  }
   insertion.axis_insertion = parseUnitVector(axis1);
 
   // AxisReference (required)
   const auto* axis2 = elem->FirstChildElement("AxisReference");
   if (!axis2)
-    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <AxisReference> element at line " +
+  {
+    throw std::runtime_error("Insertion '" + id + "' missing <AxisReference> element at line " +
                              std::to_string(elem->GetLineNum()));
+  }
   insertion.axis_reference = parseUnitVector(axis2);
 
-  // validate orthonormality
+  // Validate orthonormality (axis_insertion ⟂ axis_reference, both unit)
   if (!geometry::areVectorsOrthonormal(insertion.axis_insertion, insertion.axis_reference, 1e-09))
-    throw std::runtime_error("Insertion '" + std::string(id) + "' axis are not orthogonal at line " +
+  {
+    throw std::runtime_error("Insertion '" + id + "' axes are not orthonormal at line " +
                              std::to_string(elem->GetLineNum()));
+  }
 
   // RotationalSymmetry (required)
+  //
+  // <RotationalSymmetry value="2"/>
+  //
   const auto* sym = elem->FirstChildElement("RotationalSymmetry");
   if (!sym)
-    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <RotationalSymmetry> element at line " +
+  {
+    throw std::runtime_error("Insertion '" + id + "' missing <RotationalSymmetry> element at line " +
                              std::to_string(elem->GetLineNum()));
+  }
   insertion.rotational_symmetry = evalUIntAttributeRequired(sym, "value");
 
-  // ApproachDistance (required)
-  const auto* dist = elem->FirstChildElement("ApproachDistance");
-  if (!dist)
-    throw std::runtime_error("Insertion '" + std::string(id) + "' missing <ApproachDistance> element at line " +
-                             std::to_string(elem->GetLineNum()));
-  insertion.approach_distance = evalNumberAttributeRequired(dist, "value");
+  // ApproachOffset (optional)
+  if (const auto* approach = elem->FirstChildElement("ApproachOffset"))
+    insertion.approach_offset = evalNumberAttributeRequired(approach, "value");
 
-  // store to component
+  // MaxDepth (required)
+  const auto* max_depth = elem->FirstChildElement("MaxDepth");
+  if (!max_depth)
+  {
+    throw std::runtime_error("Insertion '" + id + "' missing <MaxDepth> element at line " +
+                             std::to_string(elem->GetLineNum()));
+  }
+  insertion.max_depth = evalNumberAttributeRequired(max_depth, "value");
+
+  // Store to component
   auto* component = db.get_or_add<InsertionComponent>(eid);
   component->elements.emplace_back(id, std::move(insertion));
 }
@@ -429,112 +499,125 @@ void parseActionMapComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
 void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
                              ecs::EntityID eid)
 {
+  (void)doc;
+  if (!elem)
+    throw std::runtime_error("parseContainerComponent: null <Container> element");
+
   Container container;
+
   const std::string id = evalElementIdRequired(elem);
+  if (id.empty())
+    throw std::runtime_error("Container missing id at line " + std::to_string(elem->GetLineNum()));
 
-  if (const auto* a = elem->FirstChildElement("AxisBottom"))
-    container.axis_bottom = parseUnitVector(a);
-  else
-    throw std::runtime_error("Container missing AxisBottom at line " + std::to_string(elem->GetLineNum()));
+  auto* tfc = db.get_or_add<TransformComponent>(eid);
+  if (!tfc)
+    throw std::runtime_error("get_or_add<TransformComponent> failed for Container '" + id + "'");
 
-  if (const auto* a = elem->FirstChildElement("AxisReference"))
-    container.axis_reference = parseUnitVector(a);
-  else
-    throw std::runtime_error("Container missing AxisReference at line " + std::to_string(elem->GetLineNum()));
-
-  if (!geometry::areVectorsOrthonormal(container.axis_bottom, container.axis_reference, 1e-09))
-    throw std::runtime_error("Axes are not orthonormal at line " + std::to_string(elem->GetLineNum()));
-
-  // Content (first one only)
+  // <Content>
   if (const auto* cont = elem->FirstChildElement("Content"))
   {
     container.content_type = evalTextAttribute(cont, "type", "");
-    const double volume = evalNumberAttribute(cont, "volume", 0.0);
+    const double vol_raw = evalNumberAttribute(cont, "volume", 0.0);
     const std::string units = evalTextAttribute(cont, "units", "m^3");
-    container.volume = convertVolumeToSI(volume, units.c_str());
+    container.payload.volume = convertVolumeToSI(vol_raw, units.c_str());
   }
 
-  // Parse <DomainShapeRef>
-  if (const tinyxml2::XMLElement* domainShapeRefElem = elem->FirstChildElement("DomainShapeRef"))
+  // <InsertionRef> (REQUIRED)
+  const auto* ins_elem = elem->FirstChildElement("InsertionRef");
+  if (!ins_elem)
+    throw std::runtime_error("Container '" + id + "' missing required <InsertionRef> at line " +
+                             std::to_string(elem->GetLineNum()));
+  container.insertion_id = evalTextAttributeRequired(ins_elem, "id");
+  if (container.insertion_id.empty())
+    throw std::runtime_error("Empty 'id' in <InsertionRef> for Container '" + id + "' at line " +
+                             std::to_string(ins_elem->GetLineNum()));
+
+  // <PayloadDomain> (first only)
+  if (const auto* pd = elem->FirstChildElement("PayloadDomain"))
   {
-    container.domain_shape_id = evalTextAttributeRequired(domainShapeRefElem, "id");
-    if (container.domain_shape_id.empty())
+    if (const auto* shape_ref = pd->FirstChildElement("DomainShapeRef"))
     {
-      throw std::runtime_error("Empty 'id' in <DomainShapeRef> at line " +
-                               std::to_string(domainShapeRefElem->GetLineNum()));
+      container.payload.domain_shape_id = evalTextAttributeRequired(shape_ref, "id");
+
+      // Optional payload-local frame (preferred base for rendering the domain)
+      if (const auto* tf_elem = shape_ref->FirstChildElement("Transform"))
+      {
+        const std::string frame_id = evalTextAttributeRequired(tf_elem, "id");
+        const std::string parent = evalTextAttributeRequired(tf_elem, "parent");
+
+        geometry::TransformNode node;
+        node.parent = parent;
+        node.local = parseIsometry3D(tf_elem);
+        node.is_static = true;
+
+        // Register this frame in the entity's TransformComponent
+        tfc->elements.emplace_back(frame_id, std::move(node));
+
+        // Wire payload to this frame
+        container.payload.frame_id = frame_id;
+      }
     }
+
+    // Optional live liquid-level frame
+    if (const auto* lvl = pd->FirstChildElement("LiquidLevelFrame"))
+      container.fluid.liquid_level_frame_id = evalTextAttributeRequired(lvl, "id");
   }
 
-  // Parse <LiquidLevelJointRef>
-  if (const tinyxml2::XMLElement* liquidLevelJointRefElem = elem->FirstChildElement("LiquidLevelJointRef"))
+  // --- resolve required Insertion and create PRISMATIC(VIRTUAL) joint ---
+  auto* insertion_ptr = db.get_element<InsertionComponent>(eid, container.insertion_id);
+  if (!insertion_ptr)
+    throw std::runtime_error("Insertion '" + container.insertion_id + "' not found for Container '" + id +
+                             "' (Insertion is required)");
+  const Insertion& ins = *insertion_ptr;
+
+  // build a stable frame from insertion axes and use its +Z as a unit prismatic axis
+  const Eigen::Matrix3d R_ins = geometry::computeOrientationFromZ(ins.axis_insertion, ins.axis_reference);
+  const Eigen::Vector3d z_hat = R_ins.col(2);  // guaranteed unit & robust
+
+  Joint joint;
+  joint.type = JointType::PRISMATIC;
+  joint.actuation = JointActuation::VIRTUAL;
+  joint.initialize_for_type();  // 1 DOF
+  joint.axes.col(0) = -z_hat;
+
+  const double q_min = 0;
+  const double q_max = ins.max_depth;
+  joint.position[0] = q_min;
+  joint.limit.min_position[0] = q_min;
+  joint.limit.max_position[0] = q_max;
+
+  const std::string joint_id = "joint/" + container.fluid.liquid_level_frame_id;
+  container.fluid.liquid_level_joint_id = joint_id;
+
+  auto* jc = db.get_or_add<JointComponent>(eid);
+  if (!jc)
+    throw std::runtime_error("get_or_add<JointComponent> failed for Container '" + id + "'");
+  jc->elements.emplace_back(joint_id, std::move(joint));
+
+  // joint frame under container
   {
-    container.liquid_level_joint_id = evalTextAttributeRequired(liquidLevelJointRefElem, "id");
-    if (container.liquid_level_joint_id.empty())
-    {
-      throw std::runtime_error("Empty 'id' in <LiquidLevelJointRef> at line " +
-                               std::to_string(liquidLevelJointRefElem->GetLineNum()));
-    }
+    geometry::TransformNode jtf;
+    jtf.parent = id;
+    jtf.local = Eigen::Isometry3d::Identity();
+    jtf.is_static = false;
+    tfc->elements.emplace_back(joint_id, std::move(jtf));
   }
 
-  auto* tf_component = db.get_or_add<TransformComponent>(eid);
-
-  auto* domain_shape = db.get_element<components::DomainShapeComponent>(eid, container.domain_shape_id);
-  if (!domain_shape)
-    throw std::runtime_error("DomainShape id '" + container.domain_shape_id + "' not found in component");
-
-  // Create bottom transform
+  // liquid level frame under joint (if authored)
+  if (!container.fluid.liquid_level_frame_id.empty())
   {
-    geometry::TransformNode tf_node;
-    tf_node.parent = id;
-    tf_component->elements.emplace_back(std::string(id) + "/bottom", std::move(tf_node));
+    geometry::TransformNode ltf;
+    ltf.parent = joint_id;
+    ltf.local = Eigen::Isometry3d::Identity();
+    ltf.is_static = true;
+    tfc->elements.emplace_back(container.fluid.liquid_level_frame_id, std::move(ltf));
   }
 
-  // Retrieve max fill height from domain shape
-  double max_height = getMaxFillHeight(domain_shape->domains);
-  double curr_height = getFillHeight(domain_shape->domains, container.volume, 1e-09);
-  auto upward_axis = -container.axis_bottom;
-
-  // Create virtual prismatic joint
-  if (!container.liquid_level_joint_id.empty())
-  {
-    auto* joint_component = db.get_or_add<JointComponent>(eid);
-    components::Joint joint;
-    joint.type = components::JointType::PRISMATIC;
-    joint.actuation = components::JointActuation::VIRTUAL;
-    joint.initialize_for_type();  // 1 DOF
-    joint.axes.col(0) = upward_axis;
-    joint.position[0] = curr_height;
-    joint.limit.min_position[0] = 0.0;
-    joint.limit.max_position[0] = max_height;
-
-    joint_component->elements.emplace_back("joint/" + std::string(id), std::move(joint));
-
-    // Add TransformNode under the joint
-    geometry::TransformNode joint_tf;
-    joint_tf.parent = std::string(id) + "/bottom";
-    joint_tf.local = Eigen::Isometry3d::Identity();
-    joint_tf.is_static = false;
-    tf_component->elements.emplace_back("joint/" + std::string(id), std::move(joint_tf));
-
-    // Add TransformNode under the joint
-    geometry::TransformNode liquid_tf;
-    liquid_tf.parent = "joint/" + std::string(id);
-    liquid_tf.local = Eigen::Isometry3d::Identity();
-    tf_component->elements.emplace_back(std::string(id) + "/liquid_level", std::move(liquid_tf));
-  }
-
-  // Add top TransformNode
-  {
-    geometry::TransformNode top_node;
-    top_node.parent = std::string(id) + "/bottom";
-    top_node.local.linear() = Eigen::Matrix3d::Identity();
-    top_node.local.translation() = upward_axis * max_height;
-    tf_component->elements.emplace_back(std::string(id) + "/top", std::move(top_node));
-  }
-
-  // store to component
-  auto* component = db.get_or_add<ContainerComponent>(eid);
-  component->elements.emplace_back(id, std::move(container));
+  // persist container
+  auto* cc = db.get_or_add<ContainerComponent>(eid);
+  if (!cc)
+    throw std::runtime_error("get_or_add<ContainerComponent> failed for Container '" + id + "'");
+  cc->elements.emplace_back(id, std::move(container));
 }
 
 void parseButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
@@ -585,113 +668,6 @@ void parseJointComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLEl
   auto* joint_component = db.get_or_add<JointComponent>(eid);
   const std::string id = evalElementIdRequired(elem);
   joint_component->elements.emplace_back(id, std::move(joint));
-}
-
-void parseFluidDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* fluidElem,
-                                    ecs::Database& db, ecs::EntityID eid)
-{
-  auto* stack_component = db.get<components::StackedShapeComponent>(eid);
-  if (!stack_component)
-    throw std::runtime_error("StackedShapeComponent missing from entity!");
-
-  const std::string id = evalElementIdRequired(fluidElem);
-
-  // <StackedShape id="..."/>
-  const tinyxml2::XMLElement* stackElem = fluidElem->FirstChildElement("StackedShape");
-  if (!stackElem)
-    throw std::runtime_error("FluidDomainShape missing <StackedShape>");
-
-  const std::string stack_id = evalTextAttributeRequired(stackElem, "id");
-  if (stack_id.empty())
-    throw std::runtime_error("Empty 'id' in <StackedShape> at line " + std::to_string(stackElem->GetLineNum()));
-
-  DomainShape domain_shape;
-  domain_shape.stacked_shape_id = stack_id;
-
-  // Find the stack in the ECS
-  auto* stacked_shapes_ptr = ecs::get_element(stack_component->elements, domain_shape.stacked_shape_id);
-  if (!stacked_shapes_ptr)
-    throw std::runtime_error("No StackedShape entry for id '" + domain_shape.stacked_shape_id +
-                             "' in StackedShapeComponent");
-
-  // For each shape in the stack
-  for (const geometry::StackedShapeEntry& entry : (*stacked_shapes_ptr).shapes)
-  {
-    // if (entry.shape.shape_map.empty())
-    //   throw std::runtime_error("ShapeComponent for stack entry is empty!");
-
-    // // Use the first shape (if there's only one per entry)
-    // const auto& shape_pair = *entry.shape.shape_map.begin();
-    const geometry::Shape& geom = entry.shape;
-
-    using physics::DomainShapePtr;
-    DomainShapePtr shape;
-
-    switch (geom.type)
-    {
-      case geometry::ShapeType::Cylinder:
-      {
-        double radius = geom.dimensions.at(0);
-        double height = geom.dimensions.at(1);
-        shape = std::make_shared<physics::FluidCylinderShape>(radius, height);
-        break;
-      }
-      case geometry::ShapeType::Box:
-      {
-        double width = geom.dimensions.at(0);
-        double length = geom.dimensions.at(1);  // Or "length" if that's your convention
-        double height = geom.dimensions.at(2);
-        shape = std::make_shared<physics::FluidBoxShape>(width, length, height);
-        break;
-      }
-      case geometry::ShapeType::SphericalSegment:
-      {
-        double base_radius = geom.dimensions.at(0);
-        double top_radius = geom.dimensions.at(1);  // Or "length" if that's your convention
-        double height = geom.dimensions.at(2);
-
-        shape = std::make_shared<physics::FluidSphericalSegmentShape>(base_radius, top_radius, height);
-        break;
-      }
-      case geometry::ShapeType::Cone:
-      {
-        double base_radius = geom.dimensions.at(0);
-        double top_radius = geom.dimensions.at(1);
-        double height = geom.dimensions.at(2);
-        shape = std::make_shared<physics::FluidConeShape>(base_radius, top_radius, height);
-        break;
-      }
-      case geometry::ShapeType::Mesh:
-      {
-        sodf::physics::TruncationContext ctx;
-        ctx.T_wo = entry.base_transform;         // world pose of this stack layer
-        ctx.g_world = Eigen::Vector3d(0, 0, 1);  // gravity (+Z) unless you have a different convention
-        ctx.base_world = entry.base_transform * Eigen::Vector3d::Zero();  // h=0 passes through the entry origin
-
-        // Adjust tessellation as you prefer; these are good defaults.
-        constexpr int radial_res = 64;
-        constexpr int axial_res = 16;
-
-        auto dom_unique = sodf::physics::buildFluidDomainFromShape(geom, ctx, radial_res, axial_res);
-        if (!dom_unique)
-          throw std::runtime_error("Failed to build FluidConvexMeshShape for <Mesh> in stack '" + stack_id + "' (id='" +
-                                   id + "').");
-
-        // Convert unique_ptr -> shared_ptr and upcast to DomainShapePtr.
-        shape = std::shared_ptr<sodf::physics::FluidConvexMeshShape>(dom_unique.release());
-        break;
-      }
-      // Add more shape types as needed.
-      default:
-        throw std::runtime_error("Unsupported shape type for fluid domain: " +
-                                 std::to_string(static_cast<int>(geom.type)));
-    }
-
-    domain_shape.domains.push_back(shape);
-  }
-
-  auto* domain_shape_component = db.get_or_add<DomainShapeComponent>(eid);
-  domain_shape_component->elements.emplace_back(id, std::move(domain_shape));
 }
 
 void parseProductComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
@@ -851,25 +827,22 @@ void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
 void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* derived_elem,
                                     ecs::Database& db, ecs::EntityID eid)
 {
-  const tinyxml2::XMLElement* parent = derived_elem->Parent()->ToElement();
+  // --- Resolve parent grasp element id ----------------------------------------------------------
+  const tinyxml2::XMLElement* parent = derived_elem->Parent() ? derived_elem->Parent()->ToElement() : nullptr;
   if (!parent)
-    throw std::runtime_error(std::string(derived_elem->Name()) + " has not parent element at line " +
+    throw std::runtime_error(std::string(derived_elem->Name()) + " has no parent element at line " +
                              std::to_string(derived_elem->GetLineNum()));
-
   const std::string id = evalElementIdRequired(parent);
 
+  // --- Required components ----------------------------------------------------------------------
   auto* shape_component = db.get<components::ShapeComponent>(eid);
   if (!shape_component)
-    throw std::runtime_error(std::string("ShapeComponent does not exists, required by ") + derived_elem->Name());
-
+    throw std::runtime_error(std::string("ShapeComponent does not exist; required by ") + derived_elem->Name());
   auto* transform_component = db.get<components::TransformComponent>(eid);
   if (!transform_component)
-    throw std::runtime_error(std::string("TransformComponent does not exists, required by ") + derived_elem->Name());
+    throw std::runtime_error(std::string("TransformComponent does not exist; required by ") + derived_elem->Name());
 
-  geometry::TransformNode transform;
-
-  ParallelGrasp grasp;
-  // Required axes
+  // --- Parse required axes from XML --------------------------------------------------------------
   const auto* axis_rot_first_elem = derived_elem->FirstChildElement("AxisRotationalFirstShape");
   const auto* axis_norm_first_elem = derived_elem->FirstChildElement("AxisNormalFirstShape");
   const auto* axis_rot_grasp_elem = derived_elem->FirstChildElement("AxisRotationalGrasp");
@@ -877,71 +850,78 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tiny
     throw std::runtime_error("ParallelGrasp <DerivedFromParallelShapes> missing required axis elements "
                              "(AxisRotationalFirstShape, AxisNormalFirstShape, AxisRotationalGrasp required).");
 
-  Eigen::Vector3d axis_rotational_first = parseUnitVector(axis_rot_first_elem);
-  Eigen::Vector3d axis_normal_first = parseUnitVector(axis_norm_first_elem);
-  Eigen::Vector3d axis_rotational_grasp = parseUnitVector(axis_rot_grasp_elem);
+  Eigen::Vector3d axis_rotational_first = parseUnitVector(axis_rot_first_elem);  // intended grasp +X
+  Eigen::Vector3d axis_normal_first = parseUnitVector(axis_norm_first_elem);     // intended grasp +Z
+  Eigen::Vector3d axis_rotational_grasp = parseUnitVector(axis_rot_grasp_elem);  // metadata (kept as-is)
 
-  // Collect shape pointers and ids
+  // --- Collect referenced shapes ----------------------------------------------------------------
   std::vector<const geometry::Shape*> shape_ptrs;
   std::vector<std::string> shape_ids;
   for (const auto* shape_elem = derived_elem->FirstChildElement("Shape"); shape_elem;
        shape_elem = shape_elem->NextSiblingElement("Shape"))
   {
-    const std::string shape_id = evalTextAttributeRequired(shape_elem, "id");
-    if (shape_id.empty())
+    const std::string sid = evalTextAttributeRequired(shape_elem, "id");
+    if (sid.empty())
       throw std::runtime_error("ParallelGrasp <Shape> has empty 'id' at line " +
                                std::to_string(shape_elem->GetLineNum()));
-
-    auto* shape = ecs::get_element(shape_component->elements, shape_id);
-    if (!shape)
-      throw std::runtime_error("No Shape entry found for '" + shape_id + "' in ShapeComponent");
-    shape_ptrs.push_back(shape);
-    shape_ids.push_back(shape_id);
+    auto* sp = ecs::get_element(shape_component->elements, sid);
+    if (!sp)
+      throw std::runtime_error("No Shape entry found for '" + sid + "' in ShapeComponent");
+    shape_ptrs.push_back(sp);
+    shape_ids.push_back(sid);
   }
 
-  // ---- 2D shape pairs ----
-  if (shape_ptrs.size() >= 2 && shape_ptrs.size() % 2 == 0)
+  geometry::TransformNode transform;  // to be pushed for grasp
+  ParallelGrasp grasp;                // to be pushed for grasp
+
+  // ==============================================================================================
+  // Case A) 2D shape PAIRS (even count >= 2): keep canonical surface as first 2D shape,
+  //         with its axes mapped into the grasp frame.
+  // ==============================================================================================
+  if (shape_ptrs.size() >= 2 && (shape_ptrs.size() % 2 == 0))
   {
     const double CENTROID_TOL = 1e-6;
     size_t num_pairs = shape_ptrs.size() / 2;
 
-    Eigen::Vector3d ref_centroid;
+    Eigen::Vector3d ref_centroid = Eigen::Vector3d::Zero();
+
     for (size_t i = 0; i < shape_ptrs.size(); i += 2)
     {
-      // Check both are 2D
+      // Both must be 2D
       if (!is2DShape(*shape_ptrs[i]) || !is2DShape(*shape_ptrs[i + 1]))
         throw std::runtime_error("ParallelGrasp: Only 2D shapes allowed in even-pair case.");
-      // Get transforms
+
+      // Fetch transforms for each 2D shape instance
       auto* tf0 = ecs::get_element(transform_component->elements, shape_ids[i]);
       auto* tf1 = ecs::get_element(transform_component->elements, shape_ids[i + 1]);
       if (!tf0 || !tf1)
         throw std::runtime_error("ParallelGrasp: Shape transform missing in TransformComponent.");
 
+      // World-space centroids and normals
       Eigen::Vector3d c0 = tf0->local * getShapeCentroid(*shape_ptrs[i]);
       Eigen::Vector3d c1 = tf1->local * getShapeCentroid(*shape_ptrs[i + 1]);
       Eigen::Vector3d n0 = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[i]);
       Eigen::Vector3d n1 = tf1->local.linear() * getShapeNormalAxis(*shape_ptrs[i + 1]);
 
-      // Normals must be parallel
+      // Normals must be parallel (same or opposite direction)
       if (n0.cross(n1).norm() > 1e-6)
         throw std::runtime_error("2D shapes are not parallel (normals differ)");
 
-      // Centroids must align in-plane
+      // Centroids must align in-plane (their delta has no in-plane component)
       Eigen::Vector3d delta = c1 - c0;
-      double projected = delta.dot(n0.normalized());
-      Eigen::Vector3d delta_in_plane = delta - projected * n0.normalized();
+      Eigen::Vector3d n0hat = n0.normalized();
+      double projected = delta.dot(n0hat);
+      Eigen::Vector3d delta_in_plane = delta - projected * n0hat;
       if (delta_in_plane.norm() > CENTROID_TOL)
         throw std::runtime_error("2D shape centroids do not align in plane");
 
-      // Save contact shapes for the first pair
+      // Save contacts and gap from the first pair
       if (i == 0)
       {
         grasp.contact_shape_ids = { shape_ids[i], shape_ids[i + 1] };
-        grasp.gap_size = std::abs((c1 - c0).dot(n0.normalized()));
-      }
-
-      if (i == 0)
+        grasp.gap_size = std::abs((c1 - c0).dot(n0hat));
         ref_centroid = 0.5 * (c0 + c1);
+      }
       else
       {
         Eigen::Vector3d centroid = 0.5 * (c0 + c1);
@@ -949,126 +929,120 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tiny
           throw std::runtime_error("ParallelGrasp: Centroid mismatch for 2D shape pair");
       }
     }
-    // Transform/canonical frame: use axis_rotational, axis_normal, centroid
-    Eigen::Vector3d x_axis = axis_rotational_first.normalized();
-    Eigen::Vector3d z_axis = axis_normal_first.normalized();
-    Eigen::Vector3d y_axis = z_axis.cross(x_axis);
-    Eigen::Matrix3d rot = geometry::computeOrientationFromAxes(x_axis, y_axis, z_axis);
 
+    // Build a clean, right-handed grasp frame from the provided axes
+    Eigen::Vector3d Xg = axis_rotational_first;  // intended +X of grasp
+    Eigen::Vector3d Zg = axis_normal_first;      // intended +Z of grasp
+    Eigen::Vector3d Yg = Zg.cross(Xg);           // Y = Z × X for right-handed
+    Eigen::Matrix3d R = geometry::makeOrthonormalRightHanded(Xg, Yg, Zg);
+
+    // Grasp pose in world
     transform.local = Eigen::Isometry3d::Identity();
-    transform.local.linear() = rot;
-    transform.local.translation() = ref_centroid;
+    transform.local.linear() = R;                  // grasp -> world
+    transform.local.translation() = ref_centroid;  // at mid-plane centroid
 
+    // Store user-specified rotation axis (kept in world if that’s your convention)
     grasp.rotation_axis = axis_rotational_grasp;
-    // grasp.axis_of_rotation =
-    //     rot * axis_rotational_grasp.normalized();  // Always the X axis in the grasp canonical frame
-    grasp.canonical_surface = *shape_ptrs[0];  // Or construct a new "virtual" surface here if needed
 
-    // Build axes for the canonical surface in the grasp frame
-    std::vector<Eigen::Vector3d> canonical_axes_in_grasp;
-    for (const Eigen::Vector3d& axis : shape_ptrs[0]->axes)
-    {
-      // Bring each shape axis into the grasp frame
-      // If the original axis is in the parent/world, this is how you transform:
-      Eigen::Vector3d axis_in_grasp = rot.transpose() * axis;
-      canonical_axes_in_grasp.push_back(axis_in_grasp);
-    }
-    grasp.canonical_surface.axes = canonical_axes_in_grasp;
+    // Canonical surface = the FIRST 2D shape, but store its axes in the GRASP frame
+    grasp.canonical_surface = *shape_ptrs[0];
+
+    std::vector<Eigen::Vector3d> axes_in_grasp;
+    axes_in_grasp.reserve(grasp.canonical_surface.axes.size());
+    Eigen::Matrix3d world_to_grasp = R.transpose();
+    for (const Eigen::Vector3d& aw : shape_ptrs[0]->axes)
+      axes_in_grasp.push_back(world_to_grasp * aw);  // map world-ish axis into grasp frame
+    grasp.canonical_surface.axes = std::move(axes_in_grasp);
 
     // Rotational symmetry: pairs * 2
     grasp.rotational_symmetry = static_cast<uint32_t>(num_pairs * 2);
 
-    // Approach: use the sign between reference centroid and contact normal
-    Eigen::Vector3d to_virtual = ref_centroid - (ecs::get_element(transform_component->elements, shape_ids[0])->local *
-                                                 getShapeCentroid(*shape_ptrs[0]));
-    Eigen::Vector3d normal = rot.col(2);
-
+    // Determine INTERNAL vs EXTERNAL from contact normal and centroid direction
     auto* tf0 = ecs::get_element(transform_component->elements, shape_ids[0]);
-    Eigen::Vector3d normal_contact = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[0]);
+    Eigen::Vector3d c0_world = tf0->local * getShapeCentroid(*shape_ptrs[0]);
+    Eigen::Vector3d to_virtual = ref_centroid - c0_world;  // towards the mid-plane
+    Eigen::Vector3d n0_world = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[0]);
 
     grasp.grasp_type =
-        (to_virtual.dot(normal_contact) > 0) ? ParallelGrasp::GraspType::INTERNAL : ParallelGrasp::GraspType::EXTERNAL;
+        (to_virtual.dot(n0_world) > 0) ? ParallelGrasp::GraspType::INTERNAL : ParallelGrasp::GraspType::EXTERNAL;
   }
-
-  // ---- 3D shape, single (cylinder/box) ----
+  // ==============================================================================================
+  // Case B) Single 3D shape (Cylinder or Box): build a virtual canonical surface in the GRASP frame
+  // ==============================================================================================
   else if (shape_ptrs.size() == 1 &&
            (shape_ptrs[0]->type == geometry::ShapeType::Cylinder || shape_ptrs[0]->type == geometry::ShapeType::Box))
   {
-    grasp.contact_shape_ids = { shape_ids[0] };
-    auto* shape_tf = ecs::get_element(transform_component->elements, shape_ids[0]);
+    const geometry::Shape& shape3d = *shape_ptrs[0];
+    const std::string& sid3d = shape_ids[0];
+    grasp.contact_shape_ids = { sid3d };
+
+    auto* shape_tf = ecs::get_element(transform_component->elements, sid3d);
     if (!shape_tf)
-      throw std::runtime_error("No Transform entry found for '" + shape_ids[0] + "' in TransformComponent");
+      throw std::runtime_error("No Transform entry found for '" + sid3d + "' in TransformComponent");
 
-    Eigen::Vector3d axis_rotational_local = axis_rotational_first.normalized();
-    Eigen::Vector3d axis_normal_local = axis_normal_first.normalized();
-    Eigen::Vector3d axis_inplane_local = axis_normal_local.cross(axis_rotational_local).normalized();
+    // Interpret provided axes as defined in the shape's LOCAL frame; map to WORLD:
+    const Eigen::Matrix3d& S2W = shape_tf->local.linear();
+    Eigen::Vector3d Xw = S2W * axis_rotational_first.normalized();  // intended +Xᵍ in world
+    Eigen::Vector3d Zw = S2W * axis_normal_first.normalized();      // intended +Zᵍ in world
+    Eigen::Vector3d Yw = Zw.cross(Xw);                              // enforce right-handed
+    Eigen::Matrix3d R = geometry::makeOrthonormalRightHanded(Xw, Yw, Zw);
 
-    const Eigen::Matrix3d& shape3d_to_parent = shape_tf->local.linear();
-    Eigen::Vector3d axis_rotational_root = shape3d_to_parent * axis_rotational_local;
-    Eigen::Vector3d axis_normal_root = shape3d_to_parent * axis_normal_local;
-    Eigen::Vector3d axis_inplane_root = shape3d_to_parent * axis_inplane_local;
-    Eigen::Vector3d centroid_3dshape = getShapeCentroid(*shape_ptrs[0]);
-    Eigen::Vector3d centroid_root = shape_tf->local * centroid_3dshape;
+    // Place grasp at the 3D shape centroid (Box: usually origin; Cylinder: mid-height on symmetry)
+    Eigen::Vector3d centroid_world = shape_tf->local * getShapeCentroid(shape3d);
 
-    transform.local.setIdentity();
-    transform.local.linear().col(0) = axis_rotational_root;
-    transform.local.linear().col(1) = axis_inplane_root;
-    transform.local.linear().col(2) = axis_normal_root;
-    transform.local.translation() = centroid_root;
+    transform.local = Eigen::Isometry3d::Identity();
+    transform.local.linear() = R;  // grasp -> world
+    transform.local.translation() = centroid_world;
 
-    grasp.rotation_axis = axis_rotational_grasp;
+    grasp.rotation_axis = axis_rotational_grasp;  // keep as metadata (world)
 
-    Eigen::Matrix3d grasp_to_world = transform.local.linear();
-    Eigen::Matrix3d world_to_grasp = grasp_to_world.transpose();  // since R is orthogonal
-    const auto& shape_axes = shape_ptrs[0]->axes;                 // {AxisWidth, AxisDepth, AxisHeight} in shape-local
-    Eigen::Matrix3d shape_to_world = shape3d_to_parent;
-    Eigen::Matrix3d shape_to_grasp = world_to_grasp * shape_to_world;
-
-    // Canonical surface: for cylinder, a line; for box, a rectangle
-    if (shape_ptrs[0]->type == geometry::ShapeType::Cylinder)
+    // Build the canonical surface in the GRASP frame
+    if (shape3d.type == geometry::ShapeType::Cylinder)
     {
+      // A line along grasp +X (length = cylinder height)
+      const double radius = shape3d.dimensions.at(0);
+      const double height = shape3d.dimensions.at(1);
+
       grasp.canonical_surface.type = geometry::ShapeType::Line;
-      double length = shape_ptrs[0]->dimensions.at(1);
-      grasp.canonical_surface.dimensions = { length };
-      Eigen::Vector3d p0_local = -0.5 * length * Eigen::Vector3d::UnitX();
-      Eigen::Vector3d p1_local = 0.5 * length * Eigen::Vector3d::UnitX();
-      grasp.canonical_surface.vertices = { p0_local, p1_local };
-      // grasp.canonical_surface.axes = { Eigen::Vector3d::UnitX() };
-      grasp.rotational_symmetry = 0;  // infinite
-      grasp.gap_size = 2.0 * shape_ptrs[0]->dimensions.at(0);
-
+      grasp.canonical_surface.dimensions = { height };
+      grasp.canonical_surface.vertices = { -0.5 * height * Eigen::Vector3d::UnitX(),
+                                           0.5 * height * Eigen::Vector3d::UnitX() };
+      // Axes in grasp frame: direction and reference
       grasp.canonical_surface.axes.clear();
-      for (const auto& axis : shape_axes)
-        grasp.canonical_surface.axes.push_back(shape_to_grasp * axis);
+      grasp.canonical_surface.axes.emplace_back(Eigen::Vector3d::UnitX());  // direction
+      grasp.canonical_surface.axes.emplace_back(Eigen::Vector3d::UnitZ());  // reference (normal)
+      grasp.rotational_symmetry = 0;                                        // treat as infinite
+      grasp.gap_size = 2.0 * radius;
     }
-    else if (shape_ptrs[0]->type == geometry::ShapeType::Box)
+    else  // Box -> Rectangle in grasp frame
     {
-      double width = shape_ptrs[0]->dimensions.at(0);
-      double height = shape_ptrs[0]->dimensions.at(2);
+      // Box dimensions are [width, depth, height]
+      const double width = shape3d.dimensions.at(0);
+      const double height = shape3d.dimensions.at(2);
+
       grasp.canonical_surface.type = geometry::ShapeType::Rectangle;
       grasp.canonical_surface.dimensions = { width, height };
-      // Centered at origin in local grasp frame
-      Eigen::Vector3d corner0(-0.5 * width, -0.5 * height, 0);
-      Eigen::Vector3d corner1(0.5 * width, -0.5 * height, 0);
-      Eigen::Vector3d corner2(0.5 * width, 0.5 * height, 0);
-      Eigen::Vector3d corner3(-0.5 * width, 0.5 * height, 0);
-      grasp.canonical_surface.vertices = { corner0, corner1, corner2, corner3 };
-      // grasp.canonical_surface.axes = { Eigen::Vector3d::UnitX(), Eigen::Vector3d::UnitY() };
+      grasp.canonical_surface.vertices = {
+        { -0.5 * width, -0.5 * height, 0 },
+        { 0.5 * width, -0.5 * height, 0 },
+        { 0.5 * width, 0.5 * height, 0 },
+        { -0.5 * width, 0.5 * height, 0 },
+      };
+      // Axes in grasp frame, canonical rectangle order = [Height, Width, Normal] = [Xᵍ, Yᵍ, Zᵍ]
+      grasp.canonical_surface.axes.clear();
+      grasp.canonical_surface.axes.emplace_back(Eigen::Vector3d::UnitX());  // Height
+      grasp.canonical_surface.axes.emplace_back(Eigen::Vector3d::UnitY());  // Width
+      grasp.canonical_surface.axes.emplace_back(Eigen::Vector3d::UnitZ());  // Normal
+
       grasp.rotational_symmetry = 4;
       grasp.gap_size = width;
-
-      // Convert each box axis to grasp frame:
-      grasp.canonical_surface.axes.clear();
-      for (const auto& box_axis : shape_axes)
-        grasp.canonical_surface.axes.push_back(shape_to_grasp * box_axis);
     }
 
-    // GraspType: must be specified
+    // GraspType must be provided for the 3D path
     const auto* approach_elem = derived_elem->FirstChildElement("GraspType");
     if (!approach_elem || !approach_elem->Attribute("value"))
       throw std::runtime_error(
-          "ParallelGrasp: <GraspType> tag with 'value' attribute is required for single 3D shape (box/cylinder).");
-
+          "ParallelGrasp: <GraspType> with 'value' is required for single 3D shape (box/cylinder).");
     const std::string grasp_type_str = evalTextAttributeRequired(approach_elem, "value");
     if (grasp_type_str == "Internal")
       grasp.grasp_type = ParallelGrasp::GraspType::INTERNAL;
@@ -1078,12 +1052,14 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tiny
       throw std::runtime_error("ParallelGrasp: <GraspType> value must be 'Internal' or 'External'");
   }
   else
-    throw std::runtime_error("ParallelGrasp: Must derive from exactly pairs of two 2D shapes (parallel), or one 3D "
-                             "lateral shape (cylinder/box).");
+  {
+    throw std::runtime_error("ParallelGrasp: Must derive from exactly pairs of two 2D shapes (parallel), "
+                             "or one 3D lateral shape (cylinder/box).");
+  }
 
+  // --- Commit results to ECS --------------------------------------------------------------------
   transform_component->elements.emplace_back(id, std::move(transform));
-
-  auto* grasp_component = db.get_or_add<ParallelGraspComponent>(eid);
+  auto* grasp_component = db.get_or_add<components::ParallelGraspComponent>(eid);
   grasp_component->elements.emplace_back(id, std::move(grasp));
 }
 
