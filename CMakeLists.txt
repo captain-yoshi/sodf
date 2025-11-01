@@ -83,13 +83,15 @@ endif()
 add_library(${PROJECT_NAME}
   ext/tinyxml2/tinyxml2.cpp
 
-  src/conversion.cpp
   src/geometry/alignment.cpp
   src/geometry/shape.cpp
-  src/geometry/eigen.cpp
+  src/geometry/frame.cpp
   src/physics/domain_shape.cpp
+  src/physics/domain_shape_base.cpp
+  src/physics/domain_shape_conversion.cpp
   src/physics/fluid_domain_shape.cpp
   src/systems/fsm.cpp
+  src/systems/liquid_level_joint.cpp
   src/systems/scene_graph.cpp
   src/uri_resolver.cpp
   src/xml/component_parser.cpp

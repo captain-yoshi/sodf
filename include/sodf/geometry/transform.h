@@ -1,7 +1,8 @@
 #ifndef SODF_GEOMETRY_TRANSFORM_H_
 #define SODF_GEOMETRY_TRANSFORM_H_
 
-#include <sodf/geometry/eigen.h>
+#include <string>
+#include <Eigen/Geometry>
 
 namespace sodf {
 namespace geometry {

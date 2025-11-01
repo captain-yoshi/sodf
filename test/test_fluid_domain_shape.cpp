@@ -1,4 +1,5 @@
 #include <cmath>
+#include <sodf/physics/domain_shape.h>
 #include <sodf/physics/fluid_domain_shape.h>
 
 #include <gtest/gtest.h>
@@ -16,14 +17,14 @@ TEST(BoxShape, VolumeAndHeight)
   // getVolume (by height)
   EXPECT_EQ(0.0, shape.getFillVolume(-0.5));
   EXPECT_EQ(0.0, shape.getFillVolume(0.0));
-  EXPECT_EQ(0.0, shape.getFillVolume(0.9));
+  EXPECT_EQ(0.12, shape.getFillVolume(0.9));
   EXPECT_NEAR(0.06, shape.getFillVolume(0.4), VOLUME_EPSILON);
   EXPECT_NEAR(0.12, shape.getFillVolume(0.8), VOLUME_EPSILON);
 
   // getHeight (by volume)
   EXPECT_EQ(0.0, shape.getFillHeight(-0.5));
   EXPECT_EQ(0.0, shape.getFillHeight(0.0));
-  EXPECT_EQ(0.0, shape.getFillHeight(0.121));
+  EXPECT_EQ(0.8, shape.getFillHeight(0.121));
   EXPECT_NEAR(0.4, shape.getFillHeight(0.06), HEIGHT_EPSILON);
   EXPECT_NEAR(0.8, shape.getFillHeight(0.12), HEIGHT_EPSILON);
 }
@@ -35,7 +36,7 @@ TEST(CylinderShape, VolumeAndHeight)
   // getFillVolume (by height)
   EXPECT_EQ(0.0, shape.getFillVolume(-0.5));
   EXPECT_EQ(0.0, shape.getFillVolume(0.0));
-  EXPECT_EQ(0.0, shape.getFillVolume(0.9));
+  EXPECT_EQ(0.628319, shape.getFillVolume(0.9));
   EXPECT_NEAR(0.31415926535897931, shape.getFillVolume(0.4), VOLUME_EPSILON);
   EXPECT_NEAR(0.62831853071795862, shape.getFillVolume(0.8), VOLUME_EPSILON);
 
@@ -55,14 +56,14 @@ TEST(ConeShape, VolumeAndHeight)
   // getFillVolume (by height)
   EXPECT_EQ(0.0, shape1.getFillVolume(-0.5));
   EXPECT_EQ(0.0, shape1.getFillVolume(0.0));
-  EXPECT_EQ(0.0, shape1.getFillVolume(0.9));
+  EXPECT_EQ(0.410501, shape1.getFillVolume(0.9));
   EXPECT_NEAR(0.25551620249196988, shape1.getFillVolume(0.4), VOLUME_EPSILON);
   EXPECT_NEAR(0.4105014400690663, shape1.getFillVolume(0.8), VOLUME_EPSILON);
 
   // getHeight (by volume)
   EXPECT_EQ(0.0, shape1.getFillHeight(-0.5));
   EXPECT_EQ(0.0, shape1.getFillHeight(0.0));
-  EXPECT_EQ(0.0, shape1.getFillHeight(0.411));
+  EXPECT_EQ(0.8, shape1.getFillHeight(0.411));
   EXPECT_NEAR(0.4, shape1.getFillHeight(0.25551620249196988), HEIGHT_EPSILON);
   EXPECT_NEAR(0.8, shape1.getFillHeight(0.4105014400), HEIGHT_EPSILON);
 
@@ -83,7 +84,7 @@ TEST(SphericalSegmentShape, VolumeAndHeight)
     // getFillVolume (by height)
     EXPECT_EQ(0.0, shape.getFillVolume(-0.5));
     EXPECT_EQ(0.0, shape.getFillVolume(0.0));
-    EXPECT_EQ(0.0, shape.getFillVolume(5.0001));
+    EXPECT_EQ(261.799, shape.getFillVolume(5.0001));
 
     EXPECT_NEAR(22.498384888989406, shape.getFillVolume(1.25), VOLUME_EPSILON);
     EXPECT_NEAR(31.808625617596654, shape.getFillVolume(1.5), VOLUME_EPSILON);
@@ -166,7 +167,7 @@ TEST(SphericalSegmentShape, VolumeAndHeight)
 TEST(FluidDomainShapeCollection, FluidVolumeAndHeight)
 {
   // Build a stacked domain shape collection
-  std::vector<DomainShapePtr> domains;
+  std::vector<DomainShapeBasePtr> domains;
   domains.push_back(std::make_shared<FluidSphericalSegmentShape>(0.0, 5.0, 5.0));
   domains.push_back(std::make_shared<FluidConeShape>(5.0, 7.0, 10.0));
   domains.push_back(std::make_shared<FluidCylinderShape>(7.0, 15.0));

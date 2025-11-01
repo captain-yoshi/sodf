@@ -1,509 +1,309 @@
 #ifndef SODF_GEOMETRY_MESH_H_
 #define SODF_GEOMETRY_MESH_H_
 
+#include <memory>
+#include <variant>
 #include <vector>
-#include <unordered_map>
-#include <cmath>
-#include <limits>
 #include <Eigen/Core>
-#include <Eigen/Geometry>
-#include <sodf/geometry/shape.h>
 
 namespace sodf {
 namespace geometry {
 
-// origin policy application for meshified primitives
-namespace {
+struct TriangleMesh
+{
+  using Index = uint32_t;
+  using Face = std::array<Index, 3>;
 
-// AABB (min/max) and center
-struct AABB
-{
-  Eigen::Vector3d min, max;
-};
-inline AABB computeAABB(const std::vector<Eigen::Vector3d>& V)
-{
-  if (V.empty())
-    return { { 0, 0, 0 }, { 0, 0, 0 } };
-  Eigen::Vector3d mn = V[0], mx = V[0];
-  for (const auto& p : V)
-  {
-    mn = mn.cwiseMin(p);
-    mx = mx.cwiseMax(p);
-  }
-  return { mn, mx };
-}
-inline Eigen::Vector3d aabbCenter(const AABB& bb)
-{
-  return 0.5 * (bb.min + bb.max);
-}
-
-// Collect indices of vertices that lie on the base plane z = zmin (within eps)
-inline std::vector<size_t> baseVertices(const std::vector<Eigen::Vector3d>& V, double zmin, double eps)
-{
-  std::vector<size_t> idx;
-  idx.reserve(V.size());
-  for (size_t i = 0; i < V.size(); ++i)
-    if (std::abs(V[i].z() - zmin) <= eps)
-      idx.push_back(i);
-  return idx;
-}
-
-// Base-center: center of the base polygon (use average of base vertices; robust and simple)
-inline Eigen::Vector3d baseCenterXY(const std::vector<Eigen::Vector3d>& V, double zmin, double eps)
-{
-  const auto idx = baseVertices(V, zmin, eps);
-  if (idx.empty())
-  {
-    // Fallback: use base AABB center in XY at z=zmin
-    AABB bb = computeAABB(V);
-    return { 0.5 * (bb.min.x() + bb.max.x()), 0.5 * (bb.min.y() + bb.max.y()), zmin };
-  }
-  Eigen::Vector2d acc(0, 0);
-  for (size_t i : idx)
-    acc += V[i].head<2>();
-  acc /= double(idx.size());
-  return { acc.x(), acc.y(), zmin };
-}
-
-// Signed volume and centroid via tetrahedra from origin (assumes closed, outward CCW)
-struct VolumeMoments
-{
-  double V = 0.0;
-  Eigen::Vector3d C = Eigen::Vector3d::Zero();  // sum of (tetra centroid * signed volume)
+  std::vector<Eigen::Vector3d> V;  // vertcies
+  std::vector<Face> F;             // CCW/outward
 };
 
-inline VolumeMoments accumulateVolumeMoments(const std::vector<Eigen::Vector3d>& V,
-                                             const std::vector<geometry::TriangleMesh::Face>& F)
+struct MeshRef
 {
-  using Face = geometry::TriangleMesh::Face;
-  VolumeMoments m;
-  for (const Face& f : F)
-  {
-    const Eigen::Vector3d& a = V[f[0]];
-    const Eigen::Vector3d& b = V[f[1]];
-    const Eigen::Vector3d& c = V[f[2]];
-    // Signed volume of tetra (0,a,b,c) = (a · (b × c)) / 6
-    double vol6 = a.dot(b.cross(c));
-    double vol = vol6 / 6.0;
-    Eigen::Vector3d tet_centroid = (a + b + c) / 4.0;  // centroid of tetra (0,a,b,c)
-    m.V += vol;
-    m.C += vol * tet_centroid;
-  }
-  return m;
+  std::string uri;  // asset identifier only (no scale)
+};
+
+using TriangleMeshPtr = std::shared_ptr<const TriangleMesh>;
+using InlineMeshPtr = std::shared_ptr<const TriangleMesh>;
+
+using MeshSource = std::variant<std::monostate,  // no mesh
+                                MeshRef,         // external mesh by URI
+                                InlineMeshPtr>;  // inline mesh (heap)
+
+static inline bool hasTriangles(const std::vector<Eigen::Vector3d>& V, const std::vector<TriangleMesh::Face>& F)
+{
+  return !V.empty() && !F.empty();
 }
 
-inline bool computeVolumeCentroid(const std::vector<Eigen::Vector3d>& V,
-                                  const std::vector<geometry::TriangleMesh::Face>& F, Eigen::Vector3d& out_centroid)
+static inline void stripCapAtPlaneZ(std::vector<Eigen::Vector3d>& V, std::vector<geometry::TriangleMesh::Face>& F,
+                                    double z_plane, double tol)
 {
-  auto M = accumulateVolumeMoments(V, F);
-  if (!std::isfinite(M.V) || std::abs(M.V) < 1e-18)
-    return false;
-  out_centroid = M.C / M.V;
-  return std::isfinite(out_centroid.x()) && std::isfinite(out_centroid.y()) && std::isfinite(out_centroid.z());
+  auto is_cap = [&](const geometry::TriangleMesh::Face& t) {
+    const double z0 = V[t[0]].z(), z1 = V[t[1]].z(), z2 = V[t[2]].z();
+    return (std::abs(z0 - z_plane) <= tol) && (std::abs(z1 - z_plane) <= tol) && (std::abs(z2 - z_plane) <= tol);
+  };
+
+  std::vector<geometry::TriangleMesh::Face> keep;
+  keep.reserve(F.size());
+  for (const auto& tri : F)
+    if (!is_cap(tri))
+      keep.push_back(tri);
+  F.swap(keep);
 }
 
-}  // anonymous namespace
-
-inline void applyOriginPolicyToMeshifiedPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
-                                                  const std::vector<geometry::TriangleMesh::Face>& F)
-{
-  using geometry::OriginPolicy;
-  if (V.empty())
-    return;
-
-  switch (s.origin)
-  {
-    case OriginPolicy::Native:
-      // No-op
-      return;
-
-    case OriginPolicy::AABBCenter:
-    {
-      AABB bb = computeAABB(V);
-      const Eigen::Vector3d ctr = aabbCenter(bb);
-      for (auto& p : V)
-        p -= ctr;
-      return;
-    }
-
-    case OriginPolicy::BaseCenter:
-    {
-      // Use actual base plane z = min z (robust to tiny numerical deviations)
-      AABB bb = computeAABB(V);
-      const double zmin = bb.min.z();
-      const double eps = std::max(1e-12, 1e-6 * (bb.max - bb.min).norm());
-      const Eigen::Vector3d bctr = baseCenterXY(V, zmin, eps);
-      for (auto& p : V)
-        p -= bctr;
-      return;
-    }
-
-    case OriginPolicy::VolumeCentroid:
-    {
-      Eigen::Vector3d C;
-      if (computeVolumeCentroid(V, F, C))
-      {
-        for (auto& p : V)
-          p -= C;
-      }
-      else
-      {
-        // Fallback to AABBCenter if centroid cannot be computed (open mesh / degenerate)
-        AABB bb = computeAABB(V);
-        const Eigen::Vector3d ctr = aabbCenter(bb);
-        for (auto& p : V)
-          p -= ctr;
-      }
-      return;
-    }
-  }
-}
-
-/*
-CONVENTION
-- All primitives are tessellated in a base-aligned frame with z E [0, H]
-  (i.e., base at z=0 and top at z=H; +Z is the height axis).
-*/
-
-inline void meshifyCylinder(double radius, double height, int sides, std::vector<Eigen::Vector3d>& V,
-                            std::vector<TriangleMesh::Face>& F)
-{
-  using Index = TriangleMesh::Index;
-
-  V.clear();
-  F.clear();
-  sides = std::max(3, sides);
-
-  // two rings: z=0 and z=height
-  for (int r = 0; r < 2; ++r)
-  {
-    const double z = (r == 0) ? 0.0 : height;
-    for (int i = 0; i < sides; ++i)
-    {
-      const double a = 2.0 * M_PI * i / sides;
-      V.emplace_back(radius * std::cos(a), radius * std::sin(a), z);
-    }
-  }
-
-  const Index iBotC = static_cast<Index>(V.size());
-  V.emplace_back(0, 0, 0);
-  const Index iTopC = static_cast<Index>(V.size());
-  V.emplace_back(0, 0, height);
-
-  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
-
-  // side quads
-  for (int i = 0; i < sides; ++i)
-  {
-    const Index i0 = static_cast<Index>(i);
-    const Index i1 = static_cast<Index>((i + 1) % sides);
-    const Index j0 = static_cast<Index>(i + sides);
-    const Index j1 = static_cast<Index>(((i + 1) % sides) + sides);
-    T(i0, i1, j1);
-    T(i0, j1, j0);
-  }
-  // bottom cap (CCW when seen from +Z)
-  for (int i = 1; i + 1 < sides; ++i)
-    T(iBotC, static_cast<Index>(i), static_cast<Index>(i + 1));
-  // top cap (CCW from +Z)
-  for (int i = 1; i + 1 < sides; ++i)
-    T(iTopC, static_cast<Index>(sides + i + 1), static_cast<Index>(sides + i));
-}
-
-inline void meshifyConeFrustum(double r0, double r1, double h, int sides, std::vector<Eigen::Vector3d>& V,
-                               std::vector<TriangleMesh::Face>& F)
-{
-  using Index = TriangleMesh::Index;
-
-  V.clear();
-  F.clear();
-  sides = std::max(3, sides);
-
-  for (int r = 0; r < 2; ++r)
-  {
-    const double z = (r == 0) ? 0.0 : h;
-    const double rr = (r == 0) ? r0 : r1;
-    for (int i = 0; i < sides; ++i)
-    {
-      const double a = 2.0 * M_PI * i / sides;
-      V.emplace_back(rr * std::cos(a), rr * std::sin(a), z);
-    }
-  }
-
-  const Index iBotC = static_cast<Index>(V.size());
-  V.emplace_back(0, 0, 0);
-  const Index iTopC = static_cast<Index>(V.size());
-  V.emplace_back(0, 0, h);
-
-  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
-
-  for (int i = 0; i < sides; ++i)
-  {
-    const Index i0 = static_cast<Index>(i);
-    const Index i1 = static_cast<Index>((i + 1) % sides);
-    const Index j0 = static_cast<Index>(i + sides);
-    const Index j1 = static_cast<Index>(((i + 1) % sides) + sides);
-    T(i0, i1, j1);
-    T(i0, j1, j0);
-  }
-  for (int i = 1; i + 1 < sides; ++i)
-    T(iBotC, static_cast<Index>(i), static_cast<Index>(i + 1));
-  for (int i = 1; i + 1 < sides; ++i)
-    T(iTopC, static_cast<Index>(sides + i + 1), static_cast<Index>(sides + i));
-}
-
-// Triangular prism (base in XY, extruded along +Z), with
-//   X = triangle height D
-//   Y = base width W
-//   Z = extrusion/height H
-// Apex projection offset u along the base (Y) with 0<=u<=W.
-//
-// Base triangle at z=0:
-//   A = (0, 0, 0)
-//   B = (0, W, 0)          // base along +Y
-//   C = (D, u, 0)          // apex at +X, offset u along Y
-inline void meshifyTriangularPrism(double W, double D, double H, double u, std::vector<Eigen::Vector3d>& V,
-                                   std::vector<TriangleMesh::Face>& F)
+static inline void appendMesh(const std::vector<Eigen::Vector3d>& VB,
+                              const std::vector<geometry::TriangleMesh::Face>& FB, std::vector<Eigen::Vector3d>& VA,
+                              std::vector<geometry::TriangleMesh::Face>& FA)
 {
   using Index = geometry::TriangleMesh::Index;
-  V.clear();
-  F.clear();
-
-  // (Optional) input checks:
-  // if (!(W > 0.0 && D > 0.0 && H > 0.0) || u < 0.0 || u > W)
-  //   throw std::runtime_error("TriangularPrism: invalid (W>0,D>0,H>0, 0<=u<=W)");
-
-  const double z0 = 0.0, z1 = H;
-
-  // z = 0
-  const Eigen::Vector3d A0(0.0, 0.0, z0);
-  const Eigen::Vector3d B0(0.0, W, z0);
-  const Eigen::Vector3d C0(D, u, z0);
-
-  // z = H
-  const Eigen::Vector3d A1(0.0, 0.0, z1);
-  const Eigen::Vector3d B1(0.0, W, z1);
-  const Eigen::Vector3d C1(D, u, z1);
-
-  const Index iA0 = static_cast<Index>(V.size());
-  V.push_back(A0);
-  const Index iB0 = static_cast<Index>(V.size());
-  V.push_back(B0);
-  const Index iC0 = static_cast<Index>(V.size());
-  V.push_back(C0);
-  const Index iA1 = static_cast<Index>(V.size());
-  V.push_back(A1);
-  const Index iB1 = static_cast<Index>(V.size());
-  V.push_back(B1);
-  const Index iC1 = static_cast<Index>(V.size());
-  V.push_back(C1);
-
-  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
-
-  // Caps: bottom faces −Z (reverse), top faces +Z (CCW)
-  T(iA0, iC0, iB0);  // z=0
-  T(iA1, iB1, iC1);  // z=H
-
-  // Sides
-  T(iA0, iB0, iB1);
-  T(iA0, iB1, iA1);  // AB
-  T(iB0, iC0, iC1);
-  T(iB0, iC1, iB1);  // BC
-  T(iC0, iA0, iA1);
-  T(iC0, iA1, iC1);  // CA
+  const Index off = static_cast<Index>(VA.size());
+  VA.insert(VA.end(), VB.begin(), VB.end());
+  FA.reserve(FA.size() + FB.size());
+  for (auto f : FB)
+    FA.push_back({ static_cast<Index>(f[0] + off), static_cast<Index>(f[1] + off), static_cast<Index>(f[2] + off) });
 }
 
-inline void meshifyBox(double W, double L, double H, std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F)
+static inline void addPlanarCapFanN(std::vector<Eigen::Vector3d>& V, std::vector<geometry::TriangleMesh::Face>& F,
+                                    geometry::TriangleMesh::Index ring_start, int ring_size, double plane_z,
+                                    bool normal_up)
 {
-  using Index = TriangleMesh::Index;
+  using Index = geometry::TriangleMesh::Index;
+  if (ring_size <= 0)
+    return;
+  const Index c = static_cast<Index>(V.size());
+  V.emplace_back(0.0, 0.0, plane_z);
+  for (int i = 0; i < ring_size; ++i)
+  {
+    const Index i0 = static_cast<Index>(ring_start + i);
+    const Index i1 = static_cast<Index>(ring_start + ((i + 1) % ring_size));
+    if (normal_up)
+      F.push_back({ c, i0, i1 });
+    else
+      F.push_back({ c, i1, i0 });
+  }
+}
 
-  const double hx = 0.5 * W;
-  const double hy = 0.5 * L;
+static inline void weldVertices(std::vector<Eigen::Vector3d>& V, std::vector<geometry::TriangleMesh::Face>& F,
+                                double tol)
+{
+  using Index = geometry::TriangleMesh::Index;
 
-  // Centered in X/Y, base-aligned in Z: z ∈ [0, H]
-  V = {
-    { -hx, -hy, 0 }, { +hx, -hy, 0 }, { +hx, +hy, 0 }, { -hx, +hy, 0 },  // 0..3 bottom
-    { -hx, -hy, H }, { +hx, -hy, H }, { +hx, +hy, H }, { -hx, +hy, H }   // 4..7 top
+  if (tol <= 0.0)
+    return;
+
+  struct Key
+  {
+    long long x, y, z;
+    bool operator==(const Key& o) const
+    {
+      return x == o.x && y == o.y && z == o.z;
+    }
+  };
+  struct KeyHash
+  {
+    size_t operator()(const Key& k) const
+    {
+      size_t h = (size_t)k.x;
+      h ^= (size_t)k.y + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+      h ^= (size_t)k.z + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+      return h;
+    }
   };
 
-  F.clear();
-  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
+  const double inv = 1.0 / tol;
+  std::unordered_map<Key, Index, KeyHash> map;
+  map.reserve(V.size() * 2);
+  std::vector<Eigen::Vector3d> Vnew;
+  Vnew.reserve(V.size());
+  std::vector<Index> remap(V.size(), std::numeric_limits<Index>::max());
 
-  // Bottom (z=0), outward normal = -Z → reversed winding
-  T(0, 2, 1);
-  T(0, 3, 2);
+  for (Index i = 0; i < static_cast<Index>(V.size()); ++i)
+  {
+    const auto& p = V[i];
+    Key k{ llround(p.x() * inv), llround(p.y() * inv), llround(p.z() * inv) };
+    auto it = map.find(k);
+    if (it == map.end())
+    {
+      Index nid = static_cast<Index>(Vnew.size());
+      map.emplace(k, nid);
+      Vnew.push_back(p);
+      remap[i] = nid;
+    }
+    else
+    {
+      remap[i] = it->second;
+    }
+  }
 
-  // Top (z=H), outward normal = +Z
-  T(4, 5, 6);
-  T(4, 6, 7);
-
-  // Sides (CCW outward)
-  T(0, 1, 5);
-  T(0, 5, 4);  // -Y
-  T(1, 2, 6);
-  T(1, 6, 5);  // +X
-  T(2, 3, 7);
-  T(2, 7, 6);  // +Y
-  T(3, 0, 4);
-  T(3, 4, 7);  // -X
+  for (auto& t : F)
+  {
+    t[0] = remap[t[0]];
+    t[1] = remap[t[1]];
+    t[2] = remap[t[2]];
+  }
+  V.swap(Vnew);
 }
 
-// Spherical segment (axis +Z), CCW outward
-inline void meshifySphericalSegment(double a1, double a2, double H, int radial_res, int axial_res,
-                                    std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F)
+inline double signed_tetra_volume(const Eigen::Vector3d& a, const Eigen::Vector3d& b, const Eigen::Vector3d& c,
+                                  const Eigen::Vector3d& d)
 {
-  using Index = TriangleMesh::Index;
+  return (a - d).dot((b - d).cross(c - d)) / 6.0;
+}
 
-  V.clear();
-  F.clear();
-  radial_res = std::max(3, radial_res);
-  axial_res = std::max(1, axial_res);
-  const double eps = 1e-12;
+// -------------------- Triangle clip (returns 0–4 verts) --------------------
 
-  const double z0 = (a2 * a2 - a1 * a1 + H * H) / (2.0 * H);
-  const double r = std::sqrt(std::max(0.0, a1 * a1 + z0 * z0));
+inline std::vector<Eigen::Vector3d> clip_tri_halfspace(const Eigen::Vector3d& a, const Eigen::Vector3d& b,
+                                                       const Eigen::Vector3d& c, const Eigen::Vector3d& n,
+                                                       double offset, double eps = 1e-12)
+{
+  const double EPSn = eps * (n.norm() + 1.0);
 
-  auto ring_radius = [&](double z) -> double {
-    const double ah2 = r * r - (z0 - z) * (z0 - z);
-    return (ah2 > 0.0) ? std::sqrt(ah2) : 0.0;
+  auto inside = [&](const Eigen::Vector3d& p) -> bool { return (n.dot(p) - offset) <= EPSn; };
+
+  auto intersect = [&](const Eigen::Vector3d& p0, const Eigen::Vector3d& p1) -> Eigen::Vector3d {
+    const Eigen::Vector3d d = p1 - p0;
+    const double denom = n.dot(d);
+    double t;
+    if (std::abs(denom) <= EPSn)
+      t = 0.5;  // nearly parallel
+    else
+      t = (offset - n.dot(p0)) / denom;
+    if (t < 0.0)
+      t = 0.0;
+    else if (t > 1.0)
+      t = 1.0;
+    return p0 + t * d;
   };
 
-  // rings
-  std::vector<Index> ring_start(axial_res + 1);
-  for (int k = 0; k <= axial_res; ++k)
-  {
-    const double z = double(k) * H / double(axial_res);
-    const double rk = ring_radius(z);
-    ring_start[k] = static_cast<Index>(V.size());
+  const Eigen::Vector3d P[3] = { a, b, c };
+  std::vector<Eigen::Vector3d> tmp;
+  tmp.reserve(4);
 
-    for (int i = 0; i < radial_res; ++i)
+  for (int i = 0; i < 3; ++i)
+  {
+    const Eigen::Vector3d& S = P[i];
+    const Eigen::Vector3d& E = P[(i + 1) % 3];
+    const bool Sin = inside(S), Ein = inside(E);
+    if (Sin && Ein)
+      tmp.push_back(E);
+    else if (Sin && !Ein)
+      tmp.push_back(intersect(S, E));
+    else if (!Sin && Ein)
     {
-      const double a = 2.0 * M_PI * double(i) / double(radial_res);
-      V.emplace_back(rk * std::cos(a), rk * std::sin(a), z);
+      tmp.push_back(intersect(S, E));
+      tmp.push_back(E);
     }
   }
 
-  // cap centers
-  const bool have_base_cap = (a1 > eps);
-  const bool have_top_cap = (a2 > eps);
+  auto nearly_eq = [&](const Eigen::Vector3d& x, const Eigen::Vector3d& y) {
+    return (x - y).cwiseAbs().maxCoeff() <= EPSn;
+  };
 
-  Index base_center_idx = std::numeric_limits<Index>::max();
-  Index top_center_idx = std::numeric_limits<Index>::max();
-  if (have_base_cap)
+  std::vector<Eigen::Vector3d> out;
+  out.reserve(tmp.size());
+  for (const auto& p : tmp)
+    if (out.empty() || !nearly_eq(out.back(), p))
+      out.push_back(p);
+  if (out.size() >= 2 && nearly_eq(out.front(), out.back()))
+    out.pop_back();
+  return out;
+}
+
+inline std::vector<Eigen::Vector3d> clip_tri_zleq(const Eigen::Vector3d& a, const Eigen::Vector3d& b,
+                                                  const Eigen::Vector3d& c, double h, double eps = 1e-12)
+{
+  return clip_tri_halfspace(a, b, c, Eigen::Vector3d::UnitZ(), h, eps);
+}
+
+// -------------------- Tetra volume under a half-space --------------------
+
+inline double clipped_tetra_volume_halfspace(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1,
+                                             const Eigen::Vector3d& p2, const Eigen::Vector3d& p3,
+                                             const Eigen::Vector3d& n, double offset, double eps = 1e-12)
+{
+  const double EPSn = eps * (n.norm() + 1.0);
+
+  auto inside = [&](const Eigen::Vector3d& p) -> bool { return (n.dot(p) - offset) <= EPSn; };
+
+  auto intersect = [&](const Eigen::Vector3d& A, const Eigen::Vector3d& B) -> Eigen::Vector3d {
+    const Eigen::Vector3d d = B - A;
+    const double denom = n.dot(d);
+    double t;
+    if (std::abs(denom) <= EPSn)
+      t = 0.5;  // nearly parallel, neutral midpoint
+    else
+      t = (offset - n.dot(A)) / denom;
+    if (t < 0.0)
+      t = 0.0;
+    else if (t > 1.0)
+      t = 1.0;
+    return A + t * d;
+  };
+
+  std::array<Eigen::Vector3d, 4> P{ p0, p1, p2, p3 };
+  std::vector<int> below;
+  below.reserve(4);
+  std::vector<int> above;
+  above.reserve(4);
+
+  for (int i = 0; i < 4; ++i)
+    (inside(P[i]) ? below : above).push_back(i);
+
+  if (below.size() == 4)
+    return std::abs(signed_tetra_volume(p0, p1, p2, p3));
+  if (below.empty())
+    return 0.0;
+
+  if (below.size() == 1)
   {
-    base_center_idx = static_cast<Index>(V.size());
-    V.emplace_back(0, 0, 0);
+    const int ib = below[0];
+    const int a = above[0], b = above[1], c = above[2];
+    const Eigen::Vector3d v0 = P[ib];
+    const Eigen::Vector3d v1 = intersect(P[ib], P[a]);
+    const Eigen::Vector3d v2 = intersect(P[ib], P[b]);
+    const Eigen::Vector3d v3 = intersect(P[ib], P[c]);
+    return std::abs(signed_tetra_volume(v0, v1, v2, v3));
   }
-  if (have_top_cap)
+
+  if (below.size() == 3)
   {
-    top_center_idx = static_cast<Index>(V.size());
-    V.emplace_back(0, 0, H);
+    const int ia = above[0];
+    const int b0 = below[0], b1 = below[1], b2 = below[2];
+    const Eigen::Vector3d q0 = intersect(P[ia], P[b0]);
+    const Eigen::Vector3d q1 = intersect(P[ia], P[b1]);
+    const Eigen::Vector3d q2 = intersect(P[ia], P[b2]);
+    const double v_full = std::abs(signed_tetra_volume(p0, p1, p2, p3));
+    const double v_cap = std::abs(signed_tetra_volume(P[ia], q0, q1, q2));
+    const double kept = v_full - v_cap;
+    return (kept > 0.0) ? kept : 0.0;
   }
 
-  auto T = [&](Index a, Index b, Index c) { F.push_back({ a, b, c }); };
-
-  // side band
-  for (int k = 0; k < axial_res; ++k)
+  // 2 below / 2 above → convex hexahedron, decompose into 4 tets
   {
-    const Index r0 = ring_start[k];
-    const Index r1 = ring_start[k + 1];
-    for (int i = 0; i < radial_res; ++i)
-    {
-      const Index i0 = static_cast<Index>(i);
-      const Index i1 = static_cast<Index>((i + 1) % radial_res);
+    const int i0 = below[0], i1 = below[1];
+    const int j0 = above[0], j1 = above[1];
 
-      const Index v00 = r0 + i0;
-      const Index v01 = r0 + i1;
-      const Index v10 = r1 + i0;
-      const Index v11 = r1 + i1;
+    const Eigen::Vector3d A0 = P[i0];
+    const Eigen::Vector3d A1 = P[i1];
 
-      T(v00, v10, v11);
-      T(v00, v11, v01);
-    }
-  }
+    const Eigen::Vector3d L0 = intersect(P[i0], P[j0]);
+    const Eigen::Vector3d L1 = intersect(P[i0], P[j1]);
+    const Eigen::Vector3d U0 = intersect(P[i1], P[j0]);
+    const Eigen::Vector3d U1 = intersect(P[i1], P[j1]);
 
-  // base cap (normal -Z)
-  if (have_base_cap)
-  {
-    const Index rB = ring_start[0];
-    for (int i = 0; i < radial_res; ++i)
-    {
-      const Index i0 = static_cast<Index>(i);
-      const Index i1 = static_cast<Index>((i + 1) % radial_res);
-      T(base_center_idx, rB + i1, rB + i0);
-    }
-  }
-
-  // top cap (normal +Z)
-  if (have_top_cap)
-  {
-    const Index rT = ring_start[axial_res];
-    for (int i = 0; i < radial_res; ++i)
-    {
-      const Index i0 = static_cast<Index>(i);
-      const Index i1 = static_cast<Index>((i + 1) % radial_res);
-      T(top_center_idx, rT + i0, rT + i1);
-    }
+    double v = 0.0;
+    v += std::abs(signed_tetra_volume(A0, A1, L0, U0));
+    v += std::abs(signed_tetra_volume(A0, L0, L1, U0));
+    v += std::abs(signed_tetra_volume(A0, L1, U1, U0));
+    v += std::abs(signed_tetra_volume(A0, A1, U0, U1));
+    return v;
   }
 }
 
-inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
-                             std::vector<TriangleMesh::Face>& F, int radial_res = 64, int axial_res = 16)
+inline double clipped_tetra_volume_zleq(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1, const Eigen::Vector3d& p2,
+                                        const Eigen::Vector3d& p3, double h, double eps = 1e-12)
 {
-  bool ok = false;
-
-  switch (s.type)
-  {
-    case geometry::ShapeType::Cylinder:
-      meshifyCylinder(s.dimensions.at(0), s.dimensions.at(1), radial_res, V, F);
-      ok = true;
-      break;
-
-    case geometry::ShapeType::Cone:
-      meshifyConeFrustum(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, V, F);
-      ok = true;
-      break;
-
-    case geometry::ShapeType::TriangularPrism:
-    {
-      const double W = s.dimensions.at(0);
-      const double D = s.dimensions.at(1);
-      const double H = s.dimensions.at(2);
-      const double u = (s.dimensions.size() > 3) ? s.dimensions[3] : 0.0;
-      meshifyTriangularPrism(W, D, H, u, V, F);
-      ok = true;
-      break;
-    }
-
-    case geometry::ShapeType::SphericalSegment:
-      meshifySphericalSegment(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), radial_res, axial_res, V, F);
-      ok = true;
-      break;
-
-    case geometry::ShapeType::Box:
-      meshifyBox(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), V, F);
-      ok = true;
-      break;
-
-    case geometry::ShapeType::Mesh:
-    default:
-      return false;  // not a primitive
-  }
-
-  if (!ok)
-    return false;
-
-  // 1) Apply origin policy (translates vertices so (0,0,0) matches the policy)
-  applyOriginPolicyToMeshifiedPrimitive(s, V, F);
-
-  // 2) Apply per-instance non-uniform scale around the origin (safe since origin now at 0)
-  if (s.scale != Eigen::Vector3d(1, 1, 1))
-  {
-    for (auto& p : V)
-      p = p.cwiseProduct(s.scale);
-  }
-
-  return true;
+  return clipped_tetra_volume_halfspace(p0, p1, p2, p3, Eigen::Vector3d::UnitZ(), h, eps);
 }
 
 }  // namespace geometry

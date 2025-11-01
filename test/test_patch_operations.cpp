@@ -110,7 +110,7 @@ static const char* kOverlayXml = R"(<?xml version="1.0" encoding="utf-8"?>
     <Shape id="shape/ui_button" type="Rectangle" origin="AABBCenter">
       <AxisNormal x="1.0" y="0.0" z="0.0"/>
       <AxisWidth x="0.0" y="1.0" z="0.0"/>
-      <AxisHeight x="0.0" y="0.0" z="1.0"/>
+      <AxisHeight x="0.0" y="0.0" z="-1.0"/>
       <Dimensions width="0.05" height="0.01"/>
     </Shape>
 

@@ -9,6 +9,7 @@
 
 #include <sodf/physics/fluid_domain_shape.h>
 
+#include <sodf/geometry/mesh_shape.h>
 #include <sodf/geometry/mesh.h>
 
 using namespace sodf::physics;
@@ -130,12 +131,6 @@ static void makeFrustumMesh_RegularNgon(Index N, double r0, double r1, double H,
     F.push_back({ N, N + i, N + i + 1 });
 }
 
-// Convenience: identity pose, gravity +Z, base at origin
-static void setDefaultState(FluidConvexMeshShape& m)
-{
-  m.setState(Eigen::Isometry3d::Identity(), { 0, 0, 1 }, { 0, 0, 0 });
-}
-
 // -------------------- Tests --------------------
 
 TEST(ConvexMesh_Box, MatchesBoxPrimitive)
@@ -145,7 +140,7 @@ TEST(ConvexMesh_Box, MatchesBoxPrimitive)
   std::vector<FluidConvexMeshShape::Tri> F;
   makeBoxMesh(W, L, H, V, F);
 
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
   FluidBoxShape box(W, L, H);
 
   // capacity & height
@@ -173,7 +168,7 @@ TEST(ConvexMesh_CylinderNgon, MatchesAnalyticNgonPrism)
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makePrismMesh_RegularNgon(N, r, H, V, F);
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
 
   const double A = regularNgonArea(N, r);
   const double Vcap = A * H;
@@ -208,7 +203,7 @@ TEST(ConvexMesh_FrustumNgon, MatchesAnalyticFrustumOfSimilarPolygons)
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makeFrustumMesh_RegularNgon(N, r0, r1, H, V, F);
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
 
   const double A0 = regularNgonArea(N, r0);
   const double A1 = regularNgonArea(N, r1);
@@ -233,23 +228,29 @@ TEST(ConvexMesh_Orientation_ZRotate, InvarianceUnderYaw)
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makeBoxMesh(0.5, 0.3, 0.8, V, F);
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
 
   const double cap = mesh.getMaxFillVolume();
   const double H = mesh.getMaxFillHeight();
 
   Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
   T.linear() = (Eigen::AngleAxisd(M_PI / 3.0, Eigen::Vector3d::UnitZ())).toRotationMatrix();
-  mesh.setState(T, { 0, 0, 1 }, { 0, 0, 0 });  // base stays same world point
+
+  sodf::physics::FillEnv env;
+  env.g_down_world = Eigen::Vector3d(0, 0, -1);
+  env.T_world_domain = T;
+  env.p_base_world = Eigen::Vector3d::Zero();
 
   EXPECT_NEAR(cap, mesh.getMaxFillVolume(), VOLUME_EPS);
   EXPECT_NEAR(H, mesh.getMaxFillHeight(), HEIGHT_EPS);
 
   for (double h : { 0.2, 0.6 })
   {
-    EXPECT_NEAR(mesh.getFillVolume(h), mesh.getFillVolume(h), VOLUME_EPS);  // trivially true
-    double v = mesh.getFillVolume(h);
-    EXPECT_NEAR(h, mesh.getFillHeight(v), HEIGHT_EPS);
+    const double v_default = mesh.getFillVolume(h);
+    const double v_env = mesh.getFillVolumeWithEnv(h, env);
+
+    EXPECT_NEAR(v_default, v_env, VOLUME_EPS);
+    EXPECT_NEAR(h, mesh.getFillHeightWithEnv(v_default, env), HEIGHT_EPS);
   }
 }
 
@@ -261,7 +262,7 @@ TEST(ConvexMesh_Orientation_TiltWithUpdatedBase, ConsistentHeights)
   const double W = 0.5, L = 0.3, H = 0.8;
   makeBoxMesh(W, L, H, V, F);
 
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
   const double cap = mesh.getMaxFillVolume();
 
   // Compute lowest vertex after tilt to set base
@@ -276,23 +277,26 @@ TEST(ConvexMesh_Orientation_TiltWithUpdatedBase, ConsistentHeights)
   }
   Eigen::Vector3d base = { 0, 0, minz };  // place base plane at lowest vertex z
 
-  mesh.setState(T, { 0, 0, 1 }, base);
+  sodf::physics::FillEnv env;
+  env.g_down_world = Eigen::Vector3d(0, 0, -1);
+  env.T_world_domain = T;
+  env.p_base_world = base;
 
   // Capacity must be unchanged
   EXPECT_NEAR(cap, mesh.getMaxFillVolume(), VOLUME_EPS);
 
   // Endpoints
-  EXPECT_NEAR(0.0, mesh.getFillVolume(0.0), VOLUME_EPS);
-  EXPECT_NEAR(mesh.getMaxFillVolume(), mesh.getFillVolume(mesh.getMaxFillHeight()), VOLUME_EPS);
+  EXPECT_NEAR(0.0, mesh.getFillVolumeWithEnv(0.0, env), VOLUME_EPS);
+  EXPECT_NEAR(mesh.getMaxFillVolume(),
+              mesh.getFillVolumeWithEnv(mesh.getFillHeightWithEnv(mesh.getMaxFillVolume(), env), env), VOLUME_EPS);
 
   // Inversion self-consistency at multiple fractions
   for (double f : { 0.1, 0.33, 0.57, 0.9 })
   {
-    double v = f * mesh.getMaxFillVolume();
-    double h = mesh.getFillHeight(v);
+    const double v = f * mesh.getMaxFillVolume();
+    const double h = mesh.getFillHeightWithEnv(v, env);
     EXPECT_GE(h, 0.0);
-    EXPECT_LE(h, mesh.getMaxFillHeight() + 1e-12);
-    EXPECT_NEAR(v, mesh.getFillVolume(h), 1e-8);
+    EXPECT_NEAR(v, mesh.getFillVolumeWithEnv(h, env), 1e-8);
   }
 }
 
@@ -301,13 +305,13 @@ TEST(ConvexMesh_EdgeCases, GuardsAndInvalid)
   // Degenerate/invalid mesh (too few verts) should throw in ctor
   std::vector<Eigen::Vector3d> Vbad = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };  // only 3 verts
   std::vector<FluidConvexMeshShape::Tri> Fbad = { { 0, 1, 2 } };
-  EXPECT_THROW(FluidConvexMeshShape(Vbad, Fbad, { 0, 0, 1 }, { 0, 0, 0 }), std::invalid_argument);
+  EXPECT_THROW(FluidConvexMeshShape(Vbad, Fbad), std::invalid_argument);
 
   // Valid tiny box: inputs outside [0,H] clamp to 0 or capacity
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makeBoxMesh(0.1, 0.1, 0.2, V, F);
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
 
   EXPECT_EQ(0.0, mesh.getFillVolume(-1.0));
   EXPECT_NEAR(mesh.getMaxFillVolume(), mesh.getFillVolume(1e9), 1e-12);
@@ -319,13 +323,13 @@ TEST(ConvexMesh_EdgeCases, GuardsAndInvalid)
 TEST(ConvexMesh_Clipper, VertexEdgeFaceCoincidence)
 {
   using V3 = Eigen::Vector3d;
-  auto Vtet = [](V3 a, V3 b, V3 c, V3 d) { return std::abs(sodf::physics::signedTetraVolume(a, b, c, d)); };
+  auto Vtet = [](V3 a, V3 b, V3 c, V3 d) { return std::abs(sodf::geometry::signed_tetra_volume(a, b, c, d)); };
 
   // A standard tetra resting on z=0 face; full volume is 1/6
   V3 a{ 0, 0, 0 }, b{ 1, 0, 0 }, c{ 0, 1, 0 }, d{ 0, 0, 1 };
   const double Vfull = Vtet(a, b, c, d);
 
-  auto clip = [&](double h) { return sodf::physics::clippedTetraVolumeZleq(a, b, c, d, h, 1e-12); };
+  auto clip = [&](double h) { return sodf::geometry::clipped_tetra_volume_zleq(a, b, c, d, h, 1e-12); };
 
   // Face-coincidence: h=0 keeps zero volume
   EXPECT_DOUBLE_EQ(0.0, clip(0.0));
@@ -347,7 +351,7 @@ TEST(ConvexMesh_Box, KnotHeightsAtVertexZ)
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makeBoxMesh(0.5, 0.3, 0.8, V, F);
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
 
   // z-levels present in the mesh (and interior)
   std::vector<double> Z = { 0.0, 0.8 };
@@ -368,7 +372,7 @@ TEST(ConvexMesh_Generic, HeightVolumeRoundtripDense)
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makePrismMesh_RegularNgon(24, 0.37, 0.91, V, F);  // arbitrary convex, non-box
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
 
   const double H = mesh.getMaxFillHeight();
   for (int i = 0; i <= 50; ++i)
@@ -385,30 +389,36 @@ TEST(ConvexMesh_StateAPIs, GravityNormalizationAndRigidInvariance)
   std::vector<Eigen::Vector3d> V;
   std::vector<FluidConvexMeshShape::Tri> F;
   makeBoxMesh(0.5, 0.3, 0.8, V, F);
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 10 }, { 0, 0, 0 });  // non-unit g
+  FluidConvexMeshShape mesh(V, F);
 
   const double cap0 = mesh.getMaxFillVolume();
   const double H0 = mesh.getMaxFillHeight();
 
-  // Rigid translate & rotate
+  // Build an arbitrary rigid transform
   Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
   T.translation() = Eigen::Vector3d(1.0, -2.0, 3.0);
   T.linear() = (Eigen::AngleAxisd(0.7, Eigen::Vector3d::UnitX()) * Eigen::AngleAxisd(-0.2, Eigen::Vector3d::UnitY()) *
                 Eigen::AngleAxisd(1.1, Eigen::Vector3d::UnitZ()))
                    .toRotationMatrix();
-  mesh.setWorldPose(T);
+
+  // env A: standard down, with T, base at origin
+  sodf::physics::FillEnv envA;
+  envA.g_down_world = Eigen::Vector3d(0, 0, -1);
+  envA.T_world_domain = T;
+  envA.p_base_world = Eigen::Vector3d::Zero();
   EXPECT_NEAR(cap0, mesh.getMaxFillVolume(), 1e-15);
 
-  // Change gravity direction (and length); height should recompute in that up-axis
-  mesh.setGravityWorld({ -2, 0, 5 });  // non-unit again
-  double H1 = mesh.getMaxFillHeight();
+  // env B: non-unit, skewed gravity → different up-axis
+  sodf::physics::FillEnv envB = envA;
+  envB.g_down_world = Eigen::Vector3d(-2, 0, 5);
+  const double H1 = mesh.getFillHeightWithEnv(cap0, envB);  // "max height" in envB
   EXPECT_GT(H1, 0.0);
 
-  // Shifting only base point should shift heights but not capacity
-  const double v_mid = 0.5 * mesh.getMaxFillVolume();
-  double h_mid_before = mesh.getFillHeight(v_mid);
-  mesh.setBasePointWorld({ 10, 10, 10 });
-  double h_mid_after = mesh.getFillHeight(v_mid);
+  // Base shift changes heights but not capacity
+  const double v_mid = 0.5 * cap0;
+  const double h_mid_before = mesh.getFillHeightWithEnv(v_mid, envB);
+  envB.p_base_world = Eigen::Vector3d(10, 10, 10);
+  const double h_mid_after = mesh.getFillHeightWithEnv(v_mid, envB);
   EXPECT_NEAR(cap0, mesh.getMaxFillVolume(), 1e-15);
   EXPECT_NE(h_mid_before, h_mid_after);
 }
@@ -419,24 +429,31 @@ TEST(ConvexMesh_BasePlacement, BaseBelowOrAboveMesh)
   std::vector<FluidConvexMeshShape::Tri> F;
   makeBoxMesh(0.5, 0.3, 0.8, V, F);
 
-  // Base far below → same MaxFillHeight as geometric extent
-  FluidConvexMeshShape m1(V, F, { 0, 0, 1 }, { 0, 0, -100 });
-  EXPECT_NEAR(0.8, m1.getMaxFillHeight(), 1e-12);
+  FluidConvexMeshShape mesh(V, F);
+  const double cap = mesh.getMaxFillVolume();
+  // Base far below → "max height" with env equals geometric height (0.8)
+  sodf::physics::FillEnv env1;
+  env1.g_down_world = Eigen::Vector3d(0, 0, -1);
+  env1.T_world_domain = Eigen::Isometry3d::Identity();
+  env1.p_base_world = Eigen::Vector3d(0, 0, -100);
+  EXPECT_NEAR(0.8, mesh.getFillHeightWithEnv(cap, env1), 1e-12);
 
   // Base cutting through mesh bottom (some z<0). Volume at small positive h should be smaller than base-at-bottom case
-  FluidConvexMeshShape m2(V, F, { 0, 0, 1 }, { 0, 0, 0.05 });
-  EXPECT_GT(m2.getFillVolume(0.05), m1.getFillVolume(0.05));
+  sodf::physics::FillEnv env2 = env1;
+  env2.p_base_world = Eigen::Vector3d(0, 0, 0.05);
+  EXPECT_GT(mesh.getFillVolumeWithEnv(0.05, env2), mesh.getFillVolumeWithEnv(0.05, env1));
 
   // Base just epsilon below bottom to trigger z_min_→0.0 snapping
-  FluidConvexMeshShape m3(V, F, { 0, 0, 1 }, { 0, 0, -1e-12 });
-  EXPECT_NEAR(m1.getMaxFillHeight(), m3.getMaxFillHeight(), 2e-12);
+  sodf::physics::FillEnv env3 = env1;
+  env3.p_base_world = Eigen::Vector3d(0, 0, -1e-12);
+  EXPECT_NEAR(mesh.getFillHeightWithEnv(cap, env1), mesh.getFillHeightWithEnv(cap, env3), 2e-12);
 }
 
 TEST(ConvexMesh_EdgeCases, MoreCtorGuards)
 {
   std::vector<Eigen::Vector3d> Vok = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
   std::vector<FluidConvexMeshShape::Tri> Fempty;
-  EXPECT_THROW(FluidConvexMeshShape(Vok, Fempty, { 0, 0, 1 }, { 0, 0, 0 }), std::invalid_argument);
+  EXPECT_THROW(FluidConvexMeshShape(Vok, Fempty), std::invalid_argument);
 
   // Out-of-range indices (behavior: expect throw if you add such a guard in ctor; if not, keep as EXPECT_NO_THROW)
   std::vector<FluidConvexMeshShape::Tri> Fbad = { { 0, 1, 99 } };
@@ -456,7 +473,7 @@ TEST(ConvexMesh_Capacity, RigidInvariantLocalBuild)
   for (auto& p : V)
     p = R * p;
 
-  FluidConvexMeshShape mesh(V, F, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape mesh(V, F);
   EXPECT_NEAR(W * L * H, mesh.getMaxFillVolume(), 1e-12);
 }
 
@@ -466,14 +483,14 @@ TEST(ConvexMesh_Numerics, ExtremeAspectRatios)
   std::vector<Eigen::Vector3d> V1;
   std::vector<FluidConvexMeshShape::Tri> F1;
   makeBoxMesh(1.0, 1.0, 1e-6, V1, F1);
-  FluidConvexMeshShape m1(V1, F1, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape m1(V1, F1);
   EXPECT_NEAR(1e-6, m1.getMaxFillVolume(), 1e-12);
 
   // Very tall, skinny prism
   std::vector<Eigen::Vector3d> V2;
   std::vector<FluidConvexMeshShape::Tri> F2;
   makeBoxMesh(1e-6, 1e-6, 10.0, V2, F2);
-  FluidConvexMeshShape m2(V2, F2, { 0, 0, 1 }, { 0, 0, 0 });
+  FluidConvexMeshShape m2(V2, F2);
   EXPECT_NEAR(1e-12 * 10.0, m2.getMaxFillVolume(), 1e-18);
 
   // Round-trip still behaves
@@ -484,7 +501,7 @@ TEST(ConvexMesh_Numerics, ExtremeAspectRatios)
 TEST(StackedDomains, OverflowUnderflowGuards)
 {
   using namespace sodf::physics;
-  std::vector<DomainShapePtr> layers;
+  std::vector<DomainShapeBasePtr> layers;
   layers.emplace_back(std::make_shared<FluidBoxShape>(0.5, 0.3, 0.2));
   layers.emplace_back(std::make_shared<FluidCylinderShape>(0.1, 0.4));
 

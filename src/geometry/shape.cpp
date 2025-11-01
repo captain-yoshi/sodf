@@ -29,10 +29,10 @@ bool is2DShape(const Shape& shape)
 
 Eigen::Vector3d getShapeCentroid(const Shape& shape)
 {
-  auto& type = shape.type;
-  auto& vertices = shape.vertices;
-  auto& dimensions = shape.dimensions;
-  auto& axes = shape.axes;
+  const auto& type = shape.type;
+  const auto& vertices = shape.vertices;
+  const auto& dimensions = shape.dimensions;
+  const auto& axes = shape.axes;
 
   switch (type)
   {
@@ -43,35 +43,40 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
 
     case ShapeType::Triangle:
     case ShapeType::Polygon:
+    {
       if (vertices.empty())
         throw std::runtime_error("Polygon/Triangle shape requires at least one vertex for centroid calculation.");
-      {
-        Eigen::Vector3d c = Eigen::Vector3d::Zero();
-        for (const auto& v : vertices)
-          c += v;
-        return c / vertices.size();
-      }
+      Eigen::Vector3d c = Eigen::Vector3d::Zero();
+      for (const auto& v : vertices) c += v;
+      return c / vertices.size();
+    }
 
     case ShapeType::TriangularPrism:
     {
-      // Option B: dimensions = { bw, bh, depth, u }
-      // axes = { base_x, base_y, depth_axis }
-      if (dimensions.size() < 4 || axes.size() < 3)
-        throw std::runtime_error("TriangularPrism requires dims{bw,bh,depth,u} and axes{base_x,base_y,depth_axis}");
+      // dims = { base, altitude, height, apex_offset }, axes = [Altitude (X), Base (Y), Height (Z)]
+      if (dimensions.size() < 3 || axes.size() < 3)
+        throw std::runtime_error("TriangularPrism requires dims{base,altitude,height[,u]} and 3 axes.");
+      const double bw = dimensions[0];   // base length along Base(Y)
+      const double bh = dimensions[1];   // altitude along Altitude(X)
+      const double h  = dimensions[2];   // prism height along Height(Z)
+      const double u  = (dimensions.size() >= 4 ? dimensions[3] : 0.0); // apex offset along Altitude(X)
 
-      const double bw = dimensions[0];
-      const double bh = dimensions[1];
-      const double d = dimensions[2];
-      const double u = dimensions[3];
+      const Eigen::Vector3d& Alt = axes[0]; // X
+      const Eigen::Vector3d& Bas = axes[1]; // Y
+      const Eigen::Vector3d& Hei = axes[2]; // Z
 
-      const Eigen::Vector3d& base_x = axes[0];
-      const Eigen::Vector3d& base_y = axes[1];
-      const Eigen::Vector3d& depth_axis = axes[2];
+      // Base triangle centroid in base plane: A=(0,0), B=(bw,0) along Bas, C=(u,bh) (Alt,Bas)
+      Eigen::Vector2d c2((0.0 + bw + 0.0) / 3.0, (0.0 + 0.0 + 0.0) / 3.0); // (we’ll build explicitly below)
+      // Build centroid vector in the base plane:
+      Eigen::Vector3d base_centroid = ( (bw / 3.0) * Bas.normalized()
+                                      + (u  / 3.0) * Alt.normalized()
+                                      + (bh / 3.0) * Alt.normalized() /* Alt component of C */ )
+                                      - (u / 3.0) * Alt.normalized(); // cancel earlier placeholder
+      // More directly: centroid = (A + B + C)/3 = ( (0*Alt+0*Bas) + (0*Alt+bw*Bas) + (u*Alt+bh*Bas) )/3
+      base_centroid = ( (bw * Bas) + (u * Alt) + (bh * Bas) ) / 3.0;
 
-      // Base triangle centroid in the base plane:
-      // ( (0,0) + (bw,0) + (u,bh) ) / 3
-      Eigen::Vector2d c2((0.0 + bw + u) / 3.0, (0.0 + 0.0 + bh) / 3.0);
-      return c2.x() * base_x.normalized() + c2.y() * base_y.normalized() + (d * 0.5) * depth_axis.normalized();
+      // Add half of prism height along Z:
+      return base_centroid + 0.5 * h * Hei.normalized();
     }
 
     case ShapeType::Rectangle:
@@ -82,41 +87,47 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
       return Eigen::Vector3d::Zero();
 
     case ShapeType::Cylinder:
-      // axes[0]: symmetry axis, dimensions[1]: height
-      if (axes.size() < 1 || dimensions.size() < 2)
-        throw std::runtime_error("Cylinder shape requires symmetry axis and 2 dimensions (radius, height).");
-      return axes[0].normalized() * (dimensions[1] / 2.0);
+    {
+      // axes = [RefX, RefY, Symmetry(Z)], dims = {radius, height}
+      if (axes.size() < 3 || dimensions.size() < 2)
+        throw std::runtime_error("Cylinder requires axes[2]=symmetry and dims {radius,height}.");
+      const Eigen::Vector3d& Sym = axes[2];
+      return 0.5 * dimensions[1] * Sym.normalized();
+    }
 
     case ShapeType::Cone:
-      // axes[0]: symmetry axis, dimensions[2]: height
-      if (axes.size() < 1 || dimensions.size() < 3)
-        throw std::runtime_error(
-            "Cone shape requires symmetry axis and 3 dimensions (base_radius, top_radius, height).");
-      return axes[0].normalized() * (dimensions[2] / 4.0);
+    {
+      // axes = [RefX, RefY, Symmetry(Z)], dims = {base_radius, top_radius, height}
+      if (axes.size() < 3 || dimensions.size() < 3)
+        throw std::runtime_error("Cone requires axes[2]=symmetry and dims {base_radius,top_radius,height}.");
+      const Eigen::Vector3d& Sym = axes[2];
+      // Centroid of a (possibly frustum) along axis ~ h/4 from base for a cone; keep your previous heuristic:
+      return 0.25 * dimensions[2] * Sym.normalized();
+    }
 
     case ShapeType::SphericalSegment:
-      // axes[0]: symmetry axis, dimensions[0]=base_radius, dimensions[1]=top_radius, dimensions[2]=height
-      if (axes.size() < 1 || dimensions.size() < 3)
-        throw std::runtime_error(
-            "SphericalSegment requires symmetry axis and 3 dimensions (base_radius, top_radius, height).");
-      {
-        double R = dimensions[0] > 0 ? dimensions[0] : dimensions[1];
-        double h = dimensions[2];
-        // (A more precise formula may be needed for your use-case)
-        double z = (3.0 * R - h) * h * h / (4.0 * (3.0 * R * R - 3.0 * R * h + h * h));
-        return axes[0].normalized() * z;
-      }
+    {
+      // axes = [RefX, RefY, Symmetry(Z)], dims = {base_radius, top_radius, height}
+      if (axes.size() < 3 || dimensions.size() < 3)
+        throw std::runtime_error("SphericalSegment requires axes[2]=symmetry and dims {base_radius,top_radius,height}.");
+      const Eigen::Vector3d& Sym = axes[2];
+      double R = dimensions[0] > 0 ? dimensions[0] : dimensions[1];
+      double h = dimensions[2];
+      double z = (3.0 * R - h) * h * h / (4.0 * (3.0 * R * R - 3.0 * R * h + h * h)); // as you had
+      return z * Sym.normalized();
+    }
 
     case ShapeType::Mesh:
-      throw std::runtime_error("getShapeCentroid() not implemented for Mesh (requires mesh analysis).");
+      throw std::runtime_error("getShapeCentroid() not implemented for Mesh.");
 
     default:
       throw std::runtime_error("getShapeCentroid() not implemented for this ShapeType.");
   }
 }
 
+
 // --- Helper: extract height of shape for stacking ---
-double shapeHeight(const Shape& shape)
+double getShapeHeight(const Shape& shape)
 {
   // Add more shape types as needed
   switch (shape.type)
@@ -211,35 +222,37 @@ double shapeMaxRadius(const geometry::Shape& shape)
   }
 }
 
-const Eigen::Vector3d& getShapeNormalAxis(const Shape& shape)
+const Eigen::Vector3d& getShapeNormalAxis(const Shape& s)
 {
-  switch (shape.type)
+  using ST = ShapeType;
+  switch (s.type)
   {
-    case ShapeType::Line:
-    case ShapeType::Rectangle:
-    case ShapeType::Circle:
-    case ShapeType::Triangle:
-    case ShapeType::Polygon:
-    case ShapeType::Plane:
-      // 2D shapes and planes: normal is stored in axes[0]
-      return shape.axes.at(0);
+    // 2D surfaces + plane: Normal is Z (axes[2])
+    case ST::Rectangle:
+    case ST::Circle:
+    case ST::Triangle:
+    case ST::Polygon:
+    case ST::Plane:
+      return s.axes.at(2);
 
-    case ShapeType::Box:
-    case ShapeType::Mesh:
-      // No single "normal", but for a box you might pick +Z of the box, or require a face index
-      throw std::runtime_error("getNormal() not defined for Box/Mesh without additional info.");
+    // Revolute shapes: symmetry axis is Z (axes[2])
+    case ST::Cylinder:
+    case ST::Cone:
+    case ST::SphericalSegment:
+      return s.axes.at(2);
 
-    case ShapeType::Cylinder:
-    case ShapeType::Cone:
-    case ShapeType::SphericalSegment:
-      // "Normal" usually refers to symmetry axis (axes[0])
-      return shape.axes.at(0);
+    // Box: take +Height (Z) as the “normal” for a face-aligned notion
+    case ST::Box:
+      return s.axes.at(2);
 
-    case ShapeType::Sphere:
-      throw std::runtime_error("getNormal() not defined for Sphere (normal depends on query point).");
+    // No unique surface normal:
+    case ST::Line:
+    case ST::Sphere:
+    case ST::Mesh:
+      throw std::runtime_error("getShapeNormalAxis undefined for this ShapeType.");
 
     default:
-      throw std::runtime_error("getNormal() not implemented for this ShapeType.");
+      throw std::runtime_error("getShapeNormalAxis: unsupported ShapeType.");
   }
 }
 
@@ -249,19 +262,19 @@ const Eigen::Vector3d& getShapeReferenceAxis(const geometry::Shape& shape)
   switch (shape.type)
   {
     case ShapeType::TriangularPrism:
-      // Base plane exists; expose in-plane "reference" axis (axes[1] = base_y)
       if (shape.axes.size() < 2)
-        throw std::runtime_error("TriangularPrism requires axes[1] (base_y) for reference axis.");
-      return shape.axes[1];
+        throw std::runtime_error("TriangularPrism requires axes[1] (Base) for reference axis.");
+      return shape.axes[1]; // Base (Y)
+
     case ShapeType::Cylinder:
     case ShapeType::Cone:
     case ShapeType::SphericalSegment:
       if (shape.axes.size() < 2)
-        throw std::runtime_error("Shape requires reference axis (axes[1]) but not found.");
-      return shape.axes[1];
+        throw std::runtime_error("Axisymmetric shape requires axes[1] (RefY) for reference axis.");
+      return shape.axes[1]; // RefY
 
     default:
-      throw std::runtime_error("getShapeReferenceAxis() is only valid for shapes that define a base plane.");
+      throw std::runtime_error("getShapeReferenceAxis() only valid for shapes with a defined base plane.");
   }
 }
 
@@ -273,12 +286,12 @@ const Eigen::Vector3d& getShapeSymmetryAxis(const geometry::Shape& shape)
     case ShapeType::Cylinder:
     case ShapeType::Cone:
     case ShapeType::SphericalSegment:
-      if (shape.axes.size() < 1)
-        throw std::runtime_error("Shape requires symmetry axis (axes[0]) but none provided.");
-      return shape.axes[0];
+      if (shape.axes.size() < 3)
+        throw std::runtime_error("Axisymmetric shape requires axes[2] (symmetry Z).");
+      return shape.axes[2];
 
     default:
-      throw std::runtime_error("getShapeSymmetryAxis() is only valid for axisymmetric 3D shapes.");
+      throw std::runtime_error("getShapeSymmetryAxis() only valid for axisymmetric 3D shapes.");
   }
 }
 
