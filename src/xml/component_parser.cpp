@@ -280,8 +280,23 @@ void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLEle
 void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
                              ecs::EntityID eid)
 {
+  auto parseRole = [&](const tinyxml2::XMLElement* e, const std::string& insertion_id) -> InsertionRole {
+    const char* role_cstr = e->Attribute("role");
+    if (!role_cstr)
+      return InsertionRole::Receptacle;  // default if absent
+    const std::string v(role_cstr);
+    if (v == "Receptacle")
+      return InsertionRole::Receptacle;
+    if (v == "Insert")
+      return InsertionRole::Insert;
+    throw std::runtime_error("Insertion '" + insertion_id + "' has invalid role='" + v + "' at line " +
+                             std::to_string(e->GetLineNum()) + " (allowed: Receptacle or Insert).");
+  };
+
   components::Insertion insertion;
   const std::string id = evalElementIdRequired(elem);
+
+  insertion.role = parseRole(elem, id);
 
   // AxisInsertion (required)
   const auto* axis1 = elem->FirstChildElement("AxisInsertion");
@@ -320,10 +335,6 @@ void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
   }
   insertion.rotational_symmetry = evalUIntAttributeRequired(sym, "value");
 
-  // ApproachOffset (optional)
-  if (const auto* approach = elem->FirstChildElement("ApproachOffset"))
-    insertion.approach_offset = evalNumberAttributeRequired(approach, "value");
-
   // MaxDepth (required)
   const auto* max_depth = elem->FirstChildElement("MaxDepth");
   if (!max_depth)
@@ -332,6 +343,31 @@ void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
                              std::to_string(elem->GetLineNum()));
   }
   insertion.max_depth = evalNumberAttributeRequired(max_depth, "value");
+
+  if (const auto* shape_ref = elem->FirstChildElement("StackedShapeRef"))
+  {
+    insertion.stacked_shape_id = evalTextAttributeRequired(shape_ref, "id");
+
+    // Optional payload-local frame (preferred base for rendering the domain)
+    if (const auto* tf_elem = shape_ref->FirstChildElement("Transform"))
+    {
+      const std::string frame_id = evalTextAttributeRequired(tf_elem, "id");
+      const std::string parent = evalTextAttributeRequired(tf_elem, "parent");
+
+      geometry::TransformNode node;
+      node.parent = parent;
+      node.local = parseIsometry3D(tf_elem);
+      node.is_static = true;
+
+      // Register this frame in the entity's TransformComponent
+      auto* tfc = db.get_or_add<TransformComponent>(eid);
+      if (!tfc)
+        throw std::runtime_error("get_or_add<TransformComponent> failed for Insertion '" + id + "'");
+      tfc->elements.emplace_back(frame_id, std::move(node));
+
+      insertion.stacked_shape_frame_id = frame_id;
+    }
+  }
 
   // Store to component
   auto* component = db.get_or_add<InsertionComponent>(eid);

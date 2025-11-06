@@ -11,18 +11,29 @@
 namespace sodf {
 namespace components {
 
+// What side is this feature describing?
+enum class InsertionRole : uint8_t
+{
+  Receptacle,  // cavity / socker /receptacle (female)
+  Insert       // insertable / exterior (male)
+};
+
 struct Insertion
 {
+  InsertionRole role;
+
   // Axis along which we approach and insert (local to target_frame_id).
   Eigen::Vector3d axis_insertion;
   Eigen::Vector3d axis_reference;
-  uint32_t rotational_symmetry = 1;  // Number of unique orientations wrt. the axis
+  uint32_t rotational_symmetry = 1;  // Number of unique orientations wrt. the insertion axis
                                      // 0 = infinite, 1 = unique, 2 = 0 and 180 degrees, etc...
 
-  // Distance to stage along -axis_insertion before engaging [m]
-  double approach_offset = 0.0;
+  std::string stacked_shape_id;
+  std::string stacked_shape_frame_id;
 
-  // Max allowed travel along +axis_insertion from mouth/opening
+  // Receptacle: max allowed travel along +axis_insertion from mouth/opening
+  //             sockets don't usally have a max depth
+  // Insert: usally no max_depth (could be used to set the distance to a shoulder)
   double max_depth = 0.0;
 };
 
