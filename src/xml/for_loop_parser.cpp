@@ -215,6 +215,7 @@ void expandForLoop(const tinyxml2::XMLElement* forElem,
     expandCartesian(vars, 0, ctx, body);
   }
 }
+
 std::string substituteVars(const std::string& input, const std::unordered_map<std::string, std::string>& ctx)
 {
   std::string out = input;
@@ -226,7 +227,7 @@ std::string substituteVars(const std::string& input, const std::unordered_map<st
       break;  // malformed, leave as-is
 
     const std::string raw = out.substr(pos + 1, end - pos - 1);
-    const std::string expr = trim_copy(raw);  // <-- use this name everywhere
+    const std::string expr = trim_copy(raw);
 
     // Plain {var}
     if (auto it = ctx.find(expr); it != ctx.end())
@@ -236,15 +237,29 @@ std::string substituteVars(const std::string& input, const std::unordered_map<st
       continue;
     }
 
-    // Treat as mu expression over loop vars
+    // Build numeric variables ONLY from ctx (skip non-numeric like "AA")
     std::unordered_map<std::string, double> numvars;
     numvars.reserve(ctx.size());
     for (const auto& kv : ctx)
-      numvars.emplace(kv.first, std::stod(kv.second));
+    {
+      try
+      {
+        size_t consumed = 0;
+        double v = std::stod(kv.second, &consumed);
+        if (consumed == kv.second.size())  // whole string parsed
+          numvars.emplace(kv.first, v);
+      }
+      catch (...)
+      {
+        // non-numeric: ignore (e.g. row_name="AA")
+      }
+    }
+    // Optional: provide common constants if your eval doesn’t already
+    // numvars.emplace("pi", M_PI);
 
     try
     {
-      const double v = evalMathWithVariables(expr.c_str(), numvars);  // <- correct name
+      const double v = evalMathWithVariables(expr.c_str(), numvars);
       std::ostringstream oss;
       oss.setf(std::ios::fmtflags(0), std::ios::floatfield);
       oss.precision(15);
@@ -256,7 +271,7 @@ std::string substituteVars(const std::string& input, const std::unordered_map<st
     }
     catch (const std::exception& e)
     {
-      throw std::runtime_error("ForLoop brace-eval failed for {" + expr + "}: " + e.what());
+      throw std::runtime_error("ForLoop brace-eval failed for {" + expr + "}: " + std::string(e.what()));
     }
   }
   return out;
