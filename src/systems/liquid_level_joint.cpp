@@ -7,11 +7,6 @@
 namespace sodf {
 namespace systems {
 
-static inline void throwf(const std::string& msg)
-{
-  throw std::runtime_error(msg);
-}
-
 void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& gravity_world)
 {
   db.each([&](ecs::EntityID eid, components::ContainerComponent& containers, components::TransformComponent& tcomp,
@@ -33,7 +28,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
         std::ostringstream os;
         os << "[liquid_level] DomainShape '" << c.payload.domain_shape_id << "' not found on entity for container '"
            << name << "'.";
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
 
       // Resolve joint + validate actuation/type/DOF
@@ -43,20 +38,20 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
         std::ostringstream os;
         os << "[liquid_level] Joint '" << c.fluid.liquid_level_joint_id << "' not found for container '" << name
            << "'.";
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
       if (joint->actuation != components::JointActuation::VIRTUAL)
       {
         std::ostringstream os;
         os << "[liquid_level] Joint '" << c.fluid.liquid_level_joint_id << "' must be VIRTUAL (is "
            << components::jointActuationToString(joint->actuation) << ").";
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
       if (joint->type != components::JointType::PRISMATIC || joint->dof() != 1)
       {
         std::ostringstream os;
         os << "[liquid_level] Joint '" << c.fluid.liquid_level_joint_id << "' must be 1-DOF PRISMATIC.";
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
 
       // Frames
@@ -65,7 +60,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
       {
         std::ostringstream os;
         os << "[liquid_level] Payload frame '" << c.payload.frame_id << "' not found for container '" << name << "'.";
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
 
       Eigen::Vector3d p_base_world = tf_payload->global.translation();
@@ -87,7 +82,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
           std::ostringstream os;
           os << "[liquid_level] DomainShape '" << c.payload.domain_shape_id
              << "' requires mesh but has no stacked_shape_id.";
-          throwf(os.str());
+          throw std::runtime_error(os.str());
         }
         auto* stack = ecs::get_element(scomp.elements, dom->stacked_shape_id);
         if (!stack)
@@ -95,7 +90,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
           std::ostringstream os;
           os << "[liquid_level] StackedShape '" << dom->stacked_shape_id << "' not found for DomainShape '"
              << c.payload.domain_shape_id << "'.";
-          throwf(os.str());
+          throw std::runtime_error(os.str());
         }
         dom->setMeshCacheFromStack(*stack, /*radial_res=*/64, /*axial_res_spherical=*/16, /*weld_tol=*/1e-9);
       }
@@ -110,7 +105,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
       {
         std::ostringstream os;
         os << "[liquid_level] heightFromVolume failed for domain '" << c.payload.domain_shape_id << "': " << e.what();
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
 
       if (!tilted)
@@ -138,7 +133,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
           std::ostringstream os;
           os << "[liquid_level] Domain height axis nearly perpendicular to gravity for container '" << name
              << "'; cannot map vertical height to axis displacement.";
-          throwf(os.str());
+          throw std::runtime_error(os.str());
         }
 
         double h_axis = h_world / cos_theta;
@@ -187,7 +182,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
           std::ostringstream os;
           os << "[liquid_level] liquid_level_frame_id '" << c.fluid.liquid_level_frame_id
              << "' not found for container '" << name << "'.";
-          throwf(os.str());
+          throw std::runtime_error(os.str());
         }
       }
       if (auto* tf_joint = ecs::get_element(tcomp.elements, c.fluid.liquid_level_joint_id))
@@ -197,7 +192,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
         std::ostringstream os;
         os << "[liquid_level] transform for joint '" << c.fluid.liquid_level_joint_id << "' not found for container '"
            << name << "'.";
-        throwf(os.str());
+        throw std::runtime_error(os.str());
       }
     }
   });
