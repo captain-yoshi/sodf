@@ -22,9 +22,6 @@ ecs::ObjectEntityMap make_object_entity_map(ecs::Database& db);
 // Local transform from root named frame (within one entity)
 Eigen::Isometry3d get_local_to_root(ecs::Database& db, ecs::EntityID eid, const std::string& frame_name);
 
-// Apply OriginComponent directives to align entity roots
-void align_origin_transforms(ecs::Database& db, const ecs::ObjectEntityMap& map);
-
 // Find the unique root/global entity (tagged or parentless)
 std::optional<ecs::EntityID> find_root_frame_entity(ecs::Database& db);
 
@@ -32,6 +29,10 @@ std::optional<ecs::EntityID> find_root_frame_entity(ecs::Database& db);
 void update_global_transform(ecs::Database& db, ecs::EntityID id, components::TransformComponent& tf,
                              std::size_t frame_idx, const ecs::ObjectEntityMap& obj_map,
                              std::optional<ecs::EntityID> global_root);
+
+// Update only one entity's global transforms (its whole local subtree).
+// Parents are updated on-demand (not forced) if the root points to an external parent.
+void update_entity_global_transforms(ecs::Database& db, ecs::EntityID eid, const ecs::ObjectEntityMap& obj_map);
 
 // Update all entities global transforms
 void update_all_global_transforms(ecs::Database& db);
