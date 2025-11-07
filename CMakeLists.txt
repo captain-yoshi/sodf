@@ -83,6 +83,9 @@ endif()
 add_library(${PROJECT_NAME}
   ext/tinyxml2/tinyxml2.cpp
 
+  src/assembly/constraint.cpp
+  src/assembly/constraint_selector.cpp
+  src/assembly/selector_context_db.cpp
   src/geometry/alignment.cpp
   src/geometry/shape.cpp
   src/geometry/frame.cpp
@@ -92,6 +95,8 @@ add_library(${PROJECT_NAME}
   src/physics/fluid_domain_shape.cpp
   src/systems/fsm.cpp
   src/systems/liquid_level_joint.cpp
+  src/systems/origin_constraints.cpp
+  src/systems/origin_ls_solver.cpp
   src/systems/scene_graph.cpp
   src/uri_resolver.cpp
   src/xml/component_parser.cpp

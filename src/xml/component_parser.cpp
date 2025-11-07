@@ -725,109 +725,221 @@ void parseProductComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XML
 void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
                           ecs::EntityID eid)
 {
+  using namespace components;
+
   const std::string id = evalElementIdRequired(elem);
 
-  // Count which "case" is present
-  int case_count = 0;
-  const tinyxml2::XMLElement* tf_elem = nullptr;
-  const tinyxml2::XMLElement* align_frames_elem = nullptr;
-  const tinyxml2::XMLElement* align_pair_frames_elem = nullptr;
+  // Build/append OriginComponent
+  auto* origin_component = db.get_or_add<OriginComponent>(eid);
+  if (!origin_component)
+    throw std::runtime_error("get_or_add<OriginComponent> failed at line " + std::to_string(elem->GetLineNum()));
 
-  // Check children: only one is allowed
-  for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
-  {
-    std::string tag = child->Name();
-    if (tag == "Transform")
-    {
-      tf_elem = child;
-      ++case_count;
-    }
-    else if (tag == "AlignFrames")
-    {
-      align_frames_elem = child;
-      ++case_count;
-    }
-    else if (tag == "AlignPairFrames")
-    {
-      align_pair_frames_elem = child;
-      ++case_count;
-    }
-    else
-      throw std::runtime_error("Unknown element <" + tag + "> in <Origin> at line " +
-                               std::to_string(child->GetLineNum()));
-  }
+  // Optional scoping from attributes (child <Scope> can override below)
+  origin_component->host_object = evalTextAttribute(elem, "host_object", origin_component->host_object);
+  origin_component->guest_object = evalTextAttribute(elem, "guest_object", origin_component->guest_object);
 
-  if (case_count == 0)
-    throw std::runtime_error(
-        "Origin must contain exactly one of <Transform>, <AlignGeometricPair>, <AlignFrames> at line " +
-        std::to_string(elem->GetLineNum()));
-  if (case_count > 1)
-    throw std::runtime_error(
-        "Origin must not contain multiple <Transform>/<AlignGeometricPair>/<AlignFrames> at line " +
-        std::to_string(elem->GetLineNum()));
+  // Helpers -------------------------------------------------------------------
 
-  // Now dispatch:
-  if (tf_elem)
-  {
+  auto getEither = [&](const tinyxml2::XMLElement* node, const char* a, const char* b,
+                       const char* fallback_name) -> std::string {
+    // Try 'a' first, then 'b'. If neither present, throw with helpful name.
+    if (const char* v = node->Attribute(a))
+      return std::string(v);
+    if (const char* v = node->Attribute(b))
+      return std::string(v);
+    throw std::runtime_error(std::string("Missing attribute '") + a + "' (or '" + b + "') in <" + node->Name() +
+                             "> at line " + std::to_string(node->GetLineNum()));
+  };
+
+  auto parseScopeChild = [&](const tinyxml2::XMLElement* scope) {
+    origin_component->host_object = evalTextAttributeRequired(scope, "host");
+    origin_component->guest_object = evalTextAttributeRequired(scope, "guest");
+  };
+
+  auto& program = origin_component->constraints;
+
+  auto pushTransform = [&](const tinyxml2::XMLElement* tf_elem) {
+    // Also create/overwrite the root frame in TransformComponent (like before)
     geometry::TransformNode frame = parseTransformNode(tf_elem);
 
     auto* tf_component = db.get_or_add<TransformComponent>(eid);
+    if (!tf_component)
+      throw std::runtime_error("get_or_add<TransformComponent> failed in <Origin>/<Transform>");
 
-    // Overwrite or insert as first entry
     if (tf_component->elements.empty())
       tf_component->elements.emplace_back(id, std::move(frame));
     else
       tf_component->elements[0] = std::make_pair(id, std::move(frame));
 
-    auto* origin_component = db.get_or_add<OriginComponent>(eid);
-    origin_component->origin = geometry::Transform{ .parent = frame.parent, .tf = frame.local };
-  }
-  else if (align_frames_elem)
-  {
-    geometry::AlignFrames align;
-    align.target_id = evalTextAttributeRequired(align_frames_elem, "with");
-    if (const auto* src = align_frames_elem->FirstChildElement("Source"))
-      align.source_tf = evalTextAttribute(src, "name", "");
-    if (const auto* tgt = align_frames_elem->FirstChildElement("Target"))
-      align.target_tf = evalTextAttribute(tgt, "name", "");
+    // Push as absolute placement in the program
+    geometry::Transform abs{};
+    abs.parent = tf_component->elements[0].second.parent;
+    abs.tf = tf_component->elements[0].second.local;
+    program.emplace_back(abs);
+  };
 
-    auto* origin_component = db.get_or_add<OriginComponent>(eid);
-    origin_component->origin = align;
-  }
-  else if (align_pair_frames_elem)
-  {
+  auto pushAlignFrames = [&](const tinyxml2::XMLElement* node) {
+    geometry::AlignFrames align;
+    align.target_id = evalTextAttributeRequired(node, "with");
+    if (const auto* src = node->FirstChildElement("Source"))
+      align.source_tf = evalTextAttribute(src, "name", "");
+    if (const auto* tgt = node->FirstChildElement("Target"))
+      align.target_tf = evalTextAttribute(tgt, "name", "");
+    program.emplace_back(align);
+  };
+
+  auto pushAlignPairFrames = [&](const tinyxml2::XMLElement* node) {
     geometry::AlignPairFrames align;
-    align.target_id = evalTextAttributeRequired(align_pair_frames_elem, "with");
-    align.tolerance = evalNumberAttributeRequired(align_pair_frames_elem, "tolerance");
+    align.target_id = evalTextAttributeRequired(node, "with");
+    align.tolerance = evalNumberAttributeRequired(node, "tolerance");
 
     int found = 0;
-    for (const auto* tag = align_pair_frames_elem->FirstChildElement(); tag; tag = tag->NextSiblingElement())
+    for (const auto* tag = node->FirstChildElement(); tag; tag = tag->NextSiblingElement())
     {
       const std::string tname = tag->Name();
       const std::string name = evalTextAttributeRequired(tag, "name");
 
       if (tname == "Source" || tname == "SourceTransform")
-        (found == 0 ? align.source_tf1 :
-                      found == 1 ?
-                      align.source_tf2 :
-                      throw std::runtime_error("Too many <Source> ... at line " + std::to_string(tag->GetLineNum())));
+      {
+        if (found == 0)
+          align.source_tf1 = name;
+        else if (found == 1)
+          align.source_tf2 = name;
+        else
+          throw std::runtime_error("Too many <Source> in <AlignPairFrames> at line " +
+                                   std::to_string(tag->GetLineNum()));
+      }
       else if (tname == "Target" || tname == "TargetTransform")
-        (found == 2 ? align.target_tf1 :
-                      found == 3 ?
-                      align.target_tf2 :
-                      throw std::runtime_error("Too many <Target> ... at line " + std::to_string(tag->GetLineNum())));
+      {
+        if (found == 2)
+          align.target_tf1 = name;
+        else if (found == 3)
+          align.target_tf2 = name;
+        else
+          throw std::runtime_error("Too many <Target> in <AlignPairFrames> at line " +
+                                   std::to_string(tag->GetLineNum()));
+      }
       else
-        throw std::runtime_error("Unexpected tag <" + tname + "> in <AlignGeometricPair> at line " +
+      {
+        throw std::runtime_error("Unexpected <" + tname + "> in <AlignPairFrames> at line " +
                                  std::to_string(tag->GetLineNum()));
+      }
       ++found;
     }
     if (align.source_tf1.empty() || align.source_tf2.empty() || align.target_tf1.empty() || align.target_tf2.empty())
-      throw std::runtime_error("Missing source/target transforms in <AlignGeometricPair> at line " +
-                               std::to_string(align_pair_frames_elem->GetLineNum()));
+      throw std::runtime_error("Missing Source/Target pairs in <AlignPairFrames> at line " +
+                               std::to_string(node->GetLineNum()));
 
-    auto* origin_component = db.get_or_add<OriginComponent>(eid);
-    origin_component->origin = align;
+    program.emplace_back(align);
+  };
+
+  // Constraint leaf pushers ---------------------------------------------------
+
+  auto pushCoincident = [&](const tinyxml2::XMLElement* node) {
+    Coincident c;
+    c.host = evalTextAttributeRequired(node, "host");
+    c.guest = evalTextAttributeRequired(node, "guest");
+    program.emplace_back(c);
+  };
+
+  auto pushConcentric = [&](const tinyxml2::XMLElement* node) {
+    Concentric c;
+    // Accept both spellings: host/guest (preferred) OR host_axis/guest_axis (legacy)
+    c.host = getEither(node, "host", "host_axis", "host");
+    c.guest = getEither(node, "guest", "guest_axis", "guest");
+    program.emplace_back(c);
+  };
+
+  auto pushParallel = [&](const tinyxml2::XMLElement* node) {
+    Parallel p;
+    p.host = getEither(node, "host", "host_axis", "host");
+    p.guest = getEither(node, "guest", "guest_axis", "guest");
+    program.emplace_back(p);
+  };
+
+  auto pushAngle = [&](const tinyxml2::XMLElement* node) {
+    Angle a;
+    a.host = getEither(node, "host", "host_axis", "host");
+    a.guest = getEither(node, "guest", "guest_axis", "guest");
+    a.radians = evalNumberAttributeRequired(node, "radians");
+    program.emplace_back(a);
+  };
+
+  auto pushDistance = [&](const tinyxml2::XMLElement* node) {
+    Distance d;
+    d.host = evalTextAttributeRequired(node, "host");
+    d.guest = evalTextAttributeRequired(node, "guest");
+    d.value = evalNumberAttributeRequired(node, "value");
+    program.emplace_back(d);
+  };
+
+  auto pushSeatConeOnCylinder = [&](const tinyxml2::XMLElement* node) {
+    SeatConeOnCylinder s;
+    s.host_cyl = evalTextAttributeRequired(node, "host_cyl");
+    s.guest_cone = evalTextAttributeRequired(node, "guest_cone");
+    s.tol = evalNumberAttribute(node, "tol", 1e-9);
+    s.max_it = static_cast<int>(evalNumberAttribute(node, "max_it", 60));
+    program.emplace_back(s);
+  };
+
+  // Parse children in order ---------------------------------------------------
+
+  for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
+  {
+    const std::string tag = child->Name();
+
+    if (tag == "Scope")
+    {
+      parseScopeChild(child);
+    }
+    else if (tag == "Transform")
+    {
+      pushTransform(child);
+    }
+    else if (tag == "AlignFrames")
+    {
+      pushAlignFrames(child);
+    }
+    else if (tag == "AlignPairFrames" || tag == "AlignGeometricPair")
+    {
+      pushAlignPairFrames(child);
+    }
+
+    else if (tag == "Coincident")
+    {
+      pushCoincident(child);
+    }
+    else if (tag == "Concentric")
+    {
+      pushConcentric(child);
+    }
+    else if (tag == "Parallel")
+    {
+      pushParallel(child);
+    }
+    else if (tag == "Angle")
+    {
+      pushAngle(child);
+    }
+    else if (tag == "Distance")
+    {
+      pushDistance(child);
+    }
+    else if (tag == "SeatConeOnCylinder")
+    {
+      pushSeatConeOnCylinder(child);
+    }
+
+    else
+    {
+      throw std::runtime_error("Unknown element <" + tag + "> in <Origin> at line " +
+                               std::to_string(child->GetLineNum()));
+    }
   }
+
+  if (program.empty())
+    throw std::runtime_error("Origin '" + id + "' does not contain any valid steps at line " +
+                             std::to_string(elem->GetLineNum()));
 }
 
 void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
