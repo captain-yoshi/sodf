@@ -1,11 +1,11 @@
-#ifndef SODF_ECS_DATABASE_H_
-#define SODF_ECS_DATABASE_H_
+#ifndef SODF_DATABASE_DATABASE_H_
+#define SODF_DATABASE_DATABASE_H_
 
-#include <sodf/ecs/registry_p.h>
-#include <sodf/ecs/ginseng_backend.h>
+#include <sodf/database/registry_p.h>
+#include <sodf/database/ginseng_backend.h>
 
 namespace sodf {
-namespace ecs {
+namespace database {
 
 template <class K, class V>
 inline V* get_element(std::vector<std::pair<K, V>>& elements, const K& key)
@@ -55,8 +55,6 @@ inline const V* get_element(const std::vector<std::pair<std::string, V>>& elemen
   return nullptr;
 }
 
-// Public-friendly name
-// Owns the backend so you can write `ecs::Database db;`
 class Database : public Registry<GinsengBackend>
 {
 public:
@@ -77,7 +75,7 @@ public:
   auto* get_element(entity_type e, const Key& key)
   {
     if (auto* c = this->template get<C>(e))
-      return ecs::get_element(c->elements, key);
+      return database::get_element(c->elements, key);
 
     using ElemContainer = decltype(std::declval<C&>().elements);
     using ElemPair = typename ElemContainer::value_type;
@@ -89,7 +87,7 @@ public:
   const auto* get_element(entity_type e, const Key& key) const
   {
     if (const auto* c = this->template get_const<C>(e))
-      return ecs::get_element(c->elements, key);
+      return database::get_element(c->elements, key);
 
     using ElemContainer = decltype(std::declval<const C&>().elements);
     using ElemPair = typename ElemContainer::value_type;
@@ -115,7 +113,7 @@ private:
 
 using ObjectEntityMap = std::unordered_map<std::string, Database::entity_type>;
 
-}  // namespace ecs
+}  // namespace database
 }  // namespace sodf
 
-#endif  // SODF_ECS_DATABASE_H_
+#endif  // SODF_DATABASE_DATABASE_H_

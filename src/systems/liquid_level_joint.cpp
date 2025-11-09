@@ -7,9 +7,9 @@
 namespace sodf {
 namespace systems {
 
-void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& gravity_world)
+void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vector3d& gravity_world)
 {
-  db.each([&](ecs::EntityID eid, components::ContainerComponent& containers, components::TransformComponent& tcomp,
+  db.each([&](database::EntityID eid, components::ContainerComponent& containers, components::TransformComponent& tcomp,
               components::JointComponent& jcomp, components::DomainShapeComponent& dcomp,
               components::StackedShapeComponent& scomp) {
     for (auto& [name, c] : containers.elements)
@@ -22,7 +22,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
       }
 
       // Resolve domain shape
-      physics::DomainShape* dom = ecs::get_element(dcomp.elements, c.payload.domain_shape_id);
+      physics::DomainShape* dom = database::get_element(dcomp.elements, c.payload.domain_shape_id);
       if (!dom)
       {
         std::ostringstream os;
@@ -32,7 +32,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
       }
 
       // Resolve joint + validate actuation/type/DOF
-      auto* joint = ecs::get_element(jcomp.elements, c.fluid.liquid_level_joint_id);
+      auto* joint = database::get_element(jcomp.elements, c.fluid.liquid_level_joint_id);
       if (!joint)
       {
         std::ostringstream os;
@@ -55,7 +55,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
       }
 
       // Frames
-      auto* tf_payload = ecs::get_element(tcomp.elements, c.payload.frame_id);
+      auto* tf_payload = database::get_element(tcomp.elements, c.payload.frame_id);
       if (!tf_payload)
       {
         std::ostringstream os;
@@ -84,7 +84,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
              << "' requires mesh but has no stacked_shape_id.";
           throw std::runtime_error(os.str());
         }
-        auto* stack = ecs::get_element(scomp.elements, dom->stacked_shape_id);
+        auto* stack = database::get_element(scomp.elements, dom->stacked_shape_id);
         if (!stack)
         {
           std::ostringstream os;
@@ -175,7 +175,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
       // Mark frames dirty
       if (!c.fluid.liquid_level_frame_id.empty())
       {
-        if (auto* tf_ll = ecs::get_element(tcomp.elements, c.fluid.liquid_level_frame_id))
+        if (auto* tf_ll = database::get_element(tcomp.elements, c.fluid.liquid_level_frame_id))
           tf_ll->dirty = true;
         else
         {
@@ -185,7 +185,7 @@ void update_liquid_level_joints_from_domain(ecs::Database& db, Eigen::Vector3d& 
           throw std::runtime_error(os.str());
         }
       }
-      if (auto* tf_joint = ecs::get_element(tcomp.elements, c.fluid.liquid_level_joint_id))
+      if (auto* tf_joint = database::get_element(tcomp.elements, c.fluid.liquid_level_joint_id))
         tf_joint->dirty = true;
       else
       {

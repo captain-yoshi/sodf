@@ -743,8 +743,8 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
   }
 }
 
-void parseComponentSubElements(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* parent, ecs::Database& db,
-                               ecs::EntityID eid)
+void parseComponentSubElements(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* parent,
+                               database::Database& db, database::EntityID eid)
 {
   // Call every registered subcomponent parser with the parent element itself.
   for (const auto& subParseFunc : subParseFuncs)
@@ -753,8 +753,8 @@ void parseComponentSubElements(const tinyxml2::XMLDocument* doc, const tinyxml2:
   }
 }
 
-void parseComponents(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, ecs::Database& db, ecs::EntityID eid,
-                     size_t parseFuncIdx)
+void parseComponents(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, database::Database& db,
+                     database::EntityID eid, size_t parseFuncIdx)
 {
   if (parseFuncIdx == ForLoopIndex)
   {
@@ -793,7 +793,7 @@ EntityParser::~EntityParser()
 {
 }
 
-bool EntityParser::loadEntitiesFromFile(const std::string& filename, ecs::Database& db)
+bool EntityParser::loadEntitiesFromFile(const std::string& filename, database::Database& db)
 {
   doc = std::make_unique<tinyxml2::XMLDocument>();
   if (doc->LoadFile(filename.c_str()) != tinyxml2::XML_SUCCESS)
@@ -805,7 +805,7 @@ bool EntityParser::loadEntitiesFromFile(const std::string& filename, ecs::Databa
   return loadEntities(doc.get(), base_dir, db);
 }
 
-bool EntityParser::loadEntitiesFromText(const std::string& text, ecs::Database& db, const std::string& base_dir)
+bool EntityParser::loadEntitiesFromText(const std::string& text, database::Database& db, const std::string& base_dir)
 {
   doc = std::make_unique<tinyxml2::XMLDocument>();
   if (doc->Parse(text.c_str()) != tinyxml2::XML_SUCCESS)
@@ -817,7 +817,7 @@ bool EntityParser::loadEntitiesFromText(const std::string& text, ecs::Database& 
   return loadEntities(doc.get(), base_dir, db);
 }
 
-bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ecs::Database& db)
+bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, database::Database& db)
 {
   ObjectIndex object_index;
   buildObjectIndex(doc, object_index, "", base_dir, "[root]", false);

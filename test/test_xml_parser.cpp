@@ -33,10 +33,10 @@ static std::string writeTempFile(const std::string& filename, const std::string&
   return p.string();
 }
 
-static std::vector<std::string> collectObjectIds(ecs::Database& db)
+static std::vector<std::string> collectObjectIds(database::Database& db)
 {
   std::vector<std::string> ids;
-  db.each([&](ecs::Database::entity_type id, ObjectComponent& obj) { ids.push_back(obj.id); });
+  db.each([&](database::Database::entity_type id, ObjectComponent& obj) { ids.push_back(obj.id); });
   return ids;
 }
 
@@ -49,7 +49,7 @@ TEST(XMLParser, IncludeMissingFile)
   const std::string scene_path = writeTempFile("scene_include_missing.xml", scene_xml);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -60,7 +60,7 @@ TEST(XMLParser, ImportMissingPath)
       <Import/>
     </Root>)";
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromText(scene_xml, db, /*base_dir=*/""));
 }
 
@@ -79,7 +79,7 @@ TEST(XMLParser, DuplicateObjectIdAcrossIncludes)
   const std::string scene_path = writeTempFile("scene_dup.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -100,7 +100,7 @@ TEST(XMLParser, OverlaySlotCollision)
   const std::string scene_path = writeTempFile("scene_overlay_collision.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -132,7 +132,7 @@ TEST(XMLParser, OverlayExactDuplicate)
   const std::string scene_path = writeTempFile("scene_overlay_dup.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -143,7 +143,7 @@ TEST(XMLParser, CloneSourceNotFound)
   <Object id="x" model="missing_model"/>
 </Root>)";
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromText(scene, db, /*base_dir=*/""));
 }
 
@@ -163,7 +163,7 @@ TEST(XMLParser, ImportWithNS_UnqualifiedModelRef)
   const std::string scene_path = writeTempFile("scene_import_ns_bad.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -185,7 +185,7 @@ TEST(XMLParser, InvalidChildInClone)
   const std::string scene_path = writeTempFile("scene_bad_child.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -212,7 +212,7 @@ TEST(XMLParser, OverlayRemoveMissingComponent)
   const std::string scene_path = writeTempFile("scene_remove_missing.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -234,7 +234,7 @@ TEST(XMLParser, ContractModelUnsatisfied)
   const std::string scene_path = writeTempFile("scene_contract_bad.xml", scene);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_path, db));
 }
 
@@ -257,7 +257,7 @@ TEST(XMLParser, IncludePublishesModelForClone)
   const std::string scene_path = writeTempFile("scene_include.xml", scene_xml);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -284,7 +284,7 @@ TEST(XMLParser, ImportPublishesModelForClone)
   const std::string scene_path = writeTempFile("scene_import.xml", scene_xml);
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(scene_path, db));
 
   auto ids = collectObjectIds(db);
@@ -321,7 +321,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
     const std::string scene_bad_path = writeTempFile("scene_overlay_bad.xml", scene_bad_xml);
 
     xml::EntityParser parser;
-    ecs::Database db;
+    database::Database db;
     ASSERT_ANY_THROW(parser.loadEntitiesFromFile(scene_bad_path, db));
   }
 
@@ -337,7 +337,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
     const std::string scene_ok_path = writeTempFile("scene_overlay_ok.xml", scene_ok_xml);
 
     xml::EntityParser parser;
-    ecs::Database db;
+    database::Database db;
     ASSERT_TRUE(parser.loadEntitiesFromFile(scene_ok_path, db));
 
     auto ids = collectObjectIds(db);
@@ -357,7 +357,7 @@ TEST(XMLParser, OverlayRequiredEnforcedAndSatisfied)
     const std::string scene_disable_path = writeTempFile("scene_overlay_disable.xml", scene_disable_xml);
 
     xml::EntityParser parser;
-    ecs::Database db;
+    database::Database db;
     ASSERT_TRUE(parser.loadEntitiesFromFile(scene_disable_path, db));
 
     auto ids = collectObjectIds(db);
@@ -714,7 +714,7 @@ TEST(XMLParser, DomainShapeComponent_Fluid_Well200uL)
     </Root>
   )XML";
 
-  ecs::Database db;
+  database::Database db;
   auto eid = db.create();
 
   // 1) Parse string as XML document
@@ -872,7 +872,7 @@ TEST(XMLParser, ContainerComponent)
     </Root>
   )XML";
 
-  ecs::Database db;
+  database::Database db;
   auto eid = db.create();
 
   // Parse
@@ -969,7 +969,7 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
   )";
 
     xml::EntityParser parser;
-    ecs::Database db;
+    database::Database db;
     ASSERT_ANY_THROW(parser.loadEntitiesFromText(xml_txt, db));
   }
 
@@ -1045,11 +1045,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     )";
 
     xml::EntityParser parser;
-    ecs::Database db;
+    database::Database db;
     parser.loadEntitiesFromText(xml_txt, db);
 
-    std::unordered_map<std::string, ecs::Database::entity_type> id_map;
-    db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
+    std::unordered_map<std::string, database::Database::entity_type> id_map;
+    db.each([&id_map](database::Database::entity_type id, components::ObjectComponent& object) {
       id_map.insert({ object.id, id });
     });
 
@@ -1118,11 +1118,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
   )";
 
     xml::EntityParser parser;
-    ecs::Database db;
+    database::Database db;
     parser.loadEntitiesFromText(xml_txt, db);
 
-    std::unordered_map<std::string, ecs::Database::entity_type> id_map;
-    db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
+    std::unordered_map<std::string, database::Database::entity_type> id_map;
+    db.each([&id_map](database::Database::entity_type id, components::ObjectComponent& object) {
       id_map.insert({ object.id, id });
     });
     ASSERT_FALSE(id_map.empty());
@@ -1197,11 +1197,11 @@ TEST(XMLParser, ParallelGraspDerivedFrom)
     // )";
 
     // xml::EntityParser parser;
-    // ecs::Database db;
+    // database::Database db;
     // parser.loadEntitiesFromText(xml_txt, db);
 
-    // std::unordered_map<std::string, ecs::Database::entity_type> id_map;
-    // db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
+    // std::unordered_map<std::string, database::Database::entity_type> id_map;
+    // db.each([&id_map](database::Database::entity_type id, components::ObjectComponent& object) {
     //   id_map.insert({ object.id, id });
     // });
 
@@ -1432,12 +1432,12 @@ TEST(XMLParser, ComponentsForLoop)
 
   // Parse the scene into an entity
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   parser.loadEntitiesFromText(xml_txt, db);
 
   // Find the single object entity we just created
-  std::unordered_map<std::string, ecs::Database::entity_type> id_map;
-  db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
+  std::unordered_map<std::string, database::Database::entity_type> id_map;
+  db.each([&id_map](database::Database::entity_type id, components::ObjectComponent& object) {
     id_map.insert({ object.id, id });
   });
 

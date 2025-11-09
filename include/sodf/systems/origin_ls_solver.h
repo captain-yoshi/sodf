@@ -2,9 +2,8 @@
 #define SODF_SYSTEMS_ORIGIN_LS_SOLVER_H_
 
 #include <Eigen/Geometry>
-#include <sodf/ecs/database.h>
-#include <sodf/ecs/registry_p.h>     // ObjectEntityMap
-#include <sodf/components/origin.h>  // OriginComponent
+#include <sodf/database/database.h>
+#include <sodf/components/origin.h>
 
 namespace sodf {
 namespace systems {
@@ -53,14 +52,16 @@ struct ResidualEntry
  * @param P    solver params
  * @return     updated local pose T = exp(xi) * T0
  */
-Eigen::Isometry3d solve_origin_least_squares_once(ecs::Database& db, const ecs::ObjectEntityMap& map, ecs::EntityID eid,
-                                                  components::OriginComponent& origin, const Eigen::Isometry3d& T0,
-                                                  const LSSolveParams& P = {}, LSLinearStats* out_stats = nullptr);
+Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const database::ObjectEntityMap& map,
+                                                  database::EntityID eid, components::OriginComponent& origin,
+                                                  const Eigen::Isometry3d& T0, const LSSolveParams& P = {},
+                                                  LSLinearStats* out_stats = nullptr);
 
 JacobianReport summarize_linear_system(const LSLinearStats& S);
 void print_jacobian_report(const JacobianReport& j);
 
-std::vector<ResidualEntry> compute_origin_residuals_compact(ecs::Database& db, const ecs::ObjectEntityMap& map,
+std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& db,
+                                                            const database::ObjectEntityMap& map,
                                                             const components::OriginComponent& origin);
 
 void print_residual_line(const ResidualEntry& e, double tol_ang, double tol_dist);
