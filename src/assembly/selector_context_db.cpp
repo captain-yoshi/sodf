@@ -1,8 +1,8 @@
 #include <sodf/assembly/selector_context_db.h>
 #include <sodf/assembly/namespace.h>
 #include <sodf/assembly/constraint_selector.h>
-#include <sodf/ecs/database.h>
-#include <sodf/ecs/registry_p.h>
+#include <sodf/database/database.h>
+#include <sodf/database/registry_p.h>
 
 #include <sodf/components/transform.h>
 #include <sodf/components/insertion.h>
@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <cmath>
 
-using sodf::ecs::Database;
+using sodf::database::Database;
 
 namespace sodf {
 namespace assembly {
@@ -45,7 +45,8 @@ static inline Eigen::Vector3d xform_point(const Eigen::Isometry3d& T, const Eige
   return T.translation() + T.linear() * p_local;
 }
 
-static ecs::Database::entity_type must_entity(const ecs::ObjectEntityMap& objects, const std::string& object_id)
+static database::Database::entity_type must_entity(const database::ObjectEntityMap& objects,
+                                                   const std::string& object_id)
 {
   if (object_id.empty())
   {
@@ -63,8 +64,8 @@ static ecs::Database::entity_type must_entity(const ecs::ObjectEntityMap& object
 // Shape readers (prefer actual ShapeComponent; fallback to DomainShapeComponent)
 // -----------------------------------------------------------------------------
 
-static bool read_cylinder_from_shape(Database& db, ecs::Database::entity_type e, const std::string& key, Axis& out_axis,
-                                     double& out_radius, double& out_height)
+static bool read_cylinder_from_shape(Database& db, database::Database::entity_type e, const std::string& key,
+                                     Axis& out_axis, double& out_radius, double& out_height)
 {
   using components::ShapeComponent;
   if (auto* s = db.get_element<ShapeComponent>(e, key))
@@ -82,8 +83,8 @@ static bool read_cylinder_from_shape(Database& db, ecs::Database::entity_type e,
   return false;
 }
 
-static bool read_cone_from_shape(Database& db, ecs::Database::entity_type e, const std::string& key, Axis& out_axis,
-                                 double& r0, double& r1, double& H)
+static bool read_cone_from_shape(Database& db, database::Database::entity_type e, const std::string& key,
+                                 Axis& out_axis, double& r0, double& r1, double& H)
 {
   using components::ShapeComponent;
   if (auto* s = db.get_element<ShapeComponent>(e, key))
@@ -102,7 +103,8 @@ static bool read_cone_from_shape(Database& db, ecs::Database::entity_type e, con
   return false;
 }
 
-static bool read_plane_from_shape(Database& db, ecs::Database::entity_type e, const std::string& key, Plane& out_plane)
+static bool read_plane_from_shape(Database& db, database::Database::entity_type e, const std::string& key,
+                                  Plane& out_plane)
 {
   using components::ShapeComponent;
   if (auto* s = db.get_element<ShapeComponent>(e, key))
@@ -121,7 +123,7 @@ static bool read_plane_from_shape(Database& db, ecs::Database::entity_type e, co
 
 // Resolve cylinder dims from a DomainShape by following its stacked_shape_id.
 // Pose (axis point/dir) comes from the DOMAIN frame at `key`.
-static bool read_cylinder_from_domain(Database& db, ecs::Database::entity_type e, const std::string& key,
+static bool read_cylinder_from_domain(Database& db, database::Database::entity_type e, const std::string& key,
                                       Axis& out_axis, double& out_radius, double& out_height)
 {
   using components::DomainShapeComponent;   // returns physics::DomainShape*
@@ -184,8 +186,8 @@ static bool read_cylinder_from_domain(Database& db, ecs::Database::entity_type e
 
 // Resolve cone dims from a DomainShape by following its stacked_shape_id.
 // Pose (axis point/dir) comes from the DOMAIN frame at `key`.
-static bool read_cone_from_domain(Database& db, ecs::Database::entity_type e, const std::string& key, Axis& out_axis,
-                                  double& r0, double& r1, double& H)
+static bool read_cone_from_domain(Database& db, database::Database::entity_type e, const std::string& key,
+                                  Axis& out_axis, double& r0, double& r1, double& H)
 {
   using components::DomainShapeComponent;
   using components::ShapeComponent;
@@ -248,7 +250,8 @@ static bool read_cone_from_domain(Database& db, ecs::Database::entity_type e, co
   return false;
 }
 
-static bool read_plane_from_frame(Database& db, ecs::Database::entity_type e, const std::string& key, Plane& out_plane)
+static bool read_plane_from_frame(Database& db, database::Database::entity_type e, const std::string& key,
+                                  Plane& out_plane)
 {
   // Fallback: any frame is a plane with +Z normal
   Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
@@ -261,7 +264,8 @@ static bool read_plane_from_frame(Database& db, ecs::Database::entity_type e, co
 // Insertion (and optional profile) reader
 // -----------------------------------------------------------------------------
 
-static SelectorContext::InsertionData read_insertion(Database& db, ecs::Database::entity_type e, const std::string& key)
+static SelectorContext::InsertionData read_insertion(Database& db, database::Database::entity_type e,
+                                                     const std::string& key)
 {
   using components::InsertionComponent;
   using components::ShapeComponent;
@@ -399,7 +403,7 @@ static SelectorContext::InsertionData read_insertion(Database& db, ecs::Database
 // Public factory
 // -----------------------------------------------------------------------------
 
-SelectorContext makeSelectorContext(ecs::Database& db, const ecs::ObjectEntityMap& objects)
+SelectorContext makeSelectorContext(database::Database& db, const database::ObjectEntityMap& objects)
 {
   SelectorContext ctx;
 
@@ -531,7 +535,8 @@ static inline sodf::assembly::Plane to_host_plane(const Eigen::Isometry3d& W_H, 
 }  // namespace
 
 // Public helper: return a SelectorContext whose outputs are expressed in HOST frame
-SelectorContext makeSelectorContextInHostSpace(sodf::ecs::Database& db, const sodf::ecs::ObjectEntityMap& objects,
+SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
+                                               const sodf::database::ObjectEntityMap& objects,
                                                const std::string& host_object_id)
 {
   using sodf::systems::get_global_transform;

@@ -154,8 +154,8 @@ void print_jacobian_report(const JacobianReport& j)
 
 // ---------------- Gauss–Newton (one step) in WORLD ----------------
 
-Eigen::Isometry3d solve_origin_least_squares_once(ecs::Database& db, const ecs::ObjectEntityMap& map,
-                                                  ecs::EntityID /*eid*/, components::OriginComponent& origin,
+Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const database::ObjectEntityMap& map,
+                                                  database::EntityID /*eid*/, components::OriginComponent& origin,
                                                   const Eigen::Isometry3d& T0, const LSSolveParams& P,
                                                   LSLinearStats* out_stats)
 {
@@ -362,7 +362,8 @@ Eigen::Isometry3d solve_origin_least_squares_once(ecs::Database& db, const ecs::
 }
 
 // ----------------------- diagnostics (WORLD) -------------------------
-std::vector<ResidualEntry> compute_origin_residuals_compact(ecs::Database& db, const ecs::ObjectEntityMap& map,
+std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& db,
+                                                            const database::ObjectEntityMap& map,
                                                             const components::OriginComponent& origin)
 {
   using namespace sodf::assembly;

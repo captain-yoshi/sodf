@@ -64,10 +64,10 @@ std::vector<FSMActionStep> simulate_fsm_sequence_strict(const components::FSM& f
   return result;
 }
 
-void simulate_action_sequence_on_all(ecs::Database& db, const std::string& fsm_id,
+void simulate_action_sequence_on_all(database::Database& db, const std::string& fsm_id,
                                      const std::vector<std::string>& actions)
 {
-  db.each([&](ecs::Database::entity_type /*eid*/, const components::FSMComponent& fsm_comp,
+  db.each([&](database::Database::entity_type /*eid*/, const components::FSMComponent& fsm_comp,
               const components::ActionMapComponent& map_comp) {
     for (const auto& [key, fsm] : fsm_comp.elements)
     {

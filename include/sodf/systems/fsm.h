@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <sodf/ecs/database.h>
+#include <sodf/database/database.h>
 #include <sodf/components/action_map.h>
 #include <sodf/components/finite_state_machine.h>
 
@@ -28,7 +28,7 @@ std::vector<FSMActionStep> simulate_fsm_sequence_strict(const components::FSM& f
                                                         const std::vector<std::string>& action_labels);
 
 // Run the sequence against all entities that have FSMComponent + ActionMapComponent
-void simulate_action_sequence_on_all(ecs::Database& db, const std::string& fsm_id,
+void simulate_action_sequence_on_all(database::Database& db, const std::string& fsm_id,
                                      const std::vector<std::string>& actions);
 
 }  // namespace system

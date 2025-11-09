@@ -1,5 +1,5 @@
-#ifndef SODF_ECS_COMPONENTS_H_
-#define SODF_ECS_COMPONENTS_H_
+#ifndef SODF_DATABASE_COMPONENTS_H_
+#define SODF_DATABASE_COMPONENTS_H_
 
 #include <vector>
 #include <utility>
@@ -16,4 +16,4 @@ using ElementMap = std::vector<std::pair<K, V>>;
 }  // namespace components
 }  // namespace sodf
 
-#endif  // SODF_ECS_COMPONENTS_H_
+#endif  // SODF_DATABASE_COMPONENTS_H_

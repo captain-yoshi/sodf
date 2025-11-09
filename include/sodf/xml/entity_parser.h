@@ -6,7 +6,7 @@
 #include <memory>
 #include <tinyxml2.h>
 
-#include <sodf/ecs/database.h>
+#include <sodf/database/database.h>
 
 namespace sodf {
 namespace xml {
@@ -21,13 +21,13 @@ public:
   ~EntityParser();
 
   // Loads entities from a file (resolves includes relative to file location)
-  bool loadEntitiesFromFile(const std::string& filename, ecs::Database& db);
+  bool loadEntitiesFromFile(const std::string& filename, database::Database& db);
 
   // Loads entities from text (optionally resolve includes relative to base_dir)
-  bool loadEntitiesFromText(const std::string& text, ecs::Database& db, const std::string& base_dir = "");
+  bool loadEntitiesFromText(const std::string& text, database::Database& db, const std::string& base_dir = "");
 
 private:
-  bool loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, ecs::Database& db);
+  bool loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, database::Database& db);
 
   /// Pointer to the loaded XML document (lifetime is managed).
   std::unique_ptr<tinyxml2::XMLDocument> doc;

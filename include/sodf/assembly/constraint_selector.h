@@ -8,7 +8,6 @@
 namespace sodf {
 namespace assembly {
 
-// Context for resolving features (wire these to your ECS/DB)
 struct SelectorContext
 {
   struct InsertionData

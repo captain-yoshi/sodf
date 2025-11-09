@@ -1,21 +1,22 @@
 #ifndef SODF_ASSEMBLY_SELECTOR_CONTEXT_DB_H_
 #define SODF_ASSEMBLY_SELECTOR_CONTEXT_DB_H_
 
-#include <sodf/ecs/database.h>
+#include <sodf/database/database.h>
 #include <sodf/assembly/constraint_selector.h>
 
 namespace sodf {
 namespace assembly {
 
 /**
- * Build a SelectorContext wired to your ECS Database.
+ * Build a SelectorContext wired to your DATABASE Database.
  *
- * @param db        Your ecs::Database
- * @param objects   Map from object id string -> entity id (ecs::ObjectEntityMap)
+ * @param db        Your database::Database
+ * @param objects   Map from object id string -> entity id (database::ObjectEntityMap)
  */
-SelectorContext makeSelectorContext(ecs::Database& db, const ecs::ObjectEntityMap& objects);
+SelectorContext makeSelectorContext(database::Database& db, const database::ObjectEntityMap& objects);
 
-SelectorContext makeSelectorContextInHostSpace(sodf::ecs::Database& db, const sodf::ecs::ObjectEntityMap& objects,
+SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
+                                               const sodf::database::ObjectEntityMap& objects,
                                                const std::string& host_object_id);
 
 }  // namespace assembly

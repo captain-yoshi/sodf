@@ -18,11 +18,11 @@
 namespace sodf {
 namespace systems {
 
-void apply_origin_constraints(ecs::Database& db, const ecs::ObjectEntityMap& map)
+void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& map)
 {
   using namespace sodf::components;
 
-  db.each([&](ecs::EntityID eid, TransformComponent& tcomp, OriginComponent& origin) {
+  db.each([&](database::EntityID eid, TransformComponent& tcomp, OriginComponent& origin) {
     // ---------- Ensure a root slot exists ----------
     if (tcomp.elements.empty())
       tcomp.elements.emplace_back("root", geometry::TransformNode{});
@@ -31,7 +31,7 @@ void apply_origin_constraints(ecs::Database& db, const ecs::ObjectEntityMap& map
     auto& root_node = root_pair.second;
 
     // ---------- Pin guest_object to THIS entity (throw if we cannot infer) ----------
-    auto object_id_from_entity_or_empty = [&](ecs::EntityID q) -> std::string {
+    auto object_id_from_entity_or_empty = [&](database::EntityID q) -> std::string {
       for (const auto& kv : map)
         if (kv.second == q)
           return kv.first;

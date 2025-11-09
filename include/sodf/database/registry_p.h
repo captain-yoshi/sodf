@@ -8,7 +8,7 @@
 #include <sodf/components/data_type.h>
 
 namespace sodf {
-namespace ecs {
+namespace database {
 
 // Opaque entity id that SODF uses everywhere
 struct EntityID
@@ -120,5 +120,5 @@ private:
   Backend& impl_;
 };
 
-}  // namespace ecs
+}  // namespace database
 }  // namespace sodf
