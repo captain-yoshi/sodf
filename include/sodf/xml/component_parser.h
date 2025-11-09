@@ -3,46 +3,46 @@
 
 #include <tinyxml2.h>
 
-#include <sodf/ecs/database.h>
+#include <sodf/database/database.h>
 
 namespace sodf {
 namespace xml {
 
 void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
-                                    ecs::Database& db, ecs::EntityID eid);
+                                    database::Database& db, database::EntityID eid);
 
-void parseActionMapComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                             ecs::EntityID eid);
-void parseButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                          ecs::EntityID eid);
-void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                             ecs::EntityID eid);
-void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                             ecs::EntityID eid);
-void parseFSMComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                       ecs::EntityID eid);
-void parseJointComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                         ecs::EntityID eid);
-void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                        ecs::EntityID eid);
-void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                          ecs::EntityID eid);
+void parseActionMapComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                             database::Database& db, database::EntityID eid);
+void parseButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                          database::Database& db, database::EntityID eid);
+void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                             database::Database& db, database::EntityID eid);
+void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                             database::Database& db, database::EntityID eid);
+void parseFSMComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, database::Database& db,
+                       database::EntityID eid);
+void parseJointComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, database::Database& db,
+                         database::EntityID eid);
+void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, database::Database& db,
+                        database::EntityID eid);
+void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                          database::Database& db, database::EntityID eid);
 void parseParallelGraspComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
-                                 ecs::Database& db, ecs::EntityID eid);
-void parseProductComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                           ecs::EntityID eid);
-void parseShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                         ecs::EntityID eid);
+                                 database::Database& db, database::EntityID eid);
+void parseProductComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                           database::Database& db, database::EntityID eid);
+void parseShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, database::Database& db,
+                         database::EntityID eid);
 void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
-                               ecs::Database& db, ecs::EntityID eid);
-void parseStackedShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, ecs::Database& db,
-                                ecs::EntityID eid);
+                               database::Database& db, database::EntityID eid);
+void parseStackedShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
+                                database::Database& db, database::EntityID eid);
 void parseTouchscreenComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
-                               ecs::Database& db, ecs::EntityID eid);
-void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, ecs::Database& db,
-                             ecs::EntityID eid);
+                               database::Database& db, database::EntityID eid);
+void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                             database::Database& db, database::EntityID eid);
 void parseVirtualButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
-                                 ecs::Database& db, ecs::EntityID eid);
+                                 database::Database& db, database::EntityID eid);
 
 }  // namespace xml
 }  // namespace sodf

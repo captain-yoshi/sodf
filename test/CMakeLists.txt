@@ -1,6 +1,6 @@
 set(SODF_TESTS
     test_alignment.cpp
-    test_ecs.cpp
+    test_database.cpp
     test_fluid_domain_shape.cpp
     test_fluid_domain_convex_mesh_shape.cpp
     test_uri_resolver.cpp

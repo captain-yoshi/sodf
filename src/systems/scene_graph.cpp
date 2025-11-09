@@ -7,15 +7,15 @@ namespace sodf {
 namespace systems {
 
 // Build object-id → entity map
-ecs::ObjectEntityMap make_object_entity_map(ecs::Database& db)
+database::ObjectEntityMap make_object_entity_map(database::Database& db)
 {
-  ecs::ObjectEntityMap map;
-  db.each([&](ecs::EntityID id, const components::ObjectComponent& obj) { map.emplace(obj.id, id); });
+  database::ObjectEntityMap map;
+  db.each([&](database::EntityID id, const components::ObjectComponent& obj) { map.emplace(obj.id, id); });
   return map;
 }
 
 // Local transform from root → named frame (within one entity)
-Eigen::Isometry3d get_local_to_root(ecs::Database& db, ecs::EntityID eid, const std::string& frame_name)
+Eigen::Isometry3d get_local_to_root(database::Database& db, database::EntityID eid, const std::string& frame_name)
 {
   const auto* tfc = db.get_const<components::TransformComponent>(eid);
   if (!tfc)
@@ -56,10 +56,10 @@ Eigen::Isometry3d get_local_to_root(ecs::Database& db, ecs::EntityID eid, const 
 }
 
 // Find the unique root/global entity (tagged)
-std::optional<ecs::EntityID> find_root_frame_entity(ecs::Database& db)
+std::optional<database::EntityID> find_root_frame_entity(database::Database& db)
 {
-  std::vector<ecs::EntityID> tagged;
-  db.each([&](ecs::EntityID id, const components::RootFrameTag&) { tagged.push_back(id); });
+  std::vector<database::EntityID> tagged;
+  db.each([&](database::EntityID id, const components::RootFrameTag&) { tagged.push_back(id); });
   if (tagged.empty())
     return std::nullopt;  // no explicit global root
   if (tagged.size() > 1)
@@ -68,8 +68,8 @@ std::optional<ecs::EntityID> find_root_frame_entity(ecs::Database& db)
 }
 
 // Recursively update one frame’s global transform (returns true if recomputed)
-static bool update_global_transform(ecs::Database& db, ecs::EntityID id, components::TransformComponent& tf,
-                                    std::size_t frame_idx, const ecs::ObjectEntityMap& obj_map, bool force)
+static bool update_global_transform(database::Database& db, database::EntityID id, components::TransformComponent& tf,
+                                    std::size_t frame_idx, const database::ObjectEntityMap& obj_map, bool force)
 {
   auto& kv = tf.elements[frame_idx];
   const auto& frame_name = kv.first;
@@ -129,7 +129,7 @@ static bool update_global_transform(ecs::Database& db, ecs::EntityID id, compone
   {
     if (auto* joints = db.get<components::JointComponent>(id))
     {
-      auto* joint = ecs::get_element(joints->elements, frame_name);
+      auto* joint = database::get_element(joints->elements, frame_name);
       if (!joint)
         throw std::runtime_error("Cannot find joint element: " + frame_name);
 
@@ -197,7 +197,8 @@ static bool update_global_transform(ecs::Database& db, ecs::EntityID id, compone
   return true;
 }
 
-void update_entity_global_transforms(ecs::Database& db, ecs::EntityID eid, const ecs::ObjectEntityMap& obj_map)
+void update_entity_global_transforms(database::Database& db, database::EntityID eid,
+                                     const database::ObjectEntityMap& obj_map)
 {
   auto* tf = db.get<components::TransformComponent>(eid);
   if (!tf)
@@ -221,11 +222,11 @@ void update_entity_global_transforms(ecs::Database& db, ecs::EntityID eid, const
 }
 
 // Update all entities’ global transforms (forces subtree when root is dirty)
-void update_all_global_transforms(ecs::Database& db)
+void update_all_global_transforms(database::Database& db)
 {
   auto obj_map = make_object_entity_map(db);
 
-  db.each([&](ecs::EntityID id, components::TransformComponent& tf) {
+  db.each([&](database::EntityID id, components::TransformComponent& tf) {
     // If root is dirty, force the whole subtree of this entity
     const bool force_subtree = (!tf.elements.empty() && tf.elements[0].second.dirty);
 
@@ -235,7 +236,7 @@ void update_all_global_transforms(ecs::Database& db)
 }
 
 // Get global transform by (entity, frame name)
-Eigen::Isometry3d get_global_transform(ecs::Database& db, ecs::EntityID eid, const std::string& frame_name)
+Eigen::Isometry3d get_global_transform(database::Database& db, database::EntityID eid, const std::string& frame_name)
 {
   auto* tf = db.get_element<components::TransformComponent>(eid, frame_name);
   if (!tf)
@@ -244,7 +245,7 @@ Eigen::Isometry3d get_global_transform(ecs::Database& db, ecs::EntityID eid, con
 }
 
 // Get global transform by absolute path “/objectId/frame”
-Eigen::Isometry3d get_global_transform(ecs::Database& db, const std::string& abs_path)
+Eigen::Isometry3d get_global_transform(database::Database& db, const std::string& abs_path)
 {
   if (abs_path.empty() || abs_path[0] != '/')
     throw std::runtime_error("get_global_transform: path must start with '/'");

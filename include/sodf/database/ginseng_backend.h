@@ -1,9 +1,9 @@
 #pragma once
 #include <ginseng.hpp>
-#include <sodf/ecs/registry_p.h>
+#include <sodf/database/registry_p.h>
 
 namespace sodf {
-namespace ecs {
+namespace database {
 
 struct GinsengBackend
 {
@@ -173,5 +173,5 @@ private:
   }
 };
 
-}  // namespace ecs
+}  // namespace database
 }  // namespace sodf

@@ -1,5 +1,5 @@
 
-#include <sodf/ecs/database.h>
+#include <sodf/database/database.h>
 #include <sodf/xml/entity_parser.h>
 
 #include <sodf/components/button.h>
@@ -18,16 +18,16 @@
 
 using namespace sodf;
 
-TEST(ECS, ParsingSingleObject)
+TEST(DATABASE, ParsingSingleObject)
 {
   std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/bio-rad-t100-thermal-cycler.no-overlay.xml";
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   parser.loadEntitiesFromFile(filename, db);
 
-  std::unordered_map<std::string, ecs::Database::entity_type> id_map;
-  db.each([&id_map](ecs::Database::entity_type id, components::ObjectComponent& object) {
+  std::unordered_map<std::string, database::Database::entity_type> id_map;
+  db.each([&id_map](database::Database::entity_type id, components::ObjectComponent& object) {
     id_map.insert({ object.id, id });
   });
 
@@ -73,17 +73,17 @@ TEST(ECS, ParsingSingleObject)
   // system::simulate_action_sequence_on_all(db, "fsm/touchscreen", { "incubate", "bloc_temperature", "ok", "zero" });
 }
 
-TEST(ECS, ParseSceneA)
+TEST(DATABASE, ParseSceneA)
 {
   std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/scene-a.xml";
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(filename, db));
 
   // Collect (object id -> entity) using the façade type
-  std::vector<std::pair<std::string, ecs::Database::entity_type>> ids;
-  db.each([&](ecs::Database::entity_type id, const components::ObjectComponent& object) {
+  std::vector<std::pair<std::string, database::Database::entity_type>> ids;
+  db.each([&](database::Database::entity_type id, const components::ObjectComponent& object) {
     ids.emplace_back(object.id, id);
   });
 
@@ -147,17 +147,17 @@ TEST(ECS, ParseSceneA)
   sodf::systems::update_all_global_transforms(db);
 }
 
-TEST(ECS, ParseSceneB)
+TEST(Database, ParseSceneB)
 {
   std::string filename = std::string(SODF_TEST_FOLDER) + "/xml/scene-b.xml";
 
   xml::EntityParser parser;
-  ecs::Database db;
+  database::Database db;
   ASSERT_TRUE(parser.loadEntitiesFromFile(filename, db));
 
   // Collect ids
-  std::vector<std::pair<std::string, ecs::Database::entity_type>> ids;
-  db.each([&](ecs::Database::entity_type id, const components::ObjectComponent& object) {
+  std::vector<std::pair<std::string, database::Database::entity_type>> ids;
+  db.each([&](database::Database::entity_type id, const components::ObjectComponent& object) {
     ids.emplace_back(object.id, id);
   });
 
