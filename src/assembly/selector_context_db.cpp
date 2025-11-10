@@ -36,7 +36,7 @@ static inline Eigen::Vector3d rot_vec(const Eigen::Isometry3d& T, const Eigen::V
   Eigen::Vector3d v = T.linear() * v_local;
   const double n2 = v.squaredNorm();
   if (n2 == 0.0 || !std::isfinite(n2))
-    return Eigen::Vector3d::UnitZ();  // safe fallback
+    return Eigen::Vector3d::UnitX();  // safe fallback
   return v / std::sqrt(n2);
 }
 
@@ -74,7 +74,7 @@ static bool read_cylinder_from_shape(Database& db, database::Database::entity_ty
     {
       Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
       out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(2).normalized();
+      out_axis.direction = T.linear().col(0).normalized();
       out_radius = geometry::shapeBaseRadius(*s);  // base==top for cylinder
       out_height = geometry::getShapeHeight(*s);
       return true;
@@ -93,7 +93,7 @@ static bool read_cone_from_shape(Database& db, database::Database::entity_type e
     {
       Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
       out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(2).normalized();
+      out_axis.direction = T.linear().col(0).normalized();
       r0 = geometry::shapeBaseRadius(*s);
       r1 = geometry::shapeTopRadius(*s);
       H = geometry::getShapeHeight(*s);
@@ -114,7 +114,7 @@ static bool read_plane_from_shape(Database& db, database::Database::entity_type 
     {
       Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
       out_plane.point = T.translation();
-      out_plane.normal = T.linear().col(2).normalized();
+      out_plane.normal = T.linear().col(0).normalized();
       return true;
     }
   }
@@ -133,7 +133,7 @@ static bool read_cylinder_from_domain(Database& db, database::Database::entity_t
   // 1) Pose from the domain's own frame
   const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
   out_axis.point = T.translation();
-  out_axis.direction = T.linear().col(2).normalized();
+  out_axis.direction = T.linear().col(0).normalized();
 
   // 2) The domain instance itself
   const auto* dsc = db.get_element<DomainShapeComponent>(e, key);
@@ -196,7 +196,7 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
   // 1) Pose from the domain's own frame
   const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
   out_axis.point = T.translation();
-  out_axis.direction = T.linear().col(2).normalized();
+  out_axis.direction = T.linear().col(0).normalized();
 
   // 2) The domain instance itself
   const auto* dsc = db.get_element<DomainShapeComponent>(e, key);
@@ -256,7 +256,7 @@ static bool read_plane_from_frame(Database& db, database::Database::entity_type 
   // Fallback: any frame is a plane with +Z normal
   Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
   out_plane.point = T.translation();
-  out_plane.normal = T.linear().col(2).normalized();
+  out_plane.normal = T.linear().col(0).normalized();
   return true;
 }
 
@@ -278,8 +278,8 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
   out.mouth = T_ins;
 
   // Defaults from the frame (already in world)
-  out.axis = T_ins.linear().col(2).normalized();  // +Z
-  out.ref = T_ins.linear().col(0).normalized();   // +X
+  out.axis = T_ins.linear().col(0).normalized();  // +Z
+  out.ref = T_ins.linear().col(1).normalized();   // +X
 
   // 2) Fetch the Insertion struct (DB returns the element directly).
   const auto* ins = db.get_element<InsertionComponent>(e, key);
@@ -321,9 +321,9 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
     {
       const Eigen::Isometry3d T_stack = sodf::systems::get_global_transform(db, e, stack_frame);
       if (ins->axis_insertion.squaredNorm() == 0.0)
-        out.axis = T_stack.linear().col(2).normalized();
+        out.axis = T_stack.linear().col(0).normalized();
       if (ins->axis_reference.squaredNorm() == 0.0)
-        out.ref = T_stack.linear().col(0).normalized();
+        out.ref = T_stack.linear().col(1).normalized();
     }
     catch (...)
     {
@@ -470,7 +470,7 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
     if (!ctx.getFrame(r, F))
       return false;
     out_plane.point = F.translation();
-    out_plane.normal = F.linear().col(2).normalized();
+    out_plane.normal = F.linear().col(0).normalized();
     return true;
   };
 
@@ -484,7 +484,7 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
     {
       Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
       out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(2).normalized();
+      out_axis.direction = T.linear().col(0).normalized();
       return true;
     }
 
@@ -493,7 +493,7 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
     {
       Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
       out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(2).normalized();
+      out_axis.direction = T.linear().col(0).normalized();
       return true;
     }
     catch (...)

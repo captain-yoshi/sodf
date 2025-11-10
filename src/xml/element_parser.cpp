@@ -203,6 +203,8 @@ const tinyxml2::XMLElement* reqChild(const tinyxml2::XMLElement* parent, const c
   throw std::runtime_error(std::string(ctx) + " missing <" + tag + "> at line " + std::to_string(parent->GetLineNum()));
 }
 
+// ============================== 2D SHAPES ==============================
+
 geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
 {
   using namespace sodf::geometry;
@@ -210,54 +212,42 @@ geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
   geometry::Shape s;
   s.type = geometry::ShapeType::Rectangle;
 
-  // ---- Axes (canonical: X=height, Y=width, Z=normal) ----
-  const AxesTagNames tags{ "AxisHeight", "AxisWidth", "AxisNormal" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=height, Y=width, Z=normal]
+  // Axes (canonical): X = normal, Y = size_y, Z = size_z
+  const AxesTagNames tags{ "AxisNormal", "AxisSizeY", "AxisSizeZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=size_y, Z=size_z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
-  // ---- Exactly one of: <Dimensions> OR <Vertices> ----
   const auto* dims = elem->FirstChildElement("Dimensions");
   const auto* verts = elem->FirstChildElement("Vertices");
   const int ln = elem ? elem->GetLineNum() : -1;
 
   if ((dims != nullptr) == (verts != nullptr))
-  {
     throw std::runtime_error("Rectangle must specify exactly one of <Dimensions> or <Vertices> at line " +
                              std::to_string(ln));
-  }
 
   if (dims)
   {
-    // Dimensions mode: width, height (do NOT synthesize vertices)
-    const double width = evalNumberAttributeRequired(dims, "width");
-    const double height = evalNumberAttributeRequired(dims, "height");
-    s.dimensions.reserve(2);
-    s.dimensions.push_back(width);
-    s.dimensions.push_back(height);
+    const double sy = evalNumberAttributeRequired(dims, "size_y");
+    const double sz = evalNumberAttributeRequired(dims, "size_z");
+    s.dimensions = { sy, sz };
   }
   else
   {
-    // Vertices mode: exactly 4 vertices in local (X=height, Y=width) plane; Z ignored
+    // Vertices expressed in (Y,Z) plane (X=0)
     std::size_t count = 0;
     for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double x = evalNumberAttributeRequired(v, "x");  // along AxisHeight (X)
-      const double y = evalNumberAttributeRequired(v, "y");  // along AxisWidth  (Y)
-      s.vertices.emplace_back(x, y, 0.0);
+      const double y = evalNumberAttributeRequired(v, "y");
+      const double z = evalNumberAttributeRequired(v, "z");
+      s.vertices.emplace_back(0.0, y, z);
       ++count;
     }
     if (count != 4)
-    {
-      const int ln_v = verts->GetLineNum();
-      throw std::runtime_error("Rectangle with <Vertices> must have exactly 4 <Vertex> entries at line " +
-                               std::to_string(ln_v));
-    }
-    // Ensure no Dimensions data is present
-    if (!s.dimensions.empty())
-      s.dimensions.clear();
+      throw std::runtime_error("Rectangle with <Vertices> must have exactly 4 entries at line " +
+                               std::to_string(verts->GetLineNum()));
+    s.dimensions.clear();
   }
 
-  // ---- Validate axes (must be exactly 3; orthonormal + right-handed) ----
   validateAxesRightHandOrthonormal(s, elem);
   return s;
 }
@@ -265,20 +255,17 @@ geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
 geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem)
 {
   using namespace sodf::geometry;
-
   geometry::Shape s;
   s.type = geometry::ShapeType::Circle;
 
-  // Axes: canonical (X=reference_x, Y=reference_y, Z=normal)
-  const AxesTagNames tags{ "AxisReferenceX", "AxisReferenceY", "AxisNormal" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);
-  s.axes.assign(axesXYZ.begin(), axesXYZ.end());  // [ref_x, ref_y, normal]
+  // Axes (canonical): X = normal, (Y,Z) = reference in-plane axes
+  const AxesTagNames tags{ "AxisNormal", "AxisReferenceY", "AxisReferenceZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=refY, Z=refZ]
+  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
-  // Dimensions
   const auto* dims = reqChild(elem, "Dimensions", "Circle");
-  s.dimensions.push_back(evalNumberAttributeRequired(dims, "radius"));
+  s.dimensions = { evalNumberAttributeRequired(dims, "radius") };
 
-  // Must have exactly 3 axes, orthonormal + right-handed
   validateAxesRightHandOrthonormal(s, elem);
   return s;
 }
@@ -286,66 +273,46 @@ geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem)
 geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
 {
   using namespace sodf::geometry;
-  using Eigen::Vector3d;
-
   geometry::Shape s;
   s.type = geometry::ShapeType::Triangle;
 
-  // ---- Axes: canonical X=Altitude, Y=Base, Z=Normal ----
-  const AxesTagNames tags{ "AxisAltitude", "AxisBase", "AxisNormal" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=Altitude, Y=Base, Z=Normal]
+  // Axes (canonical): X = normal, Y = base, Z = altitude
+  const AxesTagNames tags{ "AxisNormal", "AxisBase", "AxisAltitude" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=base, Z=altitude]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
-  // ---- Mutually exclusive shape spec: Dimensions OR Vertices ----
   const auto* dims = elem->FirstChildElement("Dimensions");
   const auto* verts = elem->FirstChildElement("Vertices");
   const int ln = elem ? elem->GetLineNum() : -1;
 
   if ((dims != nullptr) == (verts != nullptr))
-  {
-    // Either both present or both absent → error
     throw std::runtime_error("Triangle must specify exactly one of <Dimensions> or <Vertices> at line " +
                              std::to_string(ln));
-  }
 
   if (dims)
   {
-    // Dimensions mode: base, altitude, apex_offset
-    const double base = evalNumberAttributeRequired(dims, "base");
-    const double altitude = evalNumberAttributeRequired(dims, "altitude");
-    const double apex_offset = evalNumberAttributeRequired(dims, "apex_offset");
-
-    s.dimensions.reserve(3);
-    s.dimensions.push_back(base);
-    s.dimensions.push_back(altitude);
-    s.dimensions.push_back(apex_offset);
-
-    // Do NOT synthesize vertices in this mode
+    const double base_y = evalNumberAttributeRequired(dims, "base_y");
+    const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z");
+    const double apex_off_y = evalNumberAttributeRequired(dims, "apex_offset_y");
+    s.dimensions = { base_y, altitude_z, apex_off_y };
   }
   else
   {
-    // Vertices mode: exactly 3 vertices in local (X=Altitude, Y=Base) plane; Z ignored
+    // Vertices in (Y,Z) plane (X=0)
     int count = 0;
     for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double x = evalNumberAttributeRequired(v, "x");  // along Altitude (X)
-      const double y = evalNumberAttributeRequired(v, "y");  // along Base (Y)
-      s.vertices.emplace_back(x, y, 0.0);
+      const double y = evalNumberAttributeRequired(v, "y");
+      const double z = evalNumberAttributeRequired(v, "z");
+      s.vertices.emplace_back(0.0, y, z);
       ++count;
     }
     if (count != 3)
-    {
-      const int ln_v = verts->GetLineNum();
       throw std::runtime_error("Triangle with <Vertices> must have exactly 3 <Vertex> entries at line " +
-                               std::to_string(ln_v));
-    }
-
-    // Ensure no Dimensions data leaked in
-    if (!s.dimensions.empty())
-      s.dimensions.clear();
+                               std::to_string(verts->GetLineNum()));
+    s.dimensions.clear();
   }
 
-  // Final: require exactly 3 axes; orthonormal + right-handed
   validateAxesRightHandOrthonormal(s, elem);
   return s;
 }
@@ -353,307 +320,31 @@ geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
 geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem)
 {
   using namespace sodf::geometry;
-
   geometry::Shape s;
   s.type = geometry::ShapeType::Polygon;
 
-  // ---- Axes: canonical (X, Y, Z) = (AxisX, AxisY, AxisNormal) ----
-  const AxesTagNames tags{ "AxisX", "AxisY", "AxisNormal" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // returns [X, Y, Z]
+  // Axes (canonical): X = normal, Y = in-plane y, Z = in-plane z
+  const AxesTagNames tags{ "AxisNormal", "AxisY", "AxisZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y, Z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
-  // ---- Polygons are dimensionless, forbid <Dimensions> ----
   if (const auto* dims = elem->FirstChildElement("Dimensions"))
-  {
-    const int ln = dims->GetLineNum();
-    throw std::runtime_error("Polygon must not define <Dimensions> (dimensionless) at line " + std::to_string(ln));
-  }
+    throw std::runtime_error("Polygon must not define <Dimensions> (dimensionless) at line " +
+                             std::to_string(dims->GetLineNum()));
 
-  // ---- Require vertices (N >= 3), interpreted in local (X,Y) plane; Z ignored ----
   const auto* verts = reqChild(elem, "Vertices", "Polygon");
   std::size_t count = 0;
   for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
   {
-    const double x = evalNumberAttributeRequired(v, "x");  // along AxisX
-    const double y = evalNumberAttributeRequired(v, "y");  // along AxisY
-    s.vertices.emplace_back(x, y, 0.0);
+    const double y = evalNumberAttributeRequired(v, "y");
+    const double z = evalNumberAttributeRequired(v, "z");
+    s.vertices.emplace_back(0.0, y, z);  // X=0 (normal axis)
     ++count;
   }
   if (count < 3)
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("Polygon requires at least 3 <Vertex> entries at line " + std::to_string(ln));
-  }
+    throw std::runtime_error("Polygon requires at least 3 <Vertex> entries at line " +
+                             std::to_string(verts->GetLineNum()));
 
-  // ---- Validate final axes (exactly 3; orthonormal + right-handed) ----
-  validateAxesRightHandOrthonormal(s, elem);
-  return s;
-}
-
-geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
-{
-  using namespace sodf::geometry;
-
-  geometry::Shape s;
-  s.type = geometry::ShapeType::Box;
-
-  // ---- Axes (canonical: X=depth, Y=width, Z=height) ----
-  // Accept any 2 of the 3 tags; derive the missing one (right-handed).
-  const AxesTagNames tags{ "AxisDepth", "AxisWidth", "AxisHeight" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=depth, Y=width, Z=height]
-  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
-
-  // ---- Boxes are defined by Dimensions only; vertices are forbidden ----
-  if (const auto* verts = elem->FirstChildElement("Vertices"))
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("Box must not define <Vertices> at line " + std::to_string(ln));
-  }
-
-  // ---- Dimensions (required): width, depth, height ----
-  const auto* dims = reqChild(elem, "Dimensions", "Box");
-  const double width = evalNumberAttributeRequired(dims, "width");
-  const double depth = evalNumberAttributeRequired(dims, "depth");
-  const double height = evalNumberAttributeRequired(dims, "height");
-  s.dimensions.reserve(3);
-  s.dimensions.push_back(width);
-  s.dimensions.push_back(depth);
-  s.dimensions.push_back(height);
-
-  // ---- Validate axes: exactly 3; orthonormal + right-handed ----
-  validateAxesRightHandOrthonormal(s, elem);
-
-  return s;
-}
-
-geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem)
-{
-  using namespace sodf::geometry;
-
-  geometry::Shape s;
-  s.type = geometry::ShapeType::TriangularPrism;
-
-  // ---- Axes (canonical: X=Altitude, Y=Base, Z=Height/Extrusion) ----
-  // Accept any 2 of the 3 tags; derive the missing one (right-handed).
-  const AxesTagNames tags{ "AxisAltitude", "AxisBase", "AxisHeight" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=altitude, Y=base, Z=height]
-  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
-
-  // ---- TriangularPrism is dimensions-based only; vertices are forbidden ----
-  if (const auto* verts = elem->FirstChildElement("Vertices"))
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("TriangularPrism must not define <Vertices> at line " + std::to_string(ln));
-  }
-
-  // ---- Dimensions: base, altitude, height, apex_offset (optional, default 0) ----
-  const auto* dims = reqChild(elem, "Dimensions", "TriangularPrism");
-  const double base = evalNumberAttributeRequired(dims, "base");          // along AxisBase (Y)
-  const double altitude = evalNumberAttributeRequired(dims, "altitude");  // along AxisAltitude (X)
-  const double height = evalNumberAttributeRequired(dims, "height");      // extrusion along AxisHeight (Z)
-
-  double apex_offset = 0.0;  // along AxisBase (Y)
-  (void)tryEvalNumberAttribute(dims, "apex_offset", &apex_offset);
-
-  if (!(base > 0.0 && altitude > 0.0 && height > 0.0))
-  {
-    throw std::runtime_error("TriangularPrism <Dimensions> require positive base, altitude, and height at line " +
-                             std::to_string(dims->GetLineNum()));
-  }
-
-  s.dimensions = { base, altitude, height, apex_offset };
-
-  // ---- Validate axes: exactly 3; orthonormal + right-handed ----
-  validateAxesRightHandOrthonormal(s, elem);
-  return s;
-}
-
-geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
-{
-  using namespace sodf::geometry;
-
-  geometry::Shape s;
-  s.type = geometry::ShapeType::Cylinder;
-
-  // ---- Axes (canonical: X=reference_x, Y=reference_y, Z=symmetry) ----
-  // Accept any 2 of the 3; derive the third (right-handed, X×Y=Z).
-  const AxesTagNames tags{ "AxisReferenceX", "AxisReferenceY", "AxisSymmetry" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [ref_x, ref_y, symmetry]
-  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
-
-  // ---- Cylinders are dimensions-based only; vertices are forbidden ----
-  if (const auto* verts = elem->FirstChildElement("Vertices"))
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("Cylinder must not define <Vertices> at line " + std::to_string(ln));
-  }
-
-  // ---- Dimensions (required): radius, height ----
-  const auto* dims = reqChild(elem, "Dimensions", "Cylinder");
-  const double radius = evalNumberAttributeRequired(dims, "radius");
-  const double height = evalNumberAttributeRequired(dims, "height");
-  if (!(radius > 0.0 && height > 0.0))
-  {
-    throw std::runtime_error("Cylinder <Dimensions> require positive radius and height at line " +
-                             std::to_string(dims->GetLineNum()));
-  }
-  s.dimensions.reserve(2);
-  s.dimensions.push_back(radius);
-  s.dimensions.push_back(height);
-
-  // ---- Validate axes: exactly 3; orthonormal + right-handed ----
-  validateAxesRightHandOrthonormal(s, elem);
-  return s;
-}
-
-geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem)
-{
-  geometry::Shape s;
-  s.type = geometry::ShapeType::Sphere;
-
-  // Spheres are dimensions-based only; vertices are not allowed.
-  if (const auto* verts = elem->FirstChildElement("Vertices"))
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("Sphere must not define <Vertices> at line " + std::to_string(ln));
-  }
-
-  // Dimensions (required): radius > 0
-  const auto* dims = reqChild(elem, "Dimensions", "Sphere");
-  const double radius = evalNumberAttributeRequired(dims, "radius");
-  if (!(radius > 0.0))
-  {
-    throw std::runtime_error("Sphere <Dimensions> requires positive radius at line " +
-                             std::to_string(dims->GetLineNum()));
-  }
-
-  s.dimensions.reserve(1);
-  s.dimensions.push_back(radius);
-
-  // No axes to validate (Sphere has no orientation)
-  return s;
-}
-
-geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem)
-{
-  using namespace sodf::geometry;
-
-  geometry::Shape s;
-  s.type = geometry::ShapeType::Cone;
-
-  // ---- Axes (canonical: X=reference_x, Y=reference_y, Z=symmetry) ----
-  // Accept any 2 of the 3 and derive the third (right-handed, X×Y=Z).
-  const AxesTagNames tags{ "AxisReferenceX", "AxisReferenceY", "AxisSymmetry" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [ref_x, ref_y, symmetry]
-  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
-
-  // ---- Cones/frustums are dimensions-based; vertices are forbidden ----
-  if (const auto* verts = elem->FirstChildElement("Vertices"))
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("Cone must not define <Vertices> at line " + std::to_string(ln));
-  }
-
-  // ---- Dimensions (required): base_radius, top_radius, height ----
-  const auto* dims = reqChild(elem, "Dimensions", "Cone");
-  const double base_r = evalNumberAttributeRequired(dims, "base_radius");
-  const double top_r = evalNumberAttributeRequired(dims, "top_radius");
-  const double height = evalNumberAttributeRequired(dims, "height");
-
-  // Validate: radii ≥ 0, height > 0, and not both radii zero (degenerate)
-  if (!(height > 0.0) || base_r < 0.0 || top_r < 0.0)
-  {
-    throw std::runtime_error("Cone <Dimensions> require base_radius ≥ 0, top_radius ≥ 0, height > 0 at line " +
-                             std::to_string(dims->GetLineNum()));
-  }
-  if (base_r == 0.0 && top_r == 0.0)
-  {
-    throw std::runtime_error("Cone <Dimensions> invalid: base_radius and top_radius cannot both be zero at line " +
-                             std::to_string(dims->GetLineNum()));
-  }
-
-  s.dimensions.reserve(3);
-  s.dimensions.push_back(base_r);
-  s.dimensions.push_back(top_r);
-  s.dimensions.push_back(height);
-
-  // ---- Validate axes: exactly 3; orthonormal + right-handed ----
-  validateAxesRightHandOrthonormal(s, elem);
-  return s;
-}
-
-geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
-{
-  using namespace sodf::geometry;
-
-  geometry::Shape s;
-  s.type = geometry::ShapeType::SphericalSegment;
-
-  // ---- Axes (canonical: X=reference_x, Y=reference_y, Z=symmetry) ----
-  // Accept any 2; derive the 3rd (right-handed, X×Y=Z).
-  const AxesTagNames tags{ "AxisReferenceX", "AxisReferenceY", "AxisSymmetry" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [ref_x, ref_y, symmetry]
-  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
-
-  // ---- Vertices are not allowed for this primitive of revolution ----
-  if (const auto* verts = elem->FirstChildElement("Vertices"))
-  {
-    const int ln = verts->GetLineNum();
-    throw std::runtime_error("SphericalSegment must not define <Vertices> at line " + std::to_string(ln));
-  }
-
-  // ---- Dimensions: require at least two among (base_radius, top_radius, height) ----
-  const auto* dims = reqChild(elem, "Dimensions", "SphericalSegment");
-
-  const bool has_r1 = dims->Attribute("base_radius");
-  const bool has_r2 = dims->Attribute("top_radius");
-  const bool has_h = dims->Attribute("height");
-
-  const int count = static_cast<int>(has_r1) + static_cast<int>(has_r2) + static_cast<int>(has_h);
-  if (count < 2)
-  {
-    throw std::runtime_error(
-        "SphericalSegment <Dimensions> must specify at least two of: base_radius, top_radius, height at line " +
-        std::to_string(dims->GetLineNum()));
-  }
-
-  double r1 = has_r1 ? evalNumberAttributeRequired(dims, "base_radius") : 0.0;
-  double r2 = has_r2 ? evalNumberAttributeRequired(dims, "top_radius") : 0.0;
-  double h = has_h ? evalNumberAttributeRequired(dims, "height") : 0.0;
-
-  // Fill the missing one (right-handed axial convention already handled by axes)
-  if (count == 2)
-  {
-    if (!has_h)
-    {
-      // Given r1, r2 → infer H
-      h = geometry::inferSegmentHeightFromRadii(r1, r2);
-    }
-    else if (!has_r2)
-    {
-      // Given r1, H → infer r2
-      r2 = geometry::inferTopRadiusFromHeight(r1, h);
-    }
-    else
-    {  // (!has_r1)
-      // Given r2, H → infer r1
-      // Prefer a dedicated helper if available:
-      r1 = geometry::inferBaseRadiusFromHeight(r2, h);
-    }
-  }
-  else
-  {
-    // All three provided → validate consistency
-    if (!geometry::isValidSegment(r1, r2, h))
-    {
-      throw std::runtime_error("SphericalSegment <Dimensions> are incompatible: no valid sphere exists at line " +
-                               std::to_string(dims->GetLineNum()));
-    }
-  }
-
-  s.dimensions = { r1, r2, h };
-
-  // ---- Final axes validation: exactly 3; orthonormal + right-handed ----
   validateAxesRightHandOrthonormal(s, elem);
   return s;
 }
@@ -661,64 +352,238 @@ geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
 geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
 {
   using namespace sodf::geometry;
-
   geometry::Shape s;
   s.type = geometry::ShapeType::Plane;
 
-  // ---- Axes (canonical: X=reference_x, Y=reference_y, Z=normal) ----
-  // Accept any 2 of the 3 and derive the third (right-handed, X×Y=Z).
-  const AxesTagNames tags{ "AxisReferenceX", "AxisReferenceY", "AxisNormal" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [ref_x, ref_y, normal]
+  // Axes (canonical): X = normal, Y = refY, Z = refZ
+  const AxesTagNames tags{ "AxisNormal", "AxisReferenceY", "AxisReferenceZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
-  // ---- Plane can be: infinite (no dims/verts), rectangle-bounded (Dimensions), or polygon-bounded (Vertices) ----
   const auto* dims = elem->FirstChildElement("Dimensions");
   const auto* verts = elem->FirstChildElement("Vertices");
   const int ln = elem ? elem->GetLineNum() : -1;
 
   if (dims && verts)
-  {
     throw std::runtime_error("Plane must specify at most one of <Dimensions> or <Vertices> at line " +
                              std::to_string(ln));
-  }
 
   if (dims)
   {
-    // Rectangle-bounded plane
-    const double width = evalNumberAttributeRequired(dims, "width");
-    const double height = evalNumberAttributeRequired(dims, "height");
-    if (!(width > 0.0 && height > 0.0))
-    {
-      throw std::runtime_error("Plane <Dimensions> require positive width and height at line " +
+    const double sy = evalNumberAttributeRequired(dims, "size_y");
+    const double sz = evalNumberAttributeRequired(dims, "size_z");
+    if (!(sy > 0.0 && sz > 0.0))
+      throw std::runtime_error("Plane <Dimensions> require positive size_y and size_z at line " +
                                std::to_string(dims->GetLineNum()));
-    }
-    s.dimensions.reserve(2);
-    s.dimensions.push_back(width);
-    s.dimensions.push_back(height);
+    s.dimensions = { sy, sz };
   }
   else if (verts)
   {
-    // Polygon-bounded plane: N >= 3 vertices in local (X,Y) plane; Z ignored
     std::size_t count = 0;
     for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double x = evalNumberAttributeRequired(v, "x");  // along AxisReferenceX
-      const double y = evalNumberAttributeRequired(v, "y");  // along AxisReferenceY
-      s.vertices.emplace_back(x, y, 0.0);
+      const double y = evalNumberAttributeRequired(v, "y");
+      const double z = evalNumberAttributeRequired(v, "z");
+      s.vertices.emplace_back(0.0, y, z);
       ++count;
     }
     if (count < 3)
-    {
-      const int ln_v = verts->GetLineNum();
       throw std::runtime_error("Plane with <Vertices> requires at least 3 <Vertex> entries at line " +
-                               std::to_string(ln_v));
-    }
-    if (!s.dimensions.empty())
-      s.dimensions.clear();  // ensure no dims when vertices are present
+                               std::to_string(verts->GetLineNum()));
+    s.dimensions.clear();
   }
-  // else: infinite plane (no dims, no verts)
+  // else: infinite plane
 
-  // ---- Validate axes: exactly 3; orthonormal + right-handed ----
+  validateAxesRightHandOrthonormal(s, elem);
+  return s;
+}
+
+// ============================== 3D SHAPES ==============================
+
+geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
+{
+  using namespace sodf::geometry;
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Box;
+
+  // Axes (canonical): X, Y, Z
+  const AxesTagNames tags{ "AxisX", "AxisY", "AxisZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X, Y, Z]
+  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
+
+  if (const auto* verts = elem->FirstChildElement("Vertices"))
+    throw std::runtime_error("Box must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+
+  const auto* dims = reqChild(elem, "Dimensions", "Box");
+  const double x = evalNumberAttributeRequired(dims, "x");
+  const double y = evalNumberAttributeRequired(dims, "y");
+  const double z = evalNumberAttributeRequired(dims, "z");
+  s.dimensions = { x, y, z };
+
+  validateAxesRightHandOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem)
+{
+  using namespace sodf::geometry;
+  geometry::Shape s;
+  s.type = geometry::ShapeType::TriangularPrism;
+
+  // Axes (canonical): X = extrusion/length_x, Y = base, Z = altitude
+  const AxesTagNames tags{ "AxisExtrusion", "AxisBase", "AxisAltitude" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=extrusion, Y=base, Z=altitude]
+  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
+
+  if (const auto* verts = elem->FirstChildElement("Vertices"))
+    throw std::runtime_error("TriangularPrism must not define <Vertices> at line " +
+                             std::to_string(verts->GetLineNum()));
+
+  const auto* dims = reqChild(elem, "Dimensions", "TriangularPrism");
+  const double length_x = evalNumberAttributeRequired(dims, "length_x");      // along X
+  const double base_y = evalNumberAttributeRequired(dims, "base_y");          // along Y
+  const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z");  // along Z
+  double apex_offset_y = 0.0;
+  (void)tryEvalNumberAttribute(dims, "apex_offset_y", &apex_offset_y);
+
+  if (!(length_x > 0.0 && base_y > 0.0 && altitude_z > 0.0))
+    throw std::runtime_error("TriangularPrism requires positive length_x, base_y, altitude_z at line " +
+                             std::to_string(dims->GetLineNum()));
+
+  s.dimensions = { length_x, base_y, altitude_z, apex_offset_y };
+
+  validateAxesRightHandOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
+{
+  using namespace sodf::geometry;
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Cylinder;
+
+  // Axes (canonical): X = symmetry/height axis, (Y,Z) = reference in-plane
+  const AxesTagNames tags{ "AxisSymmetry", "AxisReferenceY", "AxisReferenceZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
+  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
+
+  if (const auto* verts = elem->FirstChildElement("Vertices"))
+    throw std::runtime_error("Cylinder must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+
+  const auto* dims = reqChild(elem, "Dimensions", "Cylinder");
+  const double radius = evalNumberAttributeRequired(dims, "radius");
+  const double height_x = evalNumberAttributeRequired(dims, "height_x");
+  if (!(radius > 0.0 && height_x > 0.0))
+    throw std::runtime_error("Cylinder requires positive radius and height_x at line " +
+                             std::to_string(dims->GetLineNum()));
+
+  s.dimensions = { radius, height_x };
+
+  validateAxesRightHandOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem)
+{
+  using namespace sodf::geometry;
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Sphere;
+
+  if (const auto* verts = elem->FirstChildElement("Vertices"))
+    throw std::runtime_error("Sphere must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+
+  const auto* dims = reqChild(elem, "Dimensions", "Sphere");
+  const double radius = evalNumberAttributeRequired(dims, "radius");
+  if (!(radius > 0.0))
+    throw std::runtime_error("Sphere requires positive radius at line " + std::to_string(dims->GetLineNum()));
+
+  s.dimensions = { radius };
+  // No axes to validate (isotropic)
+  return s;
+}
+
+geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem)
+{
+  using namespace sodf::geometry;
+  geometry::Shape s;
+  s.type = geometry::ShapeType::Cone;
+
+  // Axes (canonical): X = symmetry/height, (Y,Z) = reference
+  const AxesTagNames tags{ "AxisSymmetry", "AxisReferenceY", "AxisReferenceZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
+  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
+
+  if (const auto* verts = elem->FirstChildElement("Vertices"))
+    throw std::runtime_error("Cone must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+
+  const auto* dims = reqChild(elem, "Dimensions", "Cone");
+  const double base_r = evalNumberAttributeRequired(dims, "base_radius");
+  const double top_r = evalNumberAttributeRequired(dims, "top_radius");
+  const double height_x = evalNumberAttributeRequired(dims, "height_x");
+
+  if (!(height_x > 0.0) || base_r < 0.0 || top_r < 0.0)
+    throw std::runtime_error("Cone requires base_radius ≥ 0, top_radius ≥ 0, height_x > 0 at line " +
+                             std::to_string(dims->GetLineNum()));
+  if (base_r == 0.0 && top_r == 0.0)
+    throw std::runtime_error("Cone invalid: base_radius and top_radius cannot both be zero at line " +
+                             std::to_string(dims->GetLineNum()));
+
+  s.dimensions = { base_r, top_r, height_x };
+
+  validateAxesRightHandOrthonormal(s, elem);
+  return s;
+}
+
+geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
+{
+  using namespace sodf::geometry;
+  geometry::Shape s;
+  s.type = geometry::ShapeType::SphericalSegment;
+
+  // Axes (canonical): X = symmetry/height, (Y,Z) = reference
+  const AxesTagNames tags{ "AxisSymmetry", "AxisReferenceY", "AxisReferenceZ" };
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
+  s.axes.assign(axesXYZ.begin(), axesXYZ.end());
+
+  if (const auto* verts = elem->FirstChildElement("Vertices"))
+    throw std::runtime_error("SphericalSegment must not define <Vertices> at line " +
+                             std::to_string(verts->GetLineNum()));
+
+  const auto* dims = reqChild(elem, "Dimensions", "SphericalSegment");
+
+  const bool has_r1 = dims->Attribute("base_radius");
+  const bool has_r2 = dims->Attribute("top_radius");
+  const bool has_hx = dims->Attribute("height_x");
+
+  int have = (has_r1 ? 1 : 0) + (has_r2 ? 1 : 0) + (has_hx ? 1 : 0);
+  if (have < 2)
+    throw std::runtime_error(
+        "SphericalSegment must provide at least two of base_radius, top_radius, height_x at line " +
+        std::to_string(dims->GetLineNum()));
+
+  double r1 = has_r1 ? evalNumberAttributeRequired(dims, "base_radius") : 0.0;
+  double r2 = has_r2 ? evalNumberAttributeRequired(dims, "top_radius") : 0.0;
+  double hx = has_hx ? evalNumberAttributeRequired(dims, "height_x") : 0.0;
+
+  // If you have inference helpers, call them here (renamed for *_height_x if needed).
+  if (have == 2)
+  {
+    if (!has_hx)
+      hx = geometry::inferSegmentHeightFromRadii(r1, r2);
+    else if (!has_r2)
+      r2 = geometry::inferTopRadiusFromHeight(r1, hx);
+    else /* !has_r1*/
+      r1 = geometry::inferBaseRadiusFromHeight(r2, hx);
+  }
+  else
+  {
+    if (!geometry::isValidSegment(r1, r2, hx))
+      throw std::runtime_error("SphericalSegment <Dimensions> are incompatible: no valid sphere exists at line " +
+                               std::to_string(dims->GetLineNum()));
+  }
+
+  s.dimensions = { r1, r2, hx };
+
   validateAxesRightHandOrthonormal(s, elem);
   return s;
 }
