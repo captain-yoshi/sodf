@@ -10,42 +10,57 @@
 namespace sodf {
 namespace geometry {
 
-// Reuse your existing helpers
-inline std::vector<size_t> baseVertices(const std::vector<Eigen::Vector3d>& V, double zmin, double eps)
+// =====================================================================================
+// Helpers for primitives following the canonical convention: x ∈ [0, H] is the height.
+// Base plane is x = 0. We compute the base center in the YZ plane at x = xmin.
+// =====================================================================================
+inline std::vector<size_t> baseVerticesX(const std::vector<Eigen::Vector3d>& V, double xmin, double eps)
 {
   std::vector<size_t> idx;
   idx.reserve(V.size());
   for (size_t i = 0; i < V.size(); ++i)
-    if (std::abs(V[i].z() - zmin) <= eps)
+    if (std::abs(V[i].x() - xmin) <= eps)
       idx.push_back(i);
   return idx;
 }
-inline Eigen::Vector3d baseCenterXY(const std::vector<Eigen::Vector3d>& V, double zmin, double eps)
+
+inline Eigen::Vector3d baseCenterYZ(const std::vector<Eigen::Vector3d>& V, double xmin, double eps)
 {
-  const auto idx = baseVertices(V, zmin, eps);
+  const auto idx = baseVerticesX(V, xmin, eps);
   if (idx.empty())
   {
-    auto bb = computeAABB(V);
-    return { 0.5 * (bb.min.x() + bb.max.x()), 0.5 * (bb.min.y() + bb.max.y()), zmin };
+    // Fallback: use AABB center in Y/Z, and place point on x=xmin.
+    const auto bb = computeAABB(V);
+    return { xmin, 0.5 * (bb.min.y() + bb.max.y()), 0.5 * (bb.min.z() + bb.max.z()) };
   }
+
+  // Average Y and Z over vertices lying on the base plane
   Eigen::Vector2d acc(0, 0);
   for (auto i : idx)
-    acc += V[i].head<2>();
+    acc += V[i].segment<2>(1);  // (y,z)
   acc /= double(idx.size());
-  return { acc.x(), acc.y(), zmin };
+  return { xmin, acc.x(), acc.y() };
 }
 
-// 3D: apply policy to a meshified primitive (your function, just moved here)
+// =====================================================================================
+// 3D: apply policy to a meshified primitive. Assumes canonical X-height convention.
+// - Native:      no change
+// - AABBCenter:  translate so AABB center is at the origin
+// - BaseCenter:  translate so base center (x=xmin, averaged YZ) is at the origin
+// - VolumeCentroid: translate so volume centroid is at the origin; fallback AABBCenter
+// =====================================================================================
 inline void applyOriginPolicyMesh(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
                                   const std::vector<geometry::TriangleMesh::Face>& F)
 {
   using geometry::OriginPolicy;
   if (V.empty())
     return;
+
   switch (s.origin)
   {
     case OriginPolicy::Native:
       return;
+
     case OriginPolicy::AABBCenter:
     {
       const auto ctr = aabbCenter(computeAABB(V));
@@ -53,16 +68,18 @@ inline void applyOriginPolicyMesh(const geometry::Shape& s, std::vector<Eigen::V
         p -= ctr;
       return;
     }
+
     case OriginPolicy::BaseCenter:
     {
       const auto bb = computeAABB(V);
-      const double zmin = bb.min.z();
+      const double xmin = bb.min.x();
       const double eps = std::max(1e-12, 1e-6 * (bb.max - bb.min).norm());
-      const auto bctr = baseCenterXY(V, zmin, eps);
+      const auto bctr = baseCenterYZ(V, xmin, eps);
       for (auto& p : V)
         p -= bctr;
       return;
     }
+
     case OriginPolicy::VolumeCentroid:
     {
       Eigen::Vector3d C;
@@ -82,8 +99,13 @@ inline void applyOriginPolicyMesh(const geometry::Shape& s, std::vector<Eigen::V
   }
 }
 
-// 2D: apply policy to planar shapes described with vertices in (u,v) coordinates.
-// vertices are in the local 2D basis spanned by U (axes[1]) and V (axes[2]) around origin O (axes[0], optional).
+// =====================================================================================
+// 2D: apply policy to planar shapes described with vertices in a local (u,v) plane.
+// NOTE: For planar/2D shapes, “BaseCenter” is ambiguous w.r.t. 3D X-height.
+// Here we interpret the "base" as the minimal v-edge (v = vmin) in the (u,v) plane,
+// which is a practical default for many 2D uses (e.g., rectangles in a Y–Z plane).
+// If you want an X-tied base for specific 2D workflows, supply pre-shifted vertices.
+// =====================================================================================
 inline void applyOriginPolicy2DVertices(const geometry::Shape& s,
                                         std::vector<Eigen::Vector3d>& uv_vertices /* z==0 in uv-frame */)
 {
@@ -107,11 +129,12 @@ inline void applyOriginPolicy2DVertices(const geometry::Shape& s,
 
     case OriginPolicy::BaseCenter:
     {
-      // Interpret “base” as the minimal v-edge (v = vmin)
+      // Interpret “base” as minimal-v edge
       AABB bb = computeAABB(uv_vertices);
       const double vmin = bb.min.y();
       const double eps = std::max(1e-12, 1e-6 * (bb.max - bb.min).norm());
-      // center of the base edge in u plus v=vmin
+
+      // Compute center of the base edge in u at v = vmin
       double u_acc = 0.0;
       int n = 0;
       for (const auto& p : uv_vertices)
@@ -121,10 +144,14 @@ inline void applyOriginPolicy2DVertices(const geometry::Shape& s,
           ++n;
         }
       const double u0 = (n > 0) ? (u_acc / n) : 0.5 * (bb.min.x() + bb.max.x());
+
+      // Shift origin to the geometric center along v, but aligned with base u0
       const Eigen::Vector3d base_ctr(u0, vmin, 0);
-      const Eigen::Vector3d center_shift(0, 0.5 * (bb.max.y() - bb.min.y()), 0);  // to geometric center
+      const Eigen::Vector3d center_shift(0, 0.5 * (bb.max.y() - bb.min.y()), 0);  // to v-center
+      const Eigen::Vector3d target = base_ctr + center_shift;
+
       for (auto& p : uv_vertices)
-        p -= (base_ctr + center_shift);
+        p -= target;
       return;
     }
 

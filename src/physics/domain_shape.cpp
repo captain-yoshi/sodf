@@ -10,7 +10,10 @@ namespace physics {
 
 DomainShape::DomainShape(const geometry::StackedShape& stack, DomainType dtype)
 {
+  type = dtype;
+
   // Can analytics ever be used for this stack (in its own local frame)?
+  // New canonical: +X is the height/extrusion axis.
   segments_locally_axis_aligned_ = validateStackLocallyAnalytic(stack, analytic_tilt_eps_rad_, analytic_lateral_eps_m_);
 
   // Build analytic segments from eligible primitives
@@ -29,7 +32,6 @@ DomainShape::DomainShape(const geometry::StackedShape& stack, DomainType dtype)
     }
 
     // Mesh shapes don’t become analytic segments; keep (first) mesh as a tilt-aware fallback
-    // TODO fuse them or throw
     if (s.type == geometry::ShapeType::Mesh && !mesh_cache_)
     {
       mesh_cache_ = shapeMeshToDomainShape(s, dtype);
@@ -39,8 +41,10 @@ DomainShape::DomainShape(const geometry::StackedShape& stack, DomainType dtype)
 
 DomainShape::DomainShape(const geometry::Shape& shape, DomainType dtype)
 {
+  type = dtype;
+
   // Analytic primitive, store segment
-  if (auto seg = shapeToDomainShape(shape, DomainType::Fluid))
+  if (auto seg = shapeToDomainShape(shape, dtype))  // <- use passed dtype
   {
     segments_.push_back(std::move(seg));
     segments_locally_axis_aligned_ = true;  // a single eligible primitive
@@ -106,10 +110,6 @@ bool DomainShape::setMeshCacheFromStack(const geometry::StackedShape& stack, int
     F.push_back({ t[0], t[1], t[2] });
   }
 
-  geometry::TriangleMesh m;
-  m.F = F;
-  m.V = V;
-
   // Install into the cache (tilt-aware, stateless interface)
   mesh_cache_ = std::make_shared<physics::FluidConvexMeshShape>(std::move(V), std::move(F));
   return true;
@@ -128,7 +128,7 @@ bool DomainShape::nearlyParallelWorld(const Eigen::Vector3d& height_axis_world, 
                                       double eps_rad)
 {
   const auto up = -normalizedOr(g_down_world, Eigen::Vector3d(0, 0, -1));
-  const double sin_th = normalizedOr(height_axis_world, Eigen::Vector3d(0, 0, 1)).cross(up).norm();
+  const double sin_th = normalizedOr(height_axis_world, Eigen::Vector3d(1, 0, 0)).cross(up).norm();
   return sin_th <= std::sin(std::max(1e-12, eps_rad));
 }
 
@@ -136,7 +136,7 @@ bool DomainShape::canUseAnalyticNow(const FillEnv& env) const
 {
   if (!segments_locally_axis_aligned_ || segments_.empty())
     return false;
-  const Eigen::Vector3d axis_w = heightAxisWorld(env);
+  const Eigen::Vector3d axis_w = heightAxisWorld(env);  // +X mapped to world
   return nearlyParallelWorld(axis_w, env.g_down_world, parallel_eps_);
 }
 
@@ -224,19 +224,27 @@ bool DomainShape::validateStackLocallyAnalytic(const geometry::StackedShape& sta
   if (stack.shapes.empty())
     return false;
 
-  const Eigen::Vector3d z_hat = Eigen::Vector3d::UnitZ();
-  const Eigen::Vector3d x_hint = Eigen::Vector3d::UnitX();
+  // New canonical: +X is height/extrusion axis.
+  const Eigen::Vector3d x_hat = Eigen::Vector3d::UnitX();
+  const Eigen::Vector3d perp_hint = Eigen::Vector3d::UnitZ();  // any non-parallel hint is fine
 
   for (const auto& e : stack.shapes)
   {
-    // Only allow primitives you have analytic formulas for
-    if (!isAnalyticEligiblePrimitive(e.shape))  // your existing predicate
+    // Only allow primitives we have analytic formulas for
+    if (!isAnalyticEligiblePrimitive(e.shape))
       return false;
 
-    // Only allow pure yaw about +Z and pure lift along +Z (within tolerances)
-    double yaw = 0.0, z_base = 0.0;
-    if (!geometry::decompose_abs_twist_lift_wrt_axes(e.base_transform, z_hat, x_hint, yaw, z_base, tilt_eps_rad,
-                                                     lateral_eps_m))
+    // Only allow pure twist about +X and pure lift along +X (within tolerances).
+    double twist_about_x = 0.0;
+    double x_lift = 0.0;
+
+    // Reuse existing helper with the "up_axis" argument changed to +X.
+    // If your implementation name implies Z-up, it still works as long as it uses the provided axes.
+    if (!geometry::decompose_abs_twist_lift_wrt_axes(e.base_transform,
+                                                     /*up_axis=*/x_hat,
+                                                     /*forward_hint=*/perp_hint,
+                                                     /*out_twist=*/twist_about_x,
+                                                     /*out_lift=*/x_lift, tilt_eps_rad, lateral_eps_m))
     {
       return false;
     }

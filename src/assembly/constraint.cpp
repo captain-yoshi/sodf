@@ -34,8 +34,8 @@ Pose solveCoincidentPlaneFrame(const Plane& Hplane, const Pose& Fg)
 {
   Pose T = Pose::Identity();
   // Orient guest +Z to plane normal (keep yaw around normal as-is)
-  Eigen::Vector3d gz = Fg.linear().col(2).normalized();
-  Eigen::Matrix3d R = align_dir_to_dir(Hplane.normal, gz).transpose();  // rotate guest so gz->normal
+  Eigen::Vector3d gx = Fg.linear().col(0).normalized();
+  Eigen::Matrix3d R = align_dir_to_dir(Hplane.normal, gx).transpose();  // rotate guest so gz->normal
   T.linear() = R;
 
   // Project guest origin onto plane

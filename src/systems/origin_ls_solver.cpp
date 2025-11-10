@@ -32,6 +32,31 @@ struct Residual
   double dist_m = 0.0;
 };
 
+// NEW: pick which guest axis to use based on selector (default +X)
+static inline Eigen::Vector3d pick_guest_axis(const std::string& selector, const Eigen::Isometry3d& Fg)
+{
+  if (selector == "axisY")
+    return Fg.linear().col(1);
+  if (selector == "axisZ")
+    return Fg.linear().col(2);
+  // default: +X
+  return Fg.linear().col(0);
+}
+
+// (keep Residual, concentric_residual, parallel_residual as-is)
+
+// keep plane_frame_residual (used elsewhere); add a selector-aware variant:
+static inline Residual plane_frame_residual_axis(const sodf::assembly::Plane& Hp, const Eigen::Isometry3d& Fg,
+                                                 int guest_axis_col /*0|1|2*/)
+{
+  const Eigen::Vector3d n = Hp.normal.normalized();
+  const Eigen::Vector3d ag = Fg.linear().col(guest_axis_col).normalized();
+  const double c = std::abs(n.dot(ag));
+  const double ang = std::acos(std::clamp(c, 0.0, 1.0));
+  const double d = (Fg.translation() - Hp.point).dot(n);
+  return { ang, std::abs(d) };
+}
+
 static inline Residual concentric_residual(const sodf::assembly::Axis& H, const sodf::assembly::Axis& G)
 {
   const Eigen::Vector3d h = H.direction.normalized();
@@ -58,8 +83,8 @@ static inline Residual parallel_residual(const sodf::assembly::Axis& H, const so
 static inline Residual plane_frame_residual(const sodf::assembly::Plane& Hp, const Eigen::Isometry3d& Fg)
 {
   const Eigen::Vector3d n = Hp.normal.normalized();
-  const Eigen::Vector3d zg = Fg.linear().col(2).normalized();
-  const double c = std::abs(n.dot(zg));                   // unsigned
+  const Eigen::Vector3d xg = Fg.linear().col(0).normalized();
+  const double c = std::abs(n.dot(xg));                   // unsigned
   const double ang = std::acos(std::clamp(c, 0.0, 1.0));  // 0 for parallel or anti-parallel
   const double d = (Fg.translation() - Hp.point).dot(n);
   return { ang, std::abs(d) };
@@ -231,20 +256,25 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
             {
               Plane Hp = sodf::assembly::resolvePlane(H, ctx);
               Pose Fg = sodf::assembly::resolvePose(G, ctx);
-              const Eigen::Vector3d n = Hp.normal.normalized();
-              const Eigen::Vector3d xg = Fg.translation();
 
-              double rd = n.dot(xg - Hp.point);
+              // --- Distance residual (point-to-plane) ---
+              const Eigen::Vector3d n = Hp.normal.normalized();
+              const Eigen::Vector3d xg_pos = Fg.translation();
+              const double rd = n.dot(xg_pos - Hp.point);
+
               Eigen::Matrix<double, 1, 6> Jd = Eigen::Matrix<double, 1, 6>::Zero();
-              Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg);
+              Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg_pos);
               Jd.block<1, 3>(0, 3) = n.transpose();
               accum(Jd, Eigen::VectorXd::Constant(1, rd), P.w_pos);
 
-              Eigen::Vector3d zg = Fg.linear().col(2);
-              Eigen::Vector3d r_ang = zg.cross(n);
+              // --- Angular residual (align selected guest axis with plane normal) ---
+              const Eigen::Vector3d aG = pick_guest_axis(G.selector, Fg);  // <- NEW
+              const Eigen::Vector3d r_ang = aG.cross(n);
+
               Eigen::Matrix<double, 3, 6> Ja = Eigen::Matrix<double, 3, 6>::Zero();
-              Ja.block<3, 3>(0, 0) = -skew(n) * skew(zg);
-              accum(Ja, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
+              Ja.block<3, 3>(0, 0) = -skew(n) * skew(aG);
+              accum(Ja, Eigen::Map<const Eigen::Vector3d>(r_ang.data()), P.w_ang);
+
               done = true;
             }
             catch (...)
@@ -257,27 +287,33 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
               {
                 Pose Fh = sodf::assembly::resolvePose(H, ctx);
                 Pose Fg = sodf::assembly::resolvePose(G, ctx);
-                Plane Hp{ Fh.translation(), Fh.linear().col(2) };
-                const Eigen::Vector3d n = Hp.normal.normalized();
-                const Eigen::Vector3d xg = Fg.translation();
 
-                double rd = n.dot(xg - Hp.point);
+                // Host plane = host frame’s YZ plane, normal = +X (canonical)
+                Plane Hp{ Fh.translation(), Fh.linear().col(0) };
+
+                const Eigen::Vector3d n = Hp.normal.normalized();
+                const Eigen::Vector3d xg_pos = Fg.translation();
+                const double rd = n.dot(xg_pos - Hp.point);
+
                 Eigen::Matrix<double, 1, 6> Jd = Eigen::Matrix<double, 1, 6>::Zero();
-                Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg);
+                Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg_pos);
                 Jd.block<1, 3>(0, 3) = n.transpose();
                 accum(Jd, Eigen::VectorXd::Constant(1, rd), P.w_pos);
 
-                Eigen::Vector3d zg = Fg.linear().col(2);
-                Eigen::Vector3d r_ang = zg.cross(n);
+                // selector-aware axis again
+                const Eigen::Vector3d aG = pick_guest_axis(G.selector, Fg);  // <- NEW
+                const Eigen::Vector3d r_ang = aG.cross(n);
+
                 Eigen::Matrix<double, 3, 6> Ja = Eigen::Matrix<double, 3, 6>::Zero();
-                Ja.block<3, 3>(0, 0) = -skew(n) * skew(zg);
-                accum(Ja, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
+                Ja.block<3, 3>(0, 0) = -skew(n) * skew(aG);
+                accum(Ja, Eigen::Map<const Eigen::Vector3d>(r_ang.data()), P.w_ang);
               }
               catch (...)
               {
               }
             }
           }
+
           else if constexpr (std::is_same_v<TStep, components::Distance>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
@@ -424,6 +460,7 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             }
             out.push_back(std::move(e));
           }
+          // --- in compute_origin_residuals_compact(), Coincident diagnostics branch ---
           else if constexpr (std::is_same_v<TStep, components::Coincident>)
           {
             Ref H = assembly::make_host_ref(step.host, origin);
@@ -434,7 +471,15 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             {
               auto Hp = resolvePlane(H, ctx);
               auto Fg = resolvePose(G, ctx);
-              auto R = plane_frame_residual(Hp, Fg);
+
+              // selector-aware angle (uses guest axis X/Y/Z):
+              int col = 0;
+              if (G.selector == "axisY")
+                col = 1;
+              else if (G.selector == "axisZ")
+                col = 2;
+              auto R = plane_frame_residual_axis(Hp, Fg, col);  // <- NEW
+
               e.ang_rad = R.angle_rad;
               e.dist_m = R.dist_m;
               ok = true;
@@ -442,14 +487,22 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             catch (...)
             {
             }
+
             if (!ok)
             {
               try
               {
                 auto Fh = resolvePose(H, ctx);
                 auto Fg = resolvePose(G, ctx);
-                Plane Hp{ Fh.translation(), Fh.linear().col(2) };
-                auto R = plane_frame_residual(Hp, Fg);
+                Plane Hp{ Fh.translation(), Fh.linear().col(0) };
+
+                int col = 0;
+                if (G.selector == "axisY")
+                  col = 1;
+                else if (G.selector == "axisZ")
+                  col = 2;
+                auto R = plane_frame_residual_axis(Hp, Fg, col);  // <- NEW
+
                 e.ang_rad = R.angle_rad;
                 e.dist_m = R.dist_m;
                 ok = true;
@@ -461,6 +514,7 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             e.ok = ok;
             out.push_back(std::move(e));
           }
+
           else if constexpr (std::is_same_v<TStep, components::Distance>)
           {
             Ref H = assembly::make_host_ref(step.host, origin);

@@ -72,7 +72,7 @@ static inline Eigen::Vector3d to_host_dir(const Eigen::Isometry3d& H_w, const Ei
   const double n2 = dh.squaredNorm();
   if (n2 > 0.0)
     return dh / std::sqrt(n2);
-  return Eigen::Vector3d(0.0, 0.0, 1.0);
+  return Eigen::Vector3d(1.0, 0.0, 0.0);
 }
 
 static inline Axis to_host_axis(const Eigen::Isometry3d& H_w, const Axis& a_w)
@@ -109,9 +109,9 @@ static inline Eigen::Isometry3d delta_host_to_world(const Eigen::Isometry3d& H_w
 Axis resolveAxis(const Ref& r, const SelectorContext& ctx)
 {
   // For frames: allow #axisX/#axisY/#axisZ/#axis (default = Z)
-  const bool wantX = (r.selector == "axisX");
+  const bool wantX = (r.selector == "axisX" || r.selector.empty() || r.selector == "axis");
   const bool wantY = (r.selector == "axisY");
-  const bool wantZ = (r.selector == "axisZ" || r.selector.empty() || r.selector == "axis");
+  const bool wantZ = (r.selector == "axisZ");
   const bool anyAxis = wantX || wantY || wantZ;
 
   switch (r.kind)
@@ -159,7 +159,7 @@ Axis resolveAxis(const Ref& r, const SelectorContext& ctx)
       if (!ctx.getFrame(r, F))
         throw std::runtime_error("resolveAxis: frame not found for '" + r.raw + "'");
       const Eigen::Vector3d dir =
-          wantX ? F.linear().col(0) : wantY ? F.linear().col(1) : F.linear().col(2);  // default Z
+          wantX ? F.linear().col(0) : wantY ? F.linear().col(1) : F.linear().col(2);  // default X
       return Axis{ F.translation(), dir.normalized() };
     }
 
@@ -190,7 +190,7 @@ Plane resolvePlane(const Ref& r, const SelectorContext& ctx)
       Pose F;
       if (!ctx.getFrame(r, F))
         throw std::runtime_error("resolvePlane: frame not found for '" + r.raw + "'");
-      return Plane{ F.translation(), F.linear().col(2).normalized() };
+      return Plane{ F.translation(), F.linear().col(0).normalized() };
     }
 
     case NamespaceKind::Insertion:

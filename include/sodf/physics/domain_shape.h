@@ -31,11 +31,11 @@ public:
   DomainType type = DomainType::Fluid;
   std::string stacked_shape_id;  // optional provenance
 
-  // Canonical height axis in the domain's *local* frame (default +Z).
+  // Canonical height axis in the domain's *local* frame (default +X).
   // Keep a setter in case a non-standard local up is authored.
   void setHeightAxisLocal(const Eigen::Vector3d& axis_local)
   {
-    height_axis_local_ = normalizedOr(axis_local, Eigen::Vector3d(0, 0, 1));
+    height_axis_local_ = normalizedOr(axis_local, Eigen::Vector3d::UnitX());
   }
 
   // World axis for the current env (computed on demand).
@@ -57,11 +57,8 @@ public:
   void setMeshCache(DomainShapeBasePtr mesh);
   const DomainShapeBasePtr& meshCache() const;
 
-  // void setAutoMeshBuilder(AutoMeshBuilder builder);
   bool setMeshCacheFromStack(const geometry::StackedShape& stack, int radial_res = 46, int axial_res_spherical = 16,
                              double weld_tol = 1e-9);
-
-  // void clearAutoMeshBuilder();
 
   bool hasMesh() const;
   bool hasSegments() const;
@@ -98,14 +95,21 @@ private:
 private:
   std::vector<DomainShapeBasePtr> segments_;
   DomainShapeBasePtr mesh_cache_;
-  // AutoMeshBuilder auto_mesh_builder_{};
 
-  Eigen::Vector3d height_axis_local_{ 0, 0, 1 };  // UNIT, domain local
-  double parallel_eps_ = 1e-6;                    // radians for gravity alignment test
-  double analytic_tilt_eps_rad_ = 1e-6;           // radians (local Z vs +Z)
-  double analytic_lateral_eps_m_ = 1e-9;          // meters  (XY shift tolerance)
+  // Canonical default is +X (height/extrusion axis)
+  Eigen::Vector3d height_axis_local_{ 1, 0, 0 };  // UNIT, domain local
 
-  // Precomputed: true iff the provided stack/shape was locally coaxial+unshifted (+Z) and primitives analytic-eligible
+  // Radians for gravity alignment test (axis ~ parallel to -g_down)
+  double parallel_eps_ = 1e-6;
+
+  // Local analytic tolerances for stacked shapes:
+  // - tilt wrt +X (allowed twist about +X, no tilt away from +X)
+  // - lateral offset in YZ (meters)
+  double analytic_tilt_eps_rad_ = 1e-6;
+  double analytic_lateral_eps_m_ = 1e-9;
+
+  // Precomputed: true iff the provided stack/shape was locally coaxial+unshifted (+X)
+  // and primitives analytic-eligible
   bool segments_locally_axis_aligned_ = false;
 };
 
