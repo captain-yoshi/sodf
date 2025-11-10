@@ -18,12 +18,12 @@ enum class OriginPolicy
 {
   Native = 0,      // Do not adjust; use vertices/URI frame as-authored.
                    // Cannot be used for primitives with dimensions.
-  BaseCenter,      // Base-aligned (zE[0,H]), origin at base center (x_mid,y_mid,z=0).
+  BaseCenter,      // Base-aligned (xE[0,H]), origin at base center (x=0,y_mid,z_mid).
   AABBCenter,      // Origin at full-shape AABB geometric center.
   VolumeCentroid,  // Origin at (volume/area) centroid (fallback: AABBCenter).
 
-  // BaseMinCornerXY,    // Base at z=0; origin at base AABB min corner (x_min,y_min,0).
-  // BaseMaxCornerXY,    // Base at z=0; origin at base AABB max corner (x_max,y_max,0).
+  // BaseMinCornerYZ,    // Base at x=0; origin at base AABB min corner (0,y_min,z_min).
+  // BaseMaxCornerYZ,    // Base at x=0; origin at base AABB max corner (0,y_max,z_max).
 
 };
 
@@ -53,23 +53,23 @@ enum class ShapeType
 
 // clang-format off
 /*
-| ShapeType         | Dimensions                          | Axes (canonical X, Y, Z)   | Vertices           | Description / Notes                                      |
-|-------------------|-------------------------------------|----------------------------|--------------------|----------------------------------------------------------|
-| Line              | length                              | direction                  | 2 points (2D/3D)   | Works for 2D or 3D. Z vertices = 0 for 2D.               |
-|                   |                                     |                            |                    | Bounded if length > 0, infinite if = 0.                  |
-| Rectangle         | width, height                       | height, width, normal      | 4 points           |                                                          |
-| Circle            | radius                              | reference x-y, normal      | -                  |                                                          |
-| Triangle          | base, altitude, apex_offset         | altitude, base, normal     | 3 points           |                                                          |
-| Polygon           | - (dimentionless)                   | x, y, normal               | N points           | Width and height are wrt. the centroid.                  |
-| Plane             | width, height (optional)            | reference x-y, normal,     | -                  | Bounded plane if width & height > 0, infinite if = 0.    |
-| Box               | width, depth, height                | depth, width, height       | -                  |                                                          |
-| TriangularPrism   | base, altitude, height, apex_offset | altitude, base, height     | -                  | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.          |
-| Cylinder          | radius, height                      | reference x-y, symmetry    | -                  |                                                          |
-| Sphere            | radius                              | (none)                     | -                  |                                                          |
-| Cone              | base_radius, top_radius, height     | reference x-y, symmetry    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
-| SphericalSegment  | base_radius, top_radius, height     | reference x-y, symmetry    | -                  | Cap if one radius = 0, segment if both > 0.              |
-| Mesh              | - (dimensionless)                   | x, y, z                    | External URI or    | Use as-authored local frame, or override with AxisX/Y/Z; |
-|                   |                                     |                            | TriangleMesh (V,F) | Supports indexed triangles; units = meters               |
+| ShapeType         | Dimensions                                  | Axes (canonical X, Y, Z)   | Vertices           | Description / Notes                                      |
+|-------------------|---------------------------------------------|----------------------------|--------------------|----------------------------------------------------------|
+| Line              | length                                      | direction                  | 2 points (2D/3D)   | Works for 2D or 3D. Z vertices = 0 for 2D.               |
+|                   |                                             |                            |                    | Bounded if length > 0, infinite if = 0.                  |
+| Rectangle         | size_y, size_z                              | normal, size_y, size_z     | 4 points           |                                                          |
+| Circle            | radius                                      | normal, reference y-z      | -                  |                                                          |
+| Triangle          | base_y, altitude_z, apex_offset_y           | normal, base, altitude     | 3 points           |                                                          |
+| Polygon           | - (dimentionless)                           | normal, y, z               | N points           | Width and height are wrt. the centroid.                  |
+| Plane             | size_y, size_z                              | normal, reference y, z,    | -                  | Bounded plane if width & height > 0, infinite if = 0.    |
+| Box               | x, y, z                                     | x, y, z                    | -                  |                                                          |
+| TriangularPrism   | length_x, base_y, altitude_z, apex_offset_y | extrusion, base, altitude  | -                  | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.          |
+| Cylinder          | radius, height_x                            | symmetry, reference y,z    | -                  |                                                          |
+| Sphere            | radius                                      | (none)                     | -                  |                                                          |
+| Cone              | base_radius, top_radius, height_x           | symmetry, reference y-z    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
+| SphericalSegment  | base_radius, top_radius, height_x           | symmetry, reference y-z    | -                  | Cap if one radius = 0, segment if both > 0.              |
+| Mesh              | - (dimensionless)                           | x, y, z                    | External URI or    | Use as-authored local frame, or override with AxisX/Y/Z; |
+|                   |                                             |                            | TriangleMesh (V,F) | Supports indexed triangles; units = meters               |
 */
 // clang-format on
 

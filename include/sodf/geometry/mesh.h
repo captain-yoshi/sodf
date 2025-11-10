@@ -51,6 +51,27 @@ static inline void stripCapAtPlaneZ(std::vector<Eigen::Vector3d>& V, std::vector
   F.swap(keep);
 }
 
+inline void stripCapAtPlaneX(std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F, double x_plane,
+                             double tol)
+{
+  using Face = TriangleMesh::Face;
+  std::vector<Face> F_new;
+  F_new.reserve(F.size());
+  auto near_plane = [&](const Eigen::Vector3d& p) { return std::abs(p.x() - x_plane) <= tol; };
+
+  for (const auto& f : F)
+  {
+    const Eigen::Vector3d& a = V[f[0]];
+    const Eigen::Vector3d& b = V[f[1]];
+    const Eigen::Vector3d& c = V[f[2]];
+    // Remove triangles that are entirely on the plane
+    if (near_plane(a) && near_plane(b) && near_plane(c))
+      continue;
+    F_new.push_back(f);
+  }
+  F.swap(F_new);
+}
+
 static inline void appendMesh(const std::vector<Eigen::Vector3d>& VB,
                               const std::vector<geometry::TriangleMesh::Face>& FB, std::vector<Eigen::Vector3d>& VA,
                               std::vector<geometry::TriangleMesh::Face>& FA)
