@@ -294,7 +294,7 @@ geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
     const double base_y = evalNumberAttributeRequired(dims, "base_y");
     const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z");
     const double apex_off_y = evalNumberAttributeRequired(dims, "apex_offset_y");
-    s.dimensions = { base_y, altitude_z, apex_off_y };
+    s.dimensions = { base_y, apex_off_y, altitude_z };
   }
   else
   {
@@ -450,7 +450,7 @@ geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem)
     throw std::runtime_error("TriangularPrism requires positive length_x, base_y, altitude_z at line " +
                              std::to_string(dims->GetLineNum()));
 
-  s.dimensions = { length_x, base_y, altitude_z, apex_offset_y };
+  s.dimensions = { base_y, apex_offset_y, altitude_z, length_x };
 
   validateAxesRightHandOrthonormal(s, elem);
   return s;

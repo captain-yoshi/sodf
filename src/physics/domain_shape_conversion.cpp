@@ -93,13 +93,13 @@ DomainShapeBasePtr shapeMeshToDomainShape(const geometry::Shape& meshShape, sodf
   return std::make_shared<FluidConvexMeshShape>(std::move(V), std::move(F));
 }
 
-DomainShapeBasePtr shapeToDomainShape(const geometry::Shape& s, sodf::physics::DomainType dtype)
+sodf::physics::DomainShapeBasePtr shapeToDomainShape(const sodf::geometry::Shape& s, sodf::physics::DomainType dtype)
 {
-  using sodf::geometry::ShapeType;
+  using namespace sodf::geometry;
   using sodf::physics::DomainShapeBasePtr;
   using sodf::physics::DomainType;
 
-  // For now we only build domains for Fluids.
+  // Only Fluids for now
   if (dtype != DomainType::Fluid)
     return nullptr;
 
@@ -107,52 +107,61 @@ DomainShapeBasePtr shapeToDomainShape(const geometry::Shape& s, sodf::physics::D
   {
     case ShapeType::Box:
     {
-      // dimensions = [width, length, height]
-      if (s.dimensions.size() < 3)
+      // Canonical: {x, y, z}; fluid box wants (width, length, height)
+      // width  = Y, length = Z, height = X
+      if (!dim(s).has(DimRole::Y) || !dim(s).has(DimRole::Z) || !dim(s).has(DimRole::Height))
         return nullptr;
-      const double w = s.dimensions[0];
-      const double l = s.dimensions[1];
-      const double h = s.dimensions[2];
+
+      const double w = dim(s).at(DimRole::Y);
+      const double l = dim(s).at(DimRole::Z);
+      const double h = dim(s).at(DimRole::Height);
       if (!positive(w) || !positive(l) || !positive(h))
         return nullptr;
+
       return std::make_shared<sodf::physics::FluidBoxShape>(w, l, h);
     }
 
     case ShapeType::Cylinder:
     {
-      // dimensions = [radius, height]
-      if (s.dimensions.size() < 2)
+      // Canonical order: {height_x, radius}
+      if (!dim(s).has(DimRole::Height) || !dim(s).has(DimRole::Radius))
         return nullptr;
-      const double r = s.dimensions[0];
-      const double h = s.dimensions[1];
+
+      const double r = dim(s).at(DimRole::Radius);
+      const double h = dim(s).at(DimRole::Height);
       if (!positive(r) || !positive(h))
         return nullptr;
+
       return std::make_shared<sodf::physics::FluidCylinderShape>(r, h);
     }
 
     case ShapeType::Cone:
     {
-      // Frustum: dimensions = [base_radius, top_radius, height]
-      if (s.dimensions.size() < 3)
+      // Canonical order: {height_x, base_radius, top_radius}
+      if (!dim(s).has(DimRole::Height) || !dim(s).has(DimRole::BaseRadius) || !dim(s).has(DimRole::TopRadius))
         return nullptr;
-      const double r0 = s.dimensions[0];
-      const double r1 = s.dimensions[1];
-      const double h = s.dimensions[2];
+
+      const double h = dim(s).at(DimRole::Height);
+      const double r0 = dim(s).at(DimRole::BaseRadius);
+      const double r1 = dim(s).at(DimRole::TopRadius);
       if (!nonneg(r0) || !nonneg(r1) || !positive(h))
         return nullptr;
+
       return std::make_shared<sodf::physics::FluidConeShape>(r0, r1, h);
     }
 
     case ShapeType::SphericalSegment:
     {
-      // dimensions = [base_radius (z=0), top_radius (z=H), height]
-      if (s.dimensions.size() < 3)
+      // Canonical order: {height_x, base_radius, top_radius}
+      if (!dim(s).has(DimRole::Height) || !dim(s).has(DimRole::BaseRadius) || !dim(s).has(DimRole::TopRadius))
         return nullptr;
-      const double a1 = s.dimensions[0];
-      const double a2 = s.dimensions[1];
-      const double H = s.dimensions[2];
+
+      const double H = dim(s).at(DimRole::Height);
+      const double a1 = dim(s).at(DimRole::BaseRadius);
+      const double a2 = dim(s).at(DimRole::TopRadius);
       if (!nonneg(a1) || !nonneg(a2) || !positive(H))
         return nullptr;
+
       try
       {
         return std::make_shared<sodf::physics::FluidSphericalSegmentShape>(a1, a2, H);
@@ -164,9 +173,7 @@ DomainShapeBasePtr shapeToDomainShape(const geometry::Shape& s, sodf::physics::D
     }
 
     case ShapeType::Mesh:
-    {
       return shapeMeshToDomainShape(s, dtype);
-    }
 
     default:
       break;
