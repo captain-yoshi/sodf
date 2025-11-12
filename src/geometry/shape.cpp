@@ -10,6 +10,278 @@
 namespace sodf {
 namespace geometry {
 
+const char* dim_role_name(DimRole r)
+{
+  switch (r)
+  {
+    case DimRole::Height:
+      return "height";
+    case DimRole::Radius:
+      return "radius";
+    case DimRole::BaseRadius:
+      return "base_radius";
+    case DimRole::TopRadius:
+      return "top_radius";
+    case DimRole::SizeY:
+      return "size_y";
+    case DimRole::SizeZ:
+      return "size_z";
+    case DimRole::Base:
+      return "base";
+    case DimRole::Altitude:
+      return "altitude";
+    case DimRole::ApexOffset:
+      return "apex_offset";
+    case DimRole::X:
+      return "x";
+    case DimRole::Y:
+      return "y";
+    case DimRole::Z:
+      return "z";
+    default:
+      return "unknown";
+  }
+}
+
+DimRole parse_dim_role(std::string_view key)
+{
+  static const std::unordered_map<std::string_view, DimRole> map = { // 3D
+                                                                     { "height", DimRole::Height },
+                                                                     { "radius", DimRole::Radius },
+                                                                     { "base_radius", DimRole::BaseRadius },
+                                                                     { "top_radius", DimRole::TopRadius },
+                                                                     // 2D
+                                                                     { "size_y", DimRole::SizeY },
+                                                                     { "size_z", DimRole::SizeZ },
+                                                                     { "base", DimRole::Base },
+                                                                     { "altitude", DimRole::Altitude },
+                                                                     { "apex_offset", DimRole::ApexOffset },
+                                                                     // Cartesian (Box only)
+                                                                     { "x", DimRole::X },
+                                                                     { "y", DimRole::Y },
+                                                                     { "z", DimRole::Z }
+  };
+  if (auto it = map.find(key); it != map.end())
+    return it->second;
+  return DimRole::Unknown;
+}
+
+int dim_index_for(ShapeType t, DimRole r)
+{
+  using ST = ShapeType;
+  using DR = DimRole;
+  switch (t)
+  {
+    // Box literally stores {x, y, z}
+    case ST::Box:
+      switch (r)
+      {
+        case DR::X:
+        case DR::Height:  // alias for stacking
+          return 0;
+        case DR::Y:
+          return 1;
+        case DR::Z:
+          return 2;
+        default:
+          return -1;
+      }
+
+    // 3D semantic shapes (no generic X/Y/Z)
+    case ST::TriangularPrism:  // {length_x, base_y, altitude_z, apex_offset_y}
+      switch (r)
+      {
+        case DR::Base:
+          return 0;
+        case DR::Altitude:
+          return 1;
+        case DR::ApexOffset:
+          return 2;
+        case DR::Height:
+          return 3;  // height along canonical X
+        default:
+          return -1;
+      }
+
+    case ST::Cylinder:  // {height_x, radius}
+      switch (r)
+      {
+        case DR::Radius:
+          return 0;
+        case DR::Height:
+          return 1;
+        default:
+          return -1;
+      }
+
+    case ST::Cone:  // {height_x, base_radius, top_radius}
+      switch (r)
+      {
+        case DR::BaseRadius:
+          return 0;
+        case DR::TopRadius:
+          return 1;
+        case DR::Height:
+          return 2;
+        default:
+          return -1;
+      }
+
+    case ST::SphericalSegment:  // {height_x, base_radius, top_radius}
+      switch (r)
+      {
+        case DR::BaseRadius:
+          return 0;
+        case DR::TopRadius:
+          return 1;
+        case DR::Height:
+          return 2;
+        default:
+          return -1;
+      }
+
+    // 2D shapes
+    case ST::Rectangle:  // {size_y, size_z}
+    case ST::Plane:      // {size_y, size_z}
+      switch (r)
+      {
+        case DR::SizeY:
+          return 0;
+        case DR::SizeZ:
+        case DR::Height:
+          return 1;  // also “2D height”
+        default:
+          return -1;
+      }
+
+    case ST::Circle:  // {radius}
+      switch (r)
+      {
+        case DR::Radius:
+          return 0;
+        default:
+          return -1;
+      }
+
+    case ST::Triangle:  // {base_y, altitude_z, apex_offset_y}
+      switch (r)
+      {
+        case DR::Base:
+          return 0;
+        case DR::ApexOffset:
+          return 1;
+        case DR::Altitude:
+        case DR::Height:
+          return 2;
+        default:
+          return -1;
+      }
+
+    // Others: no fixed mapping
+    default:
+      return -1;
+  }
+}
+
+bool supports_dim_role(ShapeType t, DimRole r)
+{
+  return dim_index_for(t, r) >= 0;
+}
+
+double& DimAccessor::at(std::size_t i)
+{
+  return dims.at(i);
+}
+const double& DimAccessor::at(std::size_t i) const
+{
+  return dims.at(i);
+}
+
+bool DimAccessor::has(DimRole r) const
+{
+  int i = dim_index_for(type, r);
+  return i >= 0 && static_cast<std::size_t>(i) < dims.size();
+}
+bool DimAccessor::has(std::string_view key) const
+{
+  DimRole r = parse_dim_role(key);
+  if (r == DimRole::Unknown)
+    return false;
+  return has(r);
+}
+
+double* DimAccessor::try_at(DimRole r)
+{
+  int i = dim_index_for(type, r);
+  if (i < 0 || static_cast<std::size_t>(i) >= dims.size())
+    return nullptr;
+  return &dims[static_cast<std::size_t>(i)];
+}
+const double* DimAccessor::try_at(DimRole r) const
+{
+  int i = dim_index_for(type, r);
+  if (i < 0 || static_cast<std::size_t>(i) >= dims.size())
+    return nullptr;
+  return &dims[static_cast<std::size_t>(i)];
+}
+double* DimAccessor::try_at(std::string_view key)
+{
+  DimRole r = parse_dim_role(key);
+  return (r == DimRole::Unknown) ? nullptr : try_at(r);
+}
+const double* DimAccessor::try_at(std::string_view key) const
+{
+  DimRole r = parse_dim_role(key);
+  return (r == DimRole::Unknown) ? nullptr : try_at(r);
+}
+
+double& DimAccessor::at(DimRole r)
+{
+  int i = dim_index_for(type, r);
+  if (i < 0)
+    throw std::out_of_range(std::string("dimension role '") + dim_role_name(r) + "' not supported for shape " +
+                            shapeTypeToString(type));
+  if (static_cast<std::size_t>(i) >= dims.size())
+    throw std::out_of_range(std::string("dimension role '") + dim_role_name(r) + "' index " + std::to_string(i) +
+                            " out of bounds for shape " + shapeTypeToString(type));
+  return dims[static_cast<std::size_t>(i)];
+}
+const double& DimAccessor::at(DimRole r) const
+{
+  int i = dim_index_for(type, r);
+  if (i < 0)
+    throw std::out_of_range(std::string("dimension role '") + dim_role_name(r) + "' not supported for shape " +
+                            shapeTypeToString(type));
+  if (static_cast<std::size_t>(i) >= dims.size())
+    throw std::out_of_range(std::string("dimension role '") + dim_role_name(r) + "' index " + std::to_string(i) +
+                            " out of bounds for shape " + shapeTypeToString(type));
+  return dims[static_cast<std::size_t>(i)];
+}
+
+double& DimAccessor::at(std::string_view key)
+{
+  DimRole r = parse_dim_role(key);
+  if (r == DimRole::Unknown)
+    throw std::out_of_range(std::string("unknown dimension key '") + std::string(key) + "'");
+  return at(r);
+}
+const double& DimAccessor::at(std::string_view key) const
+{
+  DimRole r = parse_dim_role(key);
+  if (r == DimRole::Unknown)
+    throw std::out_of_range(std::string("unknown dimension key '") + std::string(key) + "'");
+  return at(r);
+}
+
+DimAccessor dim(Shape& s)
+{
+  return DimAccessor{ s.type, s.dimensions };
+}
+DimAccessor dim(const Shape& s)
+{
+  return DimAccessor{ s.type, const_cast<std::vector<double>&>(s.dimensions) };
+}
+
 bool isPrimitive(geometry::ShapeType t)
 {
   using geometry::ShapeType;
@@ -186,10 +458,10 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
       if (dimensions.size() < 3)
         throw std::runtime_error("TriangularPrism requires dims {base, altitude, height[, apex_offset]}.");
 
-      const double bw = dimensions[0];                                  // along V (Base axis)
-      const double bh = dimensions[1];                                  // along U (Altitude axis)
-      const double h = dimensions[2];                                   // along N (Height/extrusion)
-      const double u = (dimensions.size() >= 4 ? dimensions[3] : 0.0);  // apex offset along U
+      const double bw = dim(shape).at(DimRole::Base);      // along V (Base axis)
+      const double bh = dim(shape).at(DimRole::Altitude);  // along U (Altitude axis)
+      const double h = dim(shape).at(DimRole::Height);     // along N (Height/extrusion)
+      const double u = (dimensions.size() >= 4 ? dim(shape).at(DimRole::ApexOffset) : 0.0);  // apex offset along U
 
       const Eigen::Vector3d& U = getShapeUAxis(shape);        // Altitude axis in base plane
       const Eigen::Vector3d& V = getShapeVAxis(shape);        // Base axis in base plane
@@ -217,7 +489,7 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
       if (dimensions.size() < 2)
         throw std::runtime_error("Cylinder requires dims {radius, height}.");
       const Eigen::Vector3d& N = getShapePrimaryAxis(shape);
-      return (0.5 * dimensions[1]) * N;
+      return (0.5 * dim(shape).at(DimRole::Height)) * N;
     }
 
     case ShapeType::Cone:
@@ -227,7 +499,7 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
         throw std::runtime_error("Cone requires dims {base_radius, top_radius, height}.");
       const Eigen::Vector3d& N = getShapePrimaryAxis(shape);
       // Keep the prior heuristic: centroid ~ h/4 from base along axis (exact for a right cone).
-      return (0.25 * dimensions[2]) * N;
+      return (0.25 * dim(shape).at(DimRole::Height)) * N;
     }
 
     case ShapeType::SphericalSegment:
@@ -237,9 +509,9 @@ Eigen::Vector3d getShapeCentroid(const Shape& shape)
         throw std::runtime_error("SphericalSegment requires dims {base_radius, top_radius, height}.");
 
       const Eigen::Vector3d& N = getShapePrimaryAxis(shape);
-      const double r1 = dimensions[0];
-      const double r2 = dimensions[1];
-      const double h = dimensions[2];
+      const double r1 = dim(shape).at(DimRole::BaseRadius);
+      const double r2 = dim(shape).at(DimRole::TopRadius);
+      const double h = dim(shape).at(DimRole::Height);
 
       // Use the larger rim radius to estimate sphere R (matches your previous approach).
       const double R = std::max(r1, r2);
@@ -270,60 +542,61 @@ double getShapeHeight(const Shape& s)
     // -------- 2D (height along canonical +Z) --------
     case ST::Rectangle:
       need(2, "Rectangle");
-      return s.dimensions[1];  // size_z
+      return dim(s).at(DimRole::SizeZ);
     case ST::Plane:
       need(2, "Plane");
-      return s.dimensions[1];  // size_z
+      return dim(s).at(DimRole::SizeZ);
     case ST::Circle:
       need(1, "Circle");
-      return 2.0 * s.dimensions[0];  // diameter on Z
+      return 2.0 * dim(s).at(DimRole::Radius);
     case ST::Triangle:
       need(2, "Triangle");
-      return s.dimensions[1];  // altitude_z
-    case ST::Polygon:          // vertices in YZ; AABB Z-extent
+      return dim(s).at(DimRole::Altitude);
+
+    case ST::Polygon:  // vertices in YZ; AABB Z-extent
     {
       if (s.vertices.empty())
         return 0.0;
       double zmin = std::numeric_limits<double>::infinity();
-      double zmax = -zmin;
+      double zmax = -std::numeric_limits<double>::infinity();
       for (const auto& p : s.vertices)
       {
         zmin = std::min(zmin, p.z());
         zmax = std::max(zmax, p.z());
       }
-      return std::isfinite(zmin) && std::isfinite(zmax) ? (zmax - zmin) : 0.0;
+      return (std::isfinite(zmin) && std::isfinite(zmax)) ? (zmax - zmin) : 0.0;
     }
+
     case ST::Line:
     {
       if (s.vertices.size() == 2)
         return std::abs(s.vertices[1].z() - s.vertices[0].z());
       if (!s.dimensions.empty())
-        return std::abs(s.dimensions[0]);  // fallback
+        return std::abs(s.dimensions[0]);  // fallback if encoded as length only
       return 0.0;
     }
 
     // -------- 3D (height along canonical +X) --------
     case ST::Box:
       need(1, "Box");
-      return s.dimensions[0];  // x
+      return dim(s).at(DimRole::Height);  // alias of HeightX
     case ST::TriangularPrism:
       need(1, "TriangularPrism");
-      return s.dimensions[0];  // length_x
+      return dim(s).at(DimRole::Height);  // prism’s X extent
     case ST::Cylinder:
       need(2, "Cylinder");
-      return s.dimensions[0];  // height_x (NEW order)
+      return dim(s).at(DimRole::Height);  // {height_x, radius}
     case ST::Cone:
       need(3, "Cone");
-      return s.dimensions[0];  // height_x (NEW order)
+      return dim(s).at(DimRole::Height);  // {height_x, Rb, Rt}
     case ST::SphericalSegment:
       need(3, "SphericalSegment");
-      return s.dimensions[0];  // height_x (NEW order)
+      return dim(s).at(DimRole::Height);  // {height_x, Rb, Rt}
     case ST::Sphere:
       need(1, "Sphere");
-      return 2.0 * s.dimensions[0];
+      return 2.0 * dim(s).at(DimRole::Radius);
 
     case ST::Mesh:
-      // Unknown here unless inline verts available; keep your previous behavior
       throw std::runtime_error("getShapeHeight: unknown height for Mesh without inline vertices");
 
     case ST::None:
@@ -332,73 +605,85 @@ double getShapeHeight(const Shape& s)
   }
 }
 
-double getShapeBaseRadius(const geometry::Shape& shape)
+double getShapeBaseRadius(const Shape& s)
 {
-  using geometry::ShapeType;
+  using ST = ShapeType;
 
-  switch (shape.type)
+  switch (s.type)
   {
-    case ShapeType::Cylinder:
-    case ShapeType::Sphere:
-    case ShapeType::Circle:
-      // Single radius shapes: use "radius"
-      return shape.dimensions.at(0);
+    case ST::Cylinder:  // {height_x, radius}
+    case ST::Sphere:    // {radius}
+    case ST::Circle:    // {radius}
+      return dim(s).at(DimRole::Radius);
 
-    case ShapeType::Cone:
-    case ShapeType::SphericalSegment:
-      // Use base_radius if defined, else fallback to radius
-      return shape.dimensions.at(0);
+    case ST::Cone:              // {height_x, base_radius, top_radius}
+    case ST::SphericalSegment:  // {height_x, base_radius, top_radius}
+      return dim(s).at(DimRole::BaseRadius);
 
-    case ShapeType::Box:
-      return 0.5 * std::max({ shape.dimensions.at(0), shape.dimensions.at(1) });
+    case ST::Box:  // {x, y, z} → cross-section is Y/Z
+    {
+      const double wy = dim(s).at(DimRole::Y);
+      const double wz = dim(s).at(DimRole::Z);
+      return 0.5 * std::max(wy, wz);
+    }
 
     default:
       return 0.0;
   }
 }
 
-double getShapeTopRadius(const geometry::Shape& shape)
+double getShapeTopRadius(const Shape& s)
 {
-  using geometry::ShapeType;
+  using ST = ShapeType;
 
-  switch (shape.type)
+  switch (s.type)
   {
-    case ShapeType::Cylinder:
-    case ShapeType::Sphere:
-    case ShapeType::Circle:
-      // Single radius shapes: use "radius"
-      return shape.dimensions.at(0);
+    case ST::Cylinder:
+    case ST::Sphere:
+    case ST::Circle:
+      return dim(s).at(DimRole::Radius);
 
-    case ShapeType::Cone:
-    case ShapeType::SphericalSegment:
-      // Use top_radius if defined, else fallback to radius
-      return shape.dimensions.at(1);
+    case ST::Cone:
+    case ST::SphericalSegment:
+      return dim(s).at(DimRole::TopRadius);
 
-    case ShapeType::Box:
-      return 0.5 * std::max({ shape.dimensions.at(0), shape.dimensions.at(1) });
+    case ST::Box:
+    {
+      const double wy = dim(s).at(DimRole::Y);
+      const double wz = dim(s).at(DimRole::Z);
+      return 0.5 * std::max(wy, wz);
+    }
 
     default:
       return 0.0;
   }
 }
 
-double getShapeMaxRadius(const geometry::Shape& shape)
+double getShapeMaxRadius(const Shape& s)
 {
-  using geometry::ShapeType;
+  using ST = ShapeType;
 
-  switch (shape.type)
+  switch (s.type)
   {
-    case ShapeType::Cylinder:
-    case ShapeType::Sphere:
-    case ShapeType::Circle:
-      return shape.dimensions.at(0);  // radius
+    case ST::Cylinder:
+    case ST::Sphere:
+    case ST::Circle:
+      return dim(s).at(DimRole::Radius);
 
-    case ShapeType::Cone:
-    case ShapeType::SphericalSegment:
-      return std::max(shape.dimensions.at(0), shape.dimensions.at(1));  // base_radius, top_radius
+    case ST::Cone:
+    case ST::SphericalSegment:
+    {
+      const double rb = dim(s).at(DimRole::BaseRadius);
+      const double rt = dim(s).at(DimRole::TopRadius);
+      return std::max(rb, rt);
+    }
 
-    case ShapeType::Box:
-      return 0.5 * std::max({ shape.dimensions.at(0), shape.dimensions.at(1) });  // width, depth
+    case ST::Box:
+    {
+      const double wy = dim(s).at(DimRole::Y);
+      const double wz = dim(s).at(DimRole::Z);
+      return 0.5 * std::max(wy, wz);
+    }
 
     default:
       return 0.0;
@@ -422,62 +707,82 @@ double getTopRadiusAtHeight(double base_radius, double top_radius, double total_
   return top_r;
 }
 
-geometry::Shape truncateShapeToHeight(const geometry::Shape& shape, double new_height)
+Shape truncateShapeToHeight(const Shape& shape, double new_height)
 {
-  geometry::Shape result = shape;
+  Shape result = shape;
 
   switch (shape.type)
   {
-    case geometry::ShapeType::TriangularPrism:
+    // Prism’s “height” is LengthX (canonical +X)
+    case ShapeType::TriangularPrism:
     {
-      if (result.dimensions.size() < 3)
-        throw std::runtime_error("TriangularPrism expects at least 3 dimensions for truncation");
+      if (!dim(result).has(DimRole::Height))
+        throw std::runtime_error("TriangularPrism expects height");
       if (new_height <= 0.0)
         throw std::runtime_error("TriangularPrism truncation: new height must be > 0");
-      result.dimensions[2] = new_height;  // update depth; keep u unchanged
-      break;
-    }
-    case geometry::ShapeType::Cylinder:
-      result.dimensions.at(1) = new_height;
-      break;
 
-    case geometry::ShapeType::Cone:
-    {
-      double h = shape.dimensions.at(2);
-      double base_r = shape.dimensions.at(0);
-      double top_r = shape.dimensions.at(1);
-
-      double t = new_height / h;
-      double new_r = base_r + (top_r - base_r) * t;
-
-      result.dimensions.at(1) = new_r;       // new top_radius
-      result.dimensions.at(2) = new_height;  // new height
+      dim(result).at(DimRole::Height) = new_height;
       break;
     }
 
-    case geometry::ShapeType::SphericalSegment:
+    case ShapeType::Cylinder:  // {height_x, radius}
     {
-      double h = shape.dimensions.at(2);
-      double base_r = shape.dimensions.at(0);
-      double top_r = shape.dimensions.at(1);
+      if (!dim(result).has(DimRole::Height))
+        throw std::runtime_error("Cylinder expects height_x");
+      dim(result).at(DimRole::Height) = new_height;
+      break;
+    }
 
-      double clipped_r = getTopRadiusAtHeight(base_r, top_r, h, new_height);
+    case ShapeType::Cone:  // {height_x, base_radius, top_radius}
+    {
+      const double h = dim(shape).at(DimRole::Height);
+      const double rb = dim(shape).at(DimRole::BaseRadius);
+      const double rt = dim(shape).at(DimRole::TopRadius);
 
-      result.dimensions.at(0) = base_r;
-      result.dimensions.at(1) = clipped_r;
-      result.dimensions.at(2) = new_height;
+      if (h <= 0.0)
+        throw std::runtime_error("Cone truncation: invalid original height");
 
-      std::cout << "[SphericalSegment Truncation]" << std::endl;
-      std::cout << "  base_r     = " << base_r << std::endl;
-      std::cout << "  top_r      = " << top_r << std::endl;
-      std::cout << "  h          = " << h << std::endl;
-      std::cout << "  new_height = " << new_height << std::endl;
-      std::cout << "  new_r      = " << clipped_r << std::endl;
+      const double t = std::clamp(new_height / h, 0.0, 1.0);
+      const double new_r = rb + (rt - rb) * t;  // linear along height
+
+      dim(result).at(DimRole::TopRadius) = new_r;
+      dim(result).at(DimRole::Height) = new_height;
+      break;
+    }
+
+    case ShapeType::SphericalSegment:  // {height_x, base_radius, top_radius}
+    {
+      const double h = dim(shape).at(DimRole::Height);
+      const double rb = dim(shape).at(DimRole::BaseRadius);
+      const double rt = dim(shape).at(DimRole::TopRadius);
+
+      const double clipped_r = getTopRadiusAtHeight(rb, rt, h, new_height);
+
+      dim(result).at(DimRole::BaseRadius) = rb;        // unchanged
+      dim(result).at(DimRole::TopRadius) = clipped_r;  // new top
+      dim(result).at(DimRole::Height) = new_height;    // new height
+
+      std::cout << "[SphericalSegment Truncation]\n"
+                   "  base_r     = "
+                << rb
+                << "\n"
+                   "  top_r      = "
+                << rt
+                << "\n"
+                   "  h          = "
+                << h
+                << "\n"
+                   "  new_height = "
+                << new_height
+                << "\n"
+                   "  new_r      = "
+                << clipped_r << std::endl;
       break;
     }
 
     default:
-      result.dimensions.clear();  // mark invalid if not supported
+      // Not supported → mark invalid
+      result.dimensions.clear();
       break;
   }
 

@@ -383,39 +383,72 @@ inline void meshifySphericalSegment(double a1, double a2, double H, int radial_r
 inline bool meshifyPrimitive(const geometry::Shape& s, std::vector<Eigen::Vector3d>& V,
                              std::vector<TriangleMesh::Face>& F, int radial_res = 64, int axial_res = 16)
 {
+  using geometry::dim;
+  using geometry::DimRole;
   using geometry::ShapeType;
 
   V.clear();
   F.clear();
 
+  const int rr = std::max(3, radial_res);
+  const int ar = std::max(1, axial_res);
+
   switch (s.type)
   {
+    // Cylinder dims (canonical): {height_x, radius}
+    // meshifyCylinder expects: (radius, height, sides, V, F)
     case ShapeType::Cylinder:
-      meshifyCylinder(s.dimensions.at(0), s.dimensions.at(1), std::max(3, radial_res), V, F);
-      return true;
-
-    case ShapeType::Cone:
-      meshifyConeFrustum(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), std::max(3, radial_res), V, F);
-      return true;
-
-    case ShapeType::TriangularPrism:
     {
-      const double lengthX = s.dimensions.at(0);
-      const double baseY = s.dimensions.at(1);
-      const double altZ = s.dimensions.at(2);
-      const double u = (s.dimensions.size() > 3) ? s.dimensions[3] : 0.0;
-      meshifyTriangularPrism(lengthX, baseY, altZ, u, V, F);
+      const double r = dim(s).at(DimRole::Radius);
+      const double h = dim(s).at(DimRole::Height);
+      meshifyCylinder(r, h, rr, V, F);
       return true;
     }
 
-    case ShapeType::SphericalSegment:
-      meshifySphericalSegment(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), std::max(3, radial_res),
-                              std::max(1, axial_res), V, F);
+    // Cone dims (canonical): {height_x, base_radius, top_radius}
+    // meshifyConeFrustum expects: (r0, r1, h, sides, V, F)
+    case ShapeType::Cone:
+    {
+      const double r0 = dim(s).at(DimRole::BaseRadius);
+      const double r1 = dim(s).at(DimRole::TopRadius);
+      const double h = dim(s).at(DimRole::Height);
+      meshifyConeFrustum(r0, r1, h, rr, V, F);
       return true;
+    }
 
-    case ShapeType::Box:
-      meshifyBox(s.dimensions.at(0), s.dimensions.at(1), s.dimensions.at(2), V, F);
+    // TriangularPrism dims: {length_x, base_y, altitude_z, apex_offset_y}
+    // meshifyTriangularPrism expects: (lengthX, baseY, altitudeZ, u, V, F)
+    case ShapeType::TriangularPrism:
+    {
+      const double Lx = dim(s).at(DimRole::Height);
+      const double By = dim(s).at(DimRole::Base);
+      const double Az = dim(s).at(DimRole::Altitude);
+      const double U = dim(s).has(DimRole::ApexOffset) ? dim(s).at(DimRole::ApexOffset) : 0.0;
+      meshifyTriangularPrism(Lx, By, Az, U, V, F);
       return true;
+    }
+
+    // SphericalSegment dims: {height_x, base_radius, top_radius}
+    // meshifySphericalSegment expects: (a1, a2, H, radial_res, axial_res, V, F)
+    case ShapeType::SphericalSegment:
+    {
+      const double a1 = dim(s).at(DimRole::BaseRadius);
+      const double a2 = dim(s).at(DimRole::TopRadius);
+      const double H = dim(s).at(DimRole::Height);
+      meshifySphericalSegment(a1, a2, H, rr, ar, V, F);
+      return true;
+    }
+
+    // Box dims: {x, y, z}
+    // meshifyBox expects: (Xlen, Ylen, Zlen, V, F)
+    case ShapeType::Box:
+    {
+      const double Xlen = dim(s).at(DimRole::X);
+      const double Ylen = dim(s).at(DimRole::Y);
+      const double Zlen = dim(s).at(DimRole::Z);
+      meshifyBox(Xlen, Ylen, Zlen, V, F);
+      return true;
+    }
 
     case ShapeType::Mesh:
     default:
@@ -530,21 +563,26 @@ inline bool meshifyStackedShapePrimitives(const geometry::StackedShape& stacked,
     double seg_H = 0.0;
     switch (s.type)
     {
-      case ShapeType::Cylinder:
-        seg_H = s.dimensions.at(1) * sc.x();
-        break;  // [radius, height_x]
-      case ShapeType::Cone:
-        seg_H = s.dimensions.at(2) * sc.x();
-        break;  // [r0, r1, height_x]
-      case ShapeType::SphericalSegment:
-        seg_H = s.dimensions.at(2) * sc.x();
-        break;  // [a1, a2, height_x]
-      case ShapeType::Box:
-        seg_H = s.dimensions.at(0) * sc.x();
-        break;  // X extent
-      case ShapeType::TriangularPrism:
-        seg_H = s.dimensions.at(0) * sc.x();
-        break;  // length_x
+      case ShapeType::Cylinder:  // {height_x, radius}
+        seg_H = dim(s).at(DimRole::Height) * sc.x();
+        break;
+
+      case ShapeType::Cone:  // {height_x, base_radius, top_radius}
+        seg_H = dim(s).at(DimRole::Height) * sc.x();
+        break;
+
+      case ShapeType::SphericalSegment:  // {height_x, base_radius, top_radius}
+        seg_H = dim(s).at(DimRole::Height) * sc.x();
+        break;
+
+      case ShapeType::Box:  // {x, y, z}
+        seg_H = dim(s).at(DimRole::Height) * sc.x();
+        break;
+
+      case ShapeType::TriangularPrism:  // {length_x, base_y, altitude_z, apex_offset_y}
+        seg_H = dim(s).at(DimRole::Height) * sc.x();
+        break;
+
       default:
         seg_H = 0.0;
         break;

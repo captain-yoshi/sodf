@@ -60,15 +60,15 @@ enum class ShapeType
 |                   |                                             |                            |                    | Bounded if length > 0, infinite if = 0.                  |
 | Rectangle         | size_y, size_z                              | normal, reference y-z      | 4 points           |                                                          |
 | Circle            | radius                                      | normal, reference y-z      | -                  |                                                          |
-| Triangle          | base_y, altitude_z, apex_offset_y           | normal, base, altitude     | 3 points           |                                                          |
+| Triangle          | base_y, apex_offset_y, altitude_z,          | normal, base, altitude     | 3 points           |                                                          |
 | Polygon           | - (dimentionless)                           | normal, reference y-z      | N points           | Width and height are wrt. the centroid.                  |
 | Plane             | size_y, size_z                              | normal, reference y-z      | -                  | Bounded plane if width & height > 0, infinite if = 0.    |
 | Box               | x, y, z                                     | x, y, z                    | -                  |                                                          |
-| TriangularPrism   | length_x, base_y, altitude_z, apex_offset_y | extrusion, base, altitude  | -                  | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.          |
-| Cylinder          | height_x, radius                            | symmetry, reference y-z    | -                  |                                                          |
+| TriangularPrism   | base_y, apex_offset_y, altitude_z, height_x | extrusion, base, altitude  | -                  | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.          |
+| Cylinder          | radius, height_x                            | symmetry, reference y-z    | -                  |                                                          |
 | Sphere            | radius                                      | (none)                     | -                  |                                                          |
-| Cone              | height_x,base_radius, top_radius            | symmetry, reference y-z    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
-| SphericalSegment  | height_x,base_radius, top_radius            | symmetry, reference y-z    | -                  | Cap if one radius = 0, segment if both > 0.              |
+| Cone              | base_radius, top_radius, height_x           | symmetry, reference y-z    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
+| SphericalSegment  | base_radius, top_radius, height_x           | symmetry, reference y-z    | -                  | Cap if one radius = 0, segment if both > 0.              |
 | Mesh              | - (dimensionless)                           | x, y, z                    | External URI or    | Use as-authored local frame, or override with AxisX/Y/Z; |
 |                   |                                             |                            | TriangleMesh (V,F) | Supports indexed triangles; units = meters               |
 */
@@ -101,6 +101,72 @@ struct StackedShape
   // Eigen::Vector3d axis_stack_direction;
   // Eigen::Vector3d axis_stack_reference;
 };
+
+enum class DimRole
+{
+  Unknown,
+  // 3D
+  Height,
+  Radius,
+  BaseRadius,
+  TopRadius,
+  // 2D
+  SizeY,
+  SizeZ,
+  Base,
+  Altitude,
+  ApexOffset,
+  // Only for shapes with literal Cartesian dims (keep sparse!)
+  X,
+  Y,
+  Z,
+};
+
+// Pretty names (for logs/errors)
+const char* dim_role_name(DimRole r);
+
+// Parse a string key to a role (e.g., "height" -> HeightX, "radius" -> Radius).
+DimRole parse_dim_role(std::string_view key);
+
+// Central mapping: role -> index in Shape::dimensions for a given ShapeType.
+// Return -1 if role not applicable.
+int dim_index_for(ShapeType t, DimRole r);
+
+// Quick predicate
+bool supports_dim_role(ShapeType t, DimRole r);
+
+// -----------------------------------------------------------------------------
+// DimAccessor: ergonomic & safe access to dimensions by role / key / index
+// -----------------------------------------------------------------------------
+struct DimAccessor
+{
+  ShapeType type;
+  std::vector<double>& dims;
+
+  // index passthrough
+  double& at(std::size_t i);
+  const double& at(std::size_t i) const;
+
+  // guards
+  bool has(DimRole r) const;
+  bool has(std::string_view key) const;
+
+  // non-throwing (nullptr if missing)
+  double* try_at(DimRole r);
+  const double* try_at(DimRole r) const;
+  double* try_at(std::string_view key);
+  const double* try_at(std::string_view key) const;
+
+  // throwing, with clear diagnostics
+  double& at(DimRole r);
+  const double& at(DimRole r) const;
+  double& at(std::string_view key);
+  const double& at(std::string_view key) const;
+};
+
+// Convenience creators
+DimAccessor dim(Shape& s);
+DimAccessor dim(const Shape& s);
 
 bool isPrimitive(geometry::ShapeType t);
 bool isPrimitive2D(geometry::ShapeType t);
