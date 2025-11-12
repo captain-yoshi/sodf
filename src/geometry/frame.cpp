@@ -221,20 +221,14 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
                         double tol)
 {
   using Eigen::Vector3d;
-  using sodf::geometry::computeOrthogonalAxis;
-  using sodf::geometry::makeOrthonormalRightHanded;
   using ST = sodf::geometry::ShapeType;
 
-  auto hasA = [&](size_t i) -> bool {
-    return (i < s.axes.size()) && std::isfinite(s.axes[i].squaredNorm()) && (s.axes[i].squaredNorm() > tol * tol);
-  };
-  auto A = [&](size_t i, const Vector3d& def) -> Vector3d { return hasA(i) ? s.axes[i] : def; };
-  auto ensure_in_plane = [&](const Vector3d& v, const Vector3d& z) -> Vector3d {
-    // Project v to plane ⟂ z. If degenerate, pick a stable orthogonal.
-    Vector3d zN = (z.squaredNorm() > 0) ? z.normalized() : Vector3d::UnitZ();
-    Vector3d p = v - (v.dot(zN)) * zN;
+  auto ensure_in_plane = [&](const Vector3d& v, const Vector3d& x_primary) -> Vector3d {
+    // project v to plane ⟂ X (primary). If degenerate, pick a stable orthogonal to X.
+    Vector3d Xn = (x_primary.squaredNorm() > 0.0) ? x_primary.normalized() : Vector3d::UnitX();
+    Vector3d p = v - (v.dot(Xn)) * Xn;
     if (p.squaredNorm() < tol * tol)
-      p = computeOrthogonalAxis(zN);
+      p = sodf::geometry::computeOrthogonalAxis(Xn);
     return p;
   };
 
@@ -242,17 +236,17 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
 
   switch (s.type)
   {
-    // ------------------ 2D surfaces + plane: X,Y in-plane; Z = normal ------------------
-    case ST::Rectangle:  // X=height, Y=width, Z=normal
-    case ST::Triangle:   // X=altitude, Y=base,  Z=normal
-    case ST::Polygon:    // X=x,       Y=y,      Z=normal
-    case ST::Plane:      // X=ref-x,   Y=ref-y,  Z=normal
+    // 2D surfaces + plane + circle:
+    // Canonical: X = Normal, Y/Z = in-plane references
+    case ST::Rectangle:
+    case ST::Triangle:
+    case ST::Polygon:
+    case ST::Plane:
+    case ST::Circle:
     {
-      // Prefer provided axes, with sensible defaults
-      Zraw = A(2, Vector3d::UnitZ());
-      Xraw = hasA(0) ? ensure_in_plane(s.axes[0], Zraw) : computeOrthogonalAxis(Zraw);
-      Yraw = hasA(1) ? ensure_in_plane(s.axes[1], Zraw) : (Zraw.cross(Xraw));
-
+      Xraw = getShapePrimaryAxis(s);                   // Normal → canonical X
+      Yraw = ensure_in_plane(getShapeUAxis(s), Xraw);  // in-plane ref → canonical Y
+      Zraw = ensure_in_plane(getShapeVAxis(s), Xraw);  // in-plane ref → canonical Z
       Eigen::Matrix3d R = makeOrthonormalRightHanded(Xraw, Yraw, Zraw);
       X = R.col(0);
       Y = R.col(1);
@@ -260,13 +254,13 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
       return;
     }
 
-    // ------------------ Circle: needs normal + an in-plane ref; second ref optional ----
-    case ST::Circle:  // X=ref-in-plane, Y=ref-in-plane, Z=normal
+    // Box / TriangularPrism: canonical axes are (X,Y,Z) as stored
+    case ST::Box:
+    case ST::TriangularPrism:
     {
-      Zraw = A(2, Vector3d::UnitZ());
-      Xraw = hasA(0) ? ensure_in_plane(s.axes[0], Zraw) : computeOrthogonalAxis(Zraw);
-      Yraw = hasA(1) ? ensure_in_plane(s.axes[1], Zraw) : (Zraw.cross(Xraw));
-
+      Xraw = getShapePrimaryAxis(s);  // Box: X; Prism: Extrusion
+      Yraw = getShapeUAxis(s);        // Box: Y; Prism: Base
+      Zraw = getShapeVAxis(s);        // Box: Z; Prism: Altitude
       Eigen::Matrix3d R = makeOrthonormalRightHanded(Xraw, Yraw, Zraw);
       X = R.col(0);
       Y = R.col(1);
@@ -274,31 +268,14 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
       return;
     }
 
-    // ------------------ Box / TriangularPrism: fully 3D in canonical order -------------
-    case ST::Box:              // X=depth, Y=width, Z=height
-    case ST::TriangularPrism:  // X=altitude, Y=base, Z=height
-    {
-      Xraw = A(0, Vector3d::UnitX());
-      Yraw = hasA(1) ? s.axes[1] : Vector3d::UnitY();
-      Zraw = hasA(2) ? s.axes[2] : (Xraw.cross(Yraw));
-
-      Eigen::Matrix3d R = makeOrthonormalRightHanded(Xraw, Yraw, Zraw);
-      X = R.col(0);
-      Y = R.col(1);
-      Z = R.col(2);
-      return;
-    }
-
-    // ------------------ Revolute solids: Z = symmetry (axes[2]) ------------------------
+    // Surfaces of revolution: X = Symmetry, Y/Z = base-plane references
     case ST::Cylinder:
     case ST::Cone:
     case ST::SphericalSegment:
     {
-      // Canonical: X,Y lie in the base plane; Z is the symmetry axis (axes[2]).
-      Zraw = A(2, Vector3d::UnitZ());                                                   // symmetry
-      Xraw = hasA(0) ? ensure_in_plane(s.axes[0], Zraw) : computeOrthogonalAxis(Zraw);  // in-plane reference
-      Yraw = hasA(1) ? ensure_in_plane(s.axes[1], Zraw) : (Zraw.cross(Xraw));           // complete the base basis
-
+      Xraw = getShapePrimaryAxis(s);                   // Symmetry → canonical X
+      Yraw = ensure_in_plane(getShapeUAxis(s), Xraw);  // base-plane ref → Y
+      Zraw = ensure_in_plane(getShapeVAxis(s), Xraw);  // base-plane ref → Z
       Eigen::Matrix3d R = makeOrthonormalRightHanded(Xraw, Yraw, Zraw);
       X = R.col(0);
       Y = R.col(1);
@@ -306,13 +283,12 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
       return;
     }
 
-    // ------------------ Mesh: treat axes as X,Y,Z directly -----------------------------
+    // Mesh: use as-authored frame (X,Y,Z)
     case ST::Mesh:
     {
-      Xraw = A(0, Vector3d::UnitX());
-      Yraw = hasA(1) ? s.axes[1] : Vector3d::UnitY();
-      Zraw = hasA(2) ? s.axes[2] : (Xraw.cross(Yraw));
-
+      Xraw = getShapePrimaryAxis(s);
+      Yraw = getShapeUAxis(s);
+      Zraw = getShapeVAxis(s);
       Eigen::Matrix3d R = makeOrthonormalRightHanded(Xraw, Yraw, Zraw);
       X = R.col(0);
       Y = R.col(1);
@@ -320,12 +296,11 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
       return;
     }
 
-    // ------------------ Line / Sphere: no meaningful surface frame ---------------------
+    // Line / Sphere: provide a benign default
     case ST::Line:
     case ST::Sphere:
     default:
     {
-      // Provide a harmless default frame
       X = Vector3d::UnitX();
       Y = Vector3d::UnitY();
       Z = Vector3d::UnitZ();
@@ -337,28 +312,20 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
 std::pair<Eigen::Vector3d, Eigen::Vector3d> pickCanonicalUV(const sodf::geometry::Shape& s)
 {
   using ST = sodf::geometry::ShapeType;
-  // Table-driven:
-  // Rectangle      : axes = [height(X), width(Y), normal(Z)]     → U=width=axes[1],  V=height=axes[0]
-  // Triangle       : axes = [altitude(X), base(Y), normal(Z)]    → U=base=axes[1],   V=altitude=axes[0]
-  // Polygon        : axes = [x, y, normal]                       → U=axes[0],        V=axes[1]
-  // Circle         : axes = [ref-x, ref-y, normal]               → U=axes[0],        V=axes[1]
-  // Plane          : axes = [ref-x, ref-y, normal]               → U=axes[0],        V=axes[1]
-  // Line (2D case) : treat direction as U, and V any orthogonal  → U=axes[0],        V=orthogonal
-  // (Other 3D-only shapes shouldn't call this)
+
   switch (s.type)
   {
+    // 2D: axes = [X=Normal, Y=RefU, Z=RefV] → U=Y, V=Z
     case ST::Rectangle:
     case ST::Triangle:
-      return { s.axes.at(1), s.axes.at(0) };  // U=width/base, V=height/altitude
-
     case ST::Polygon:
     case ST::Circle:
     case ST::Plane:
-      return { s.axes.at(0), s.axes.at(1) };  // U=X, V=Y in-plane
+      return { getShapeUAxis(s), getShapeVAxis(s) };
 
     case ST::Line:
     {
-      const Eigen::Vector3d U = s.axes.empty() ? Eigen::Vector3d::UnitX() : s.axes.at(0);
+      const Eigen::Vector3d U = (s.axes.empty() ? Eigen::Vector3d::UnitX() : s.axes.at(0));  // direction
       const Eigen::Vector3d V = sodf::geometry::computeOrthogonalAxis(U);
       return { U, V };
     }

@@ -35,41 +35,30 @@ static inline bool hasTriangles(const std::vector<Eigen::Vector3d>& V, const std
   return !V.empty() && !F.empty();
 }
 
-static inline void stripCapAtPlaneZ(std::vector<Eigen::Vector3d>& V, std::vector<geometry::TriangleMesh::Face>& F,
-                                    double z_plane, double tol)
+// Remove faces that lie entirely on the plane n·p == offset (within tol).
+// n can be non-unit; tolerance is scaled by ||n|| to remain distance-like.
+static inline void stripCapAtPlaneAlong(std::vector<Eigen::Vector3d>& V, std::vector<geometry::TriangleMesh::Face>& F,
+                                        const Eigen::Vector3d& n, double offset, double tol)
 {
-  auto is_cap = [&](const geometry::TriangleMesh::Face& t) {
-    const double z0 = V[t[0]].z(), z1 = V[t[1]].z(), z2 = V[t[2]].z();
-    return (std::abs(z0 - z_plane) <= tol) && (std::abs(z1 - z_plane) <= tol) && (std::abs(z2 - z_plane) <= tol);
+  const double nlen = n.norm();
+  if (!(nlen > 0.0) || !std::isfinite(nlen))
+    return;  // degenerate normal: nothing to do
+
+  const double tol_proj = tol * (nlen + 1.0);  // same style as other helpers
+
+  auto on_plane = [&](const geometry::TriangleMesh::Face& t) {
+    const double d0 = n.dot(V[t[0]]) - offset;
+    const double d1 = n.dot(V[t[1]]) - offset;
+    const double d2 = n.dot(V[t[2]]) - offset;
+    return (std::abs(d0) <= tol_proj) && (std::abs(d1) <= tol_proj) && (std::abs(d2) <= tol_proj);
   };
 
   std::vector<geometry::TriangleMesh::Face> keep;
   keep.reserve(F.size());
   for (const auto& tri : F)
-    if (!is_cap(tri))
+    if (!on_plane(tri))
       keep.push_back(tri);
   F.swap(keep);
-}
-
-inline void stripCapAtPlaneX(std::vector<Eigen::Vector3d>& V, std::vector<TriangleMesh::Face>& F, double x_plane,
-                             double tol)
-{
-  using Face = TriangleMesh::Face;
-  std::vector<Face> F_new;
-  F_new.reserve(F.size());
-  auto near_plane = [&](const Eigen::Vector3d& p) { return std::abs(p.x() - x_plane) <= tol; };
-
-  for (const auto& f : F)
-  {
-    const Eigen::Vector3d& a = V[f[0]];
-    const Eigen::Vector3d& b = V[f[1]];
-    const Eigen::Vector3d& c = V[f[2]];
-    // Remove triangles that are entirely on the plane
-    if (near_plane(a) && near_plane(b) && near_plane(c))
-      continue;
-    F_new.push_back(f);
-  }
-  F.swap(F_new);
 }
 
 static inline void appendMesh(const std::vector<Eigen::Vector3d>& VB,
@@ -230,12 +219,6 @@ inline std::vector<Eigen::Vector3d> clip_tri_halfspace(const Eigen::Vector3d& a,
   return out;
 }
 
-inline std::vector<Eigen::Vector3d> clip_tri_zleq(const Eigen::Vector3d& a, const Eigen::Vector3d& b,
-                                                  const Eigen::Vector3d& c, double h, double eps = 1e-12)
-{
-  return clip_tri_halfspace(a, b, c, Eigen::Vector3d::UnitZ(), h, eps);
-}
-
 // -------------------- Tetra volume under a half-space --------------------
 
 inline double clipped_tetra_volume_halfspace(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1,
@@ -321,10 +304,57 @@ inline double clipped_tetra_volume_halfspace(const Eigen::Vector3d& p0, const Ei
   }
 }
 
-inline double clipped_tetra_volume_zleq(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1, const Eigen::Vector3d& p2,
-                                        const Eigen::Vector3d& p3, double h, double eps = 1e-12)
+// Order a (convex) loop lying in an arbitrary plane by polar angle.
+// The plane is defined by its normal `n`. Optionally provide a `u_hint`
+// to prefer a specific in-plane +U direction (it will be orthogonalized).
+// Robust to degenerate hints; no-op for <3 points.
+static inline void orderConvexLoopInPlane(std::vector<Eigen::Vector3d>& pts, const Eigen::Vector3d& n,
+                                          const Eigen::Vector3d& u_hint = Eigen::Vector3d::Zero())
 {
-  return clipped_tetra_volume_halfspace(p0, p1, p2, p3, Eigen::Vector3d::UnitZ(), h, eps);
+  if (pts.size() <= 2)
+    return;
+
+  // Build right-handed ONB {U,V,N} spanning the plane (N = normalized n)
+  const double kTiny = 1e-12;
+  Eigen::Vector3d N = n;
+  const double nn = N.norm();
+  if (!(nn > 0.0) || !std::isfinite(nn))
+    return;  // degenerate normal → bail
+  N /= nn;
+
+  Eigen::Vector3d U = u_hint;
+  if (U.norm() <= kTiny || std::abs(U.normalized().dot(N)) > 0.999)
+  {
+    // Bad / nearly parallel hint → pick a stable orthogonal
+    U = N.unitOrthogonal();
+  }
+  else
+  {
+    // Project hint into the plane, normalize
+    U -= N * (N.dot(U));
+    const double un = U.norm();
+    if (!(un > 0.0) || !std::isfinite(un))
+      U = N.unitOrthogonal();
+    else
+      U /= un;
+  }
+  Eigen::Vector3d V = N.cross(U);  // already unit if U,N are
+
+  // Plane-centroid as pivot (centroid of 3D points, then project)
+  Eigen::Vector3d c = Eigen::Vector3d::Zero();
+  for (const auto& p : pts)
+    c += p;
+  c /= double(pts.size());
+
+  // Sort by atan2 in (U,V)-coordinates about c
+  std::sort(pts.begin(), pts.end(), [&](const Eigen::Vector3d& A, const Eigen::Vector3d& B) {
+    const Eigen::Vector3d a = A - c, b = B - c;
+    const double au = a.dot(U), av = a.dot(V);
+    const double bu = b.dot(U), bv = b.dot(V);
+    const double angA = std::atan2(av, au);
+    const double angB = std::atan2(bv, bu);
+    return angA < angB;
+  });
 }
 
 }  // namespace geometry
