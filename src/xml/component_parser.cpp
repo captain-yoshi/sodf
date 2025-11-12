@@ -1148,8 +1148,8 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tiny
     if (shape3d.type == geometry::ShapeType::Cylinder)
     {
       // A line along grasp +X (length = cylinder height)
-      const double radius = shape3d.dimensions.at(0);
-      const double height = shape3d.dimensions.at(1);
+      const double radius = dim(shape3d).at(geometry::DimRole::Radius);
+      const double height = dim(shape3d).at(geometry::DimRole::Height);
 
       grasp.canonical_surface.type = geometry::ShapeType::Line;
       grasp.canonical_surface.dimensions = { height };
