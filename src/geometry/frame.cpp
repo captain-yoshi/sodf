@@ -335,91 +335,94 @@ std::pair<Eigen::Vector3d, Eigen::Vector3d> pickCanonicalUV(const sodf::geometry
   }
 }
 
-std::vector<Eigen::Vector3d> local2DVerticesToWorld(const std::vector<Eigen::Vector3d>& uv_vertices,
-                                                    const Eigen::Vector3d& U_axis, const Eigen::Vector3d& V_axis,
-                                                    const Eigen::Isometry3d& pose, const Eigen::Vector2d& uv_scale,
-                                                    bool orthonormalize)
+static inline Eigen::Vector3d unit_or(const Eigen::Vector3d& v, const Eigen::Vector3d& fallback)
+{
+  double n = v.norm();
+  if (n > 0.0 && std::isfinite(n))
+    return v / n;
+  return fallback;
+}
+
+std::pair<Eigen::Vector3d, Eigen::Vector3d> deduceUVFromNormal(const Eigen::Vector3d& normal,
+                                                               const Eigen::Vector3d& u_seed)
 {
   using Eigen::Vector3d;
-  std::vector<Vector3d> out;
-  out.reserve(uv_vertices.size());
 
-  auto finite_or = [](const Vector3d& v, const Vector3d& fallback) -> Vector3d {
-    if (std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z()))
-      return v;
-    return fallback;
-  };
+  // Z := plane normal (unit with fallback)
+  Vector3d Z = unit_or(normal, Vector3d::UnitZ());
 
-  // 1) Start from finite inputs
-  Vector3d U = finite_or(U_axis, Vector3d::UnitX());
-  Vector3d V = finite_or(V_axis, Vector3d::UnitY());
-
-  if (orthonormalize)
+  // U := project seed onto plane ⟂ Z; if unusable, pick a stable orthogonal
+  Vector3d U = u_seed;
+  bool ok_seed = (U.norm() > 0.0) && std::isfinite(U.norm());
+  if (ok_seed)
   {
-    // Normalize U (fallback if degenerate)
-    double nu = U.norm();
-    if (!(nu > 0.0) || !std::isfinite(nu))
-      U = Vector3d::UnitX();
-    else
-      U /= nu;
-
-    // Get a candidate normal; if nearly parallel, pick a robust orthogonal
-    Vector3d N = U.cross(V);
-    if (!std::isfinite(N.x()) || !std::isfinite(N.y()) || !std::isfinite(N.z()) || N.squaredNorm() < 1e-20)
-    {
-      // Choose any N ⟂ U in a stable way, then rebuild V from (N × U)
-      N = sodf::geometry::computeOrthogonalAxis(U);
-    }
-    else
-    {
-      N.normalize();
-    }
-
-    // Rebuild V so (U, V, N) is **right-handed** and orthonormal:
-    // V := N × U  (guarantees U×V = N)
-    V = N.cross(U);
-    // No need to renormalize; N and U are unit and orthogonal ⇒ |V|=1
+    U -= Z * (U.dot(Z));
+    if (!(U.norm() > 0.0) || !std::isfinite(U.norm()))
+      ok_seed = false;
   }
+  if (!ok_seed)
+    U = computeOrthogonalAxis(Z);  // unit & ⟂ Z
   else
+    U.normalize();
+
+  // V completes right-handed triad; re-tighten U
+  Vector3d V = (Z.cross(U)).normalized();
+  U = V.cross(Z);  // now (U,V,Z) is orthonormal & right-handed
+  return { U, V };
+}
+
+std::vector<Eigen::Vector3d> local2DVerticesToWorldFromNormal(const std::vector<Eigen::Vector3d>& uv_vertices,
+                                                              const Eigen::Vector3d& normal,
+                                                              const Eigen::Vector3d& u_seed,
+                                                              const Eigen::Isometry3d& pose,
+                                                              const Eigen::Vector2d& uv_scale, bool orthonormalize)
+{
+  using Eigen::Vector3d;
+
+  // 1) Deduce in-plane U,V from the normal (+ optional U seed)
+  auto [Uraw, Vraw] = deduceUVFromNormal(normal, u_seed);
+
+  Vector3d U = Uraw, V = Vraw;
+  if (!orthonormalize)
   {
-    // Even without orthonormalization, avoid obviously bad scales later
-    double nu = U.norm();
-    if (nu > 0.0 && std::isfinite(nu))
-      U /= nu;
-    else
+    // If caller really wants raw directions, only ensure they are finite & non-zero
+    if (!(U.norm() > 0.0) || !std::isfinite(U.norm()))
       U = Vector3d::UnitX();
-    double nv = V.norm();
-    if (nv > 0.0 && std::isfinite(nv))
-      V /= nv;
-    else
-      V = sodf::geometry::computeOrthogonalAxis(U);
+    if (!(V.norm() > 0.0) || !std::isfinite(V.norm()))
+      V = computeOrthogonalAxis(U);
   }
 
-  // 2) Apply per-axis scale in *local 2D* and rotate to world
-  const Vector3d Uw = pose.linear() * (uv_scale.x() * U);  // U = width dir
-  const Vector3d Vw = pose.linear() * (uv_scale.y() * V);  // V = height dir
+  // 2) World-space scaled basis
+  const Vector3d Uw = pose.linear() * (uv_scale.x() * U);  // U = “u” direction
+  const Vector3d Vw = pose.linear() * (uv_scale.y() * V);  // V = “v” direction
   const Vector3d Ow = pose.translation();
 
-  // 3) Map (u,v,0) → world: P = O + u*Uw + v*Vw
-  for (const Vector3d& uv : uv_vertices)
+  // 3) Map (0,u,v) → O + u*Uw + v*Vw   (your convention: vertex.y==u, vertex.z==v)
+  std::vector<Vector3d> out;
+  out.reserve(uv_vertices.size());
+  for (const Vector3d& uv0 : uv_vertices)
   {
-    const Vector3d pw = Ow + uv.x() * Uw + uv.y() * Vw;  // uv.z() ignored for 2D
-    out.push_back(pw);
+    const double u = uv0.y();
+    const double v = uv0.z();
+    out.emplace_back(Ow + u * Uw + v * Vw);
   }
   return out;
 }
 
-std::vector<Eigen::Vector3d> shape2DVerticesToWorld(const sodf::geometry::Shape& s, const Eigen::Isometry3d& pose,
-                                                    bool apply_policy, bool orthonormalize)
+std::vector<Eigen::Vector3d> shape2DVerticesToWorldFromNormal(const sodf::geometry::Shape& s,
+                                                              const Eigen::Isometry3d& pose,
+                                                              const Eigen::Vector3d& normal,
+                                                              const Eigen::Vector3d& u_seed, bool apply_policy,
+                                                              bool orthonormalize)
 {
+  // Start from authored (0,u,v) vertices and apply 2D origin policy if requested
   std::vector<Eigen::Vector3d> uv = s.vertices;
-
   if (apply_policy)
-    applyOriginPolicy2DVertices(s, uv);  // shifts in-plane only
+    applyOriginPolicy2DVertices(s, uv);
 
-  auto [U, V] = pickCanonicalUV(s);
-  const Eigen::Vector2d scale2(s.scale.x(), s.scale.y());
-  return local2DVerticesToWorld(uv, U, V, pose, scale2, orthonormalize);
+  // Scale in plane uses Y,Z components of per-instance scale (since (0,u,v))
+  const Eigen::Vector2d scale2(s.scale.y(), s.scale.z());
+  return local2DVerticesToWorldFromNormal(uv, normal, u_seed, pose, scale2, orthonormalize);
 }
 
 // ---- Validation utilities ---------------------------------------------------

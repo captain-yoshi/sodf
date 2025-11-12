@@ -110,20 +110,24 @@ void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eige
 // Special-cases Line as (direction, any stable orthogonal). Throws for non-2D shapes.
 std::pair<Eigen::Vector3d, Eigen::Vector3d> pickCanonicalUV(const sodf::geometry::Shape& s);
 
-// Map (u,v,0) from a 2D local parameterization to world, given explicit in-plane U and V directions.
-// U and V need not be orthonormal; when orthonormalize=true we build a right-handed frame (U, V, N=U×V).
-std::vector<Eigen::Vector3d> local2DVerticesToWorld(...);
+// Deduce an orthonormal, right-handed (U,V) from a plane normal and optional U seed.
+std::pair<Eigen::Vector3d, Eigen::Vector3d> deduceUVFromNormal(const Eigen::Vector3d& normal,
+                                                               const Eigen::Vector3d& u_seed = Eigen::Vector3d::Zero());
 
-std::vector<Eigen::Vector3d> local2DVerticesToWorld(const std::vector<Eigen::Vector3d>& uv_vertices,
-                                                    const Eigen::Vector3d& U_axis, const Eigen::Vector3d& V_axis,
-                                                    const Eigen::Isometry3d& pose,
-                                                    const Eigen::Vector2d& uv_scale = Eigen::Vector2d(1.0, 1.0),
-                                                    bool orthonormalize = true);
+// Map (0,u,v) vertices directly using only normal (+ optional U seed).
+// uv_scale = (scale_u, scale_v) applies along the deduced U and V.
+std::vector<Eigen::Vector3d>
+local2DVerticesToWorldFromNormal(const std::vector<Eigen::Vector3d>& uv_vertices, const Eigen::Vector3d& normal,
+                                 const Eigen::Vector3d& u_seed, const Eigen::Isometry3d& pose,
+                                 const Eigen::Vector2d& uv_scale = Eigen::Vector2d(1.0, 1.0),
+                                 bool orthonormalize = true);
 
-// optional 2D origin policy (AABBCenter, BaseCenter, VolumeCentroid, Native).
-// Requires: <sodf/geometry/origin.h> in the .cpp for applyOriginPolicy2DVertices.
-std::vector<Eigen::Vector3d> shape2DVerticesToWorld(const sodf::geometry::Shape& s, const Eigen::Isometry3d& pose,
-                                                    bool apply_policy = true, bool orthonormalize = true);
+// Shape convenience (applies 2D origin policy then maps (0,u,v) with normal + optional U seed).
+std::vector<Eigen::Vector3d> shape2DVerticesToWorldFromNormal(const sodf::geometry::Shape& s,
+                                                              const Eigen::Isometry3d& pose,
+                                                              const Eigen::Vector3d& normal,
+                                                              const Eigen::Vector3d& u_seed = Eigen::Vector3d::Zero(),
+                                                              bool apply_policy = true, bool orthonormalize = true);
 
 // ---- Validation utilities ---------------------------------------------------
 
