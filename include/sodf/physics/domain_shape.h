@@ -92,6 +92,11 @@ private:
   static bool validateStackLocallyAnalytic(const geometry::StackedShape& stack, double tilt_eps_rad,
                                            double lateral_eps_m);
 
+  const Eigen::Vector3d& getHeightAxisLocal()
+  {
+    return height_axis_local_;
+  };
+
 private:
   std::vector<DomainShapeBasePtr> segments_;
   DomainShapeBasePtr mesh_cache_;

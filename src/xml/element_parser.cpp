@@ -213,7 +213,7 @@ geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::Rectangle;
 
   // Axes (canonical): X = normal, Y = size_y, Z = size_z
-  const AxesTagNames tags{ "AxisNormal", "AxisSizeY", "AxisSizeZ" };
+  const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=size_y, Z=size_z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
@@ -259,7 +259,7 @@ geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::Circle;
 
   // Axes (canonical): X = normal, (Y,Z) = reference in-plane axes
-  const AxesTagNames tags{ "AxisNormal", "AxisReferenceY", "AxisReferenceZ" };
+  const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
@@ -324,7 +324,7 @@ geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::Polygon;
 
   // Axes (canonical): X = normal, Y = in-plane y, Z = in-plane z
-  const AxesTagNames tags{ "AxisNormal", "AxisY", "AxisZ" };
+  const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y, Z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
@@ -356,7 +356,7 @@ geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::Plane;
 
   // Axes (canonical): X = normal, Y = refY, Z = refZ
-  const AxesTagNames tags{ "AxisNormal", "AxisReferenceY", "AxisReferenceZ" };
+  const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
@@ -463,7 +463,7 @@ geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::Cylinder;
 
   // Axes (canonical): X = symmetry/height axis, (Y,Z) = reference in-plane
-  const AxesTagNames tags{ "AxisSymmetry", "AxisReferenceY", "AxisReferenceZ" };
+  const AxesTagNames tags{ "AxisSymmetry", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
@@ -509,7 +509,7 @@ geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::Cone;
 
   // Axes (canonical): X = symmetry/height, (Y,Z) = reference
-  const AxesTagNames tags{ "AxisSymmetry", "AxisReferenceY", "AxisReferenceZ" };
+  const AxesTagNames tags{ "AxisSymmetry", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
@@ -541,7 +541,7 @@ geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
   s.type = geometry::ShapeType::SphericalSegment;
 
   // Axes (canonical): X = symmetry/height, (Y,Z) = reference
-  const AxesTagNames tags{ "AxisSymmetry", "AxisReferenceY", "AxisReferenceZ" };
+  const AxesTagNames tags{ "AxisSymmetry", "AxisRefY", "AxisRefZ" };
   auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 

@@ -64,6 +64,7 @@ inline double frustum_fill_volume(double r0, double r1, double h, double H)
   return (M_PI * h / 3.0) * (r0 * r0 + r0 * r + r * r);
 }
 
+// Solve V(h) for a linear-taper frustum; returns h ∈ [0,H]
 inline double frustum_fill_height_cubic(double r0, double r1, double H, double V, double Vmax)
 {
   if (V <= 0.0)
@@ -95,10 +96,12 @@ inline double frustum_fill_height_cubic(double r0, double r1, double H, double V
   return h;
 }
 
-inline void spherical_segment_params(double r_base, double r_top, double H, double& z0, double& R)
+// For spherical segment defined by end radii in the YZ plane at x=0 and x=H
+inline void spherical_segment_params(double r_base, double r_top, double H, double& x0, double& R)
 {
-  z0 = (r_top * r_top - r_base * r_base + H * H) / (2.0 * H);
-  R = std::sqrt(std::max(0.0, r_base * r_base + z0 * z0));
+  // NOTE: historically called z0; geometrically this is the center offset ALONG X.
+  x0 = (r_top * r_top - r_base * r_base + H * H) / (2.0 * H);
+  R = std::sqrt(std::max(0.0, r_base * r_base + x0 * x0));
 }
 
 inline double spherical_segment_volume_up_to(double r_base, double r_top, double H, double h)
@@ -107,10 +110,11 @@ inline double spherical_segment_volume_up_to(double r_base, double r_top, double
     return 0.0;
   if (h >= H)
     h = H;
-  double z0, R;
-  spherical_segment_params(r_base, r_top, H, z0, R);
 
-  const double ah2 = std::max(0.0, R * R - (z0 - h) * (z0 - h));
+  double x0, R;
+  spherical_segment_params(r_base, r_top, H, x0, R);
+
+  const double ah2 = std::max(0.0, R * R - (x0 - h) * (x0 - h));
   const double ah = std::sqrt(ah2);
   return M_PI * h / 6.0 * (3.0 * r_base * r_base + 3.0 * ah * ah + h * h);
 }
@@ -132,15 +136,6 @@ inline double spherical_segment_height_from_volume(double r_base, double r_top, 
     (v < V) ? lo = mid : hi = mid;
   }
   return mid;
-}
-
-// Helper: call z-based clipper by permuting (x,y,z) → (z,y,x)
-inline double clipped_tetra_volume_xleq(const Eigen::Vector3d& A, const Eigen::Vector3d& B, const Eigen::Vector3d& C,
-                                        const Eigen::Vector3d& D, double hx, double eps)
-{
-  using V = Eigen::Vector3d;
-  auto P = [](const V& v) { return V(v.z(), v.y(), v.x()); };  // new.z = old.x
-  return geometry::clipped_tetra_volume_zleq(P(A), P(B), P(C), P(D), hx, eps);
 }
 
 }  // anonymous namespace
@@ -229,7 +224,7 @@ double FluidConvexMeshShape::getFillHeight(double V) const
 {
   // Stateless fallback: treat LOCAL +X as world up, base at origin
   FillEnv env;
-  env.g_down_world = Eigen::Vector3d(0, 0, -1);
+  env.g_down_world = -Eigen::Vector3d::UnitZ();
   env.T_world_domain = Eigen::Isometry3d::Identity();
   env.p_base_world = Eigen::Vector3d::Zero();
   return getFillHeightWithEnv(V, env);
@@ -238,24 +233,24 @@ double FluidConvexMeshShape::getFillHeight(double V) const
 double FluidConvexMeshShape::getFillVolume(double h) const
 {
   FillEnv env;
-  env.g_down_world = Eigen::Vector3d(0, 0, -1);
+  env.g_down_world = -Eigen::Vector3d::UnitZ();
   env.T_world_domain = Eigen::Isometry3d::Identity();
   env.p_base_world = Eigen::Vector3d::Zero();
   return getFillVolumeWithEnv(h, env);
 }
 
-// LOCAL → gravity (shifted so x=0 at base)
+// LOCAL → gravity (shifted so x_g=0 at base)
 inline Eigen::Vector3d toG0(const Eigen::Vector3d& vL, const FillEnv& env, const FluidConvexMeshShape::GravitySpace& gs)
 {
   Eigen::Vector3d vG = gs.R_wg * (env.T_world_domain * vL);
-  vG.x() -= gs.base_z_g;  // NOTE: name kept; value is along +X_g
+  vG.x() -= gs.base_x_g();  // canonical accessor
   return vG;
 }
 
 // gravity(shifted) → WORLD
 inline Eigen::Vector3d g0ToWorld(Eigen::Vector3d pG0, const FluidConvexMeshShape::GravitySpace& gs)
 {
-  pG0.x() += gs.base_z_g;
+  pG0.x() += gs.base_x_g();  // canonical accessor
   return gs.R_wg.transpose() * pG0;
 }
 
@@ -267,6 +262,8 @@ double FluidConvexMeshShape::getFillVolumeWithEnv(double h_world, const FillEnv&
   double Vsum = 0.0;
 
   const uint32_t N = static_cast<uint32_t>(verts_local_.size());
+  const Eigen::Vector3d n = Eigen::Vector3d::UnitX();  // plane normal in gravity frame, X is height
+
   for (const auto& t : tets_local_)
   {
     const Eigen::Vector3d A = (t.a == N) ? toG0(interior_local_, env, gs) : toG0(verts_local_[t.a], env, gs);
@@ -274,8 +271,8 @@ double FluidConvexMeshShape::getFillVolumeWithEnv(double h_world, const FillEnv&
     const Eigen::Vector3d C = (t.c == N) ? toG0(interior_local_, env, gs) : toG0(verts_local_[t.c], env, gs);
     const Eigen::Vector3d D = (t.d == N) ? toG0(interior_local_, env, gs) : toG0(verts_local_[t.d], env, gs);
 
-    // Permute to use z-clipper with x-as-height
-    Vsum += clipped_tetra_volume_xleq(A, B, C, D, h, 1e-12);
+    // Direct half-space clip: n·p <= h  (with n = +X_g)
+    Vsum += geometry::clipped_tetra_volume_halfspace(A, B, C, D, n, h, 1e-12);
   }
 
   if (Vsum < 0.0)
@@ -350,15 +347,13 @@ bool FluidConvexMeshShape::buildFilledVolumeAtHeightWithEnv(double h_world,
     const Eigen::Vector3d aG = toG0(verts_local_[f[0]], env, gs);
     const Eigen::Vector3d bG = toG0(verts_local_[f[1]], env, gs);
     const Eigen::Vector3d cG = toG0(verts_local_[f[2]], env, gs);
-    const bool aIn = inside(aG.x());
-    const bool bIn = inside(bG.x());
-    const bool cIn = inside(cG.x());
+    const bool aIn = inside(aG.x()), bIn = inside(bG.x()), cIn = inside(cG.x());
     const int inCount = int(aIn) + int(bIn) + int(cIn);
 
     if (inCount == 0)
       continue;
 
-    // Source face normal in WORLD
+    // Source face normal in WORLD (for winding)
     const Eigen::Vector3d aW_src = env.T_world_domain * verts_local_[f[0]];
     const Eigen::Vector3d bW_src = env.T_world_domain * verts_local_[f[1]];
     const Eigen::Vector3d cW_src = env.T_world_domain * verts_local_[f[2]];
@@ -409,7 +404,6 @@ bool FluidConvexMeshShape::buildFilledVolumeAtHeightWithEnv(double h_world,
         i0 = interpOnH(cG, aG);
         i1 = interpOnH(cG, bG);
       }
-
       pushTriWorldMatchWinding(vI, i0, i1);
       continue;
     }
@@ -431,8 +425,8 @@ bool FluidConvexMeshShape::buildFilledVolumeAtHeightWithEnv(double h_world,
       pushTriWorldMatchWinding(v0, k0, k1);
       pushTriWorldMatchWinding(v0, k1, v1);
     }
-    else
-    {  // !cIn
+    else  // !cIn
+    {
       Eigen::Vector3d v0 = aG, v1 = bG;
       Eigen::Vector3d k0 = interpOnH(aG, cG);
       Eigen::Vector3d k1 = interpOnH(bG, cG);
@@ -506,7 +500,7 @@ void FluidConvexMeshShape::computeCapacityFromLocal_()
 
 Eigen::Matrix3d FluidConvexMeshShape::makeWorldToGravity_(const Eigen::Vector3d& g_down_world)
 {
-  // Canonical: +X_g is "up"
+  // Canonical: +X_g is “up”
   const Eigen::Vector3d up = -g_down_world.normalized();
 
   Eigen::Vector3d xg = up;                   // +X_g
@@ -528,7 +522,7 @@ FluidConvexMeshShape::GravitySpace FluidConvexMeshShape::makeGravitySpace_(const
   GravitySpace gs;
   gs.R_wg = makeWorldToGravity_(env.g_down_world);
 
-  // base plane height along +X_g (name kept for compatibility)
+  // base plane height along +X_g (canonical accessor available)
   gs.base_z_g = (gs.R_wg * env.p_base_world).x();
 
   double xmin = +std::numeric_limits<double>::infinity();
@@ -542,25 +536,9 @@ FluidConvexMeshShape::GravitySpace FluidConvexMeshShape::makeGravitySpace_(const
     xmax = std::max(xmax, vG.x());
   }
 
-  gs.z_min = xmin;  // values along +X_g
+  gs.z_min = xmin;  // along +X_g
   gs.z_max = xmax;
   return gs;
-}
-
-// Order a convex loop in the Y–Z plane (height is X)
-void FluidConvexMeshShape::orderConvexLoopXY(std::vector<Eigen::Vector3d>& pts) const
-{
-  if (pts.size() <= 2)
-    return;
-  Eigen::Vector2d c(0, 0);
-  for (auto& p : pts)
-    c += Eigen::Vector2d(p.y(), p.z());
-  c /= double(pts.size());
-  std::sort(pts.begin(), pts.end(), [&](const Eigen::Vector3d& A, const Eigen::Vector3d& B) {
-    const double a = std::atan2(A.z() - c.y(), A.y() - c.x());
-    const double b = std::atan2(B.z() - c.y(), B.y() - c.x());
-    return a < b;
-  });
 }
 
 bool FluidConvexMeshShape::computeSectionPolygonAtHeightWithEnv(double h_world,
@@ -655,7 +633,8 @@ bool FluidConvexMeshShape::computeSectionPolygonAtHeightWithEnv(double h_world,
     return false;
 
   // Order convex CCW in the Y–Z plane
-  orderConvexLoopXY(loop_g0);
+
+  geometry::orderConvexLoopInPlane(loop_g0, Eigen::Vector3d::UnitX());
 
   // Map to WORLD
   poly_world.reserve(loop_g0.size());

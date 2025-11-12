@@ -100,24 +100,14 @@ Eigen::Isometry3d buildIsometryFromZXAxes(const Eigen::Vector3d& pos, const Eige
 Eigen::Matrix3d buildAxisAlignment(const Eigen::Vector3d& z_shape, const Eigen::Vector3d& x_shape,
                                    const Eigen::Vector3d& z_stack, const Eigen::Vector3d& x_stack);
 
-// Canonical axes (matches your table exactly)
-//    Returns X,Y,Z in the order:
-//      Rectangle/Triangle/Polygon/Plane/Circle : (height, width, normal)
-//      Box                                     : (depth,  width, height)
-//      Cylinder/Cone/Segment                   : (ref-in-plane-x, ref-in-plane-y, symmetry)
-//      TriangularPrism                         : (altitude, base, height)
-//      Mesh                                    : (x,y,z) as-authored (or default rhs)
+// Produces a right-handed, orthonormal basis (X,Y,Z) from s.axes following the above convention.
+// Uses getShapePrimaryAxis / getShapeUAxis / getShapeVAxis with stable fallbacks;
+// `tol` is a small threshold to detect/repair degeneracies.
 void buildCanonicalAxes(const sodf::geometry::Shape& s, Eigen::Vector3d& X, Eigen::Vector3d& Y, Eigen::Vector3d& Z,
                         double tol = 1e-9);
 
-// Table-driven:
-// Rectangle      : axes = [height(X), width(Y), normal(Z)]     → U=width=axes[1],  V=height=axes[0]
-// Triangle       : axes = [altitude(X), base(Y), normal(Z)]    → U=base=axes[1],   V=altitude=axes[0]
-// Polygon        : axes = [x, y, normal]                       → U=axes[0],        V=axes[1]
-// Circle         : axes = [ref-x, ref-y, normal]               → U=axes[0],        V=axes[1]
-// Plane          : axes = [ref-x, ref-y, normal]               → U=axes[0],        V=axes[1]
-// Line (2D case) : treat direction as U, and V any orthogonal  → U=axes[0],        V=orthogonal
-// (Other 3D-only shapes shouldn't call this)
+// Returns the canonical in-plane basis (U,V) for 2D shapes, i.e., (Y,Z) under the convention above.
+// Special-cases Line as (direction, any stable orthogonal). Throws for non-2D shapes.
 std::pair<Eigen::Vector3d, Eigen::Vector3d> pickCanonicalUV(const sodf::geometry::Shape& s);
 
 // Map (u,v,0) from a 2D local parameterization to world, given explicit in-plane U and V directions.
@@ -130,7 +120,6 @@ std::vector<Eigen::Vector3d> local2DVerticesToWorld(const std::vector<Eigen::Vec
                                                     const Eigen::Vector2d& uv_scale = Eigen::Vector2d(1.0, 1.0),
                                                     bool orthonormalize = true);
 
-// Convenience: use Shape (axes[1], axes[2]) + per-instance scale and
 // optional 2D origin policy (AABBCenter, BaseCenter, VolumeCentroid, Native).
 // Requires: <sodf/geometry/origin.h> in the .cpp for applyOriginPolicy2DVertices.
 std::vector<Eigen::Vector3d> shape2DVerticesToWorld(const sodf::geometry::Shape& s, const Eigen::Isometry3d& pose,

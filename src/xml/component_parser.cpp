@@ -1048,8 +1048,8 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tiny
       // World-space centroids and normals
       Eigen::Vector3d c0 = tf0->local * getShapeCentroid(*shape_ptrs[i]);
       Eigen::Vector3d c1 = tf1->local * getShapeCentroid(*shape_ptrs[i + 1]);
-      Eigen::Vector3d n0 = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[i]);
-      Eigen::Vector3d n1 = tf1->local.linear() * getShapeNormalAxis(*shape_ptrs[i + 1]);
+      Eigen::Vector3d n0 = tf0->local.linear() * getShapePrimaryAxis(*shape_ptrs[i]);
+      Eigen::Vector3d n1 = tf1->local.linear() * getShapePrimaryAxis(*shape_ptrs[i + 1]);
 
       // Normals must be parallel (same or opposite direction)
       if (n0.cross(n1).norm() > 1e-6)
@@ -1109,7 +1109,7 @@ void parseDerivedFromParallelShapes(const tinyxml2::XMLDocument* doc, const tiny
     auto* tf0 = database::get_element(transform_component->elements, shape_ids[0]);
     Eigen::Vector3d c0_world = tf0->local * getShapeCentroid(*shape_ptrs[0]);
     Eigen::Vector3d to_virtual = ref_centroid - c0_world;  // towards the mid-plane
-    Eigen::Vector3d n0_world = tf0->local.linear() * getShapeNormalAxis(*shape_ptrs[0]);
+    Eigen::Vector3d n0_world = tf0->local.linear() * getShapePrimaryAxis(*shape_ptrs[0]);
 
     grasp.grasp_type =
         (to_virtual.dot(n0_world) > 0) ? ParallelGrasp::GraspType::INTERNAL : ParallelGrasp::GraspType::EXTERNAL;
