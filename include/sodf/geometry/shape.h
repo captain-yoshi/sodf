@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <type_traits>
+#include <iostream>
 
 #include <Eigen/Geometry>
 
@@ -55,19 +56,19 @@ enum class ShapeType
 /*
 | ShapeType         | Dimensions                                  | Axes (canonical X, Y, Z)   | Vertices           | Description / Notes                                      |
 |-------------------|---------------------------------------------|----------------------------|--------------------|----------------------------------------------------------|
-| Line              | length                                      | direction                  | 2 points (2D/3D)   | Works for 2D or 3D. Z vertices = 0 for 2D.               |
+| Line              | length                                      | direction, N/A, N/A        | 2 points (2D/3D)   | Works for 2D or 3D. Z vertices = 0 for 2D.               |
 |                   |                                             |                            |                    | Bounded if length > 0, infinite if = 0.                  |
-| Rectangle         | size_y, size_z                              | normal, size_y, size_z     | 4 points           |                                                          |
+| Rectangle         | size_y, size_z                              | normal, reference y-z      | 4 points           |                                                          |
 | Circle            | radius                                      | normal, reference y-z      | -                  |                                                          |
 | Triangle          | base_y, altitude_z, apex_offset_y           | normal, base, altitude     | 3 points           |                                                          |
-| Polygon           | - (dimentionless)                           | normal, y, z               | N points           | Width and height are wrt. the centroid.                  |
-| Plane             | size_y, size_z                              | normal, reference y, z,    | -                  | Bounded plane if width & height > 0, infinite if = 0.    |
+| Polygon           | - (dimentionless)                           | normal, reference y-z      | N points           | Width and height are wrt. the centroid.                  |
+| Plane             | size_y, size_z                              | normal, reference y-z      | -                  | Bounded plane if width & height > 0, infinite if = 0.    |
 | Box               | x, y, z                                     | x, y, z                    | -                  |                                                          |
 | TriangularPrism   | length_x, base_y, altitude_z, apex_offset_y | extrusion, base, altitude  | -                  | Base A=(0,0), B=(bw,0), C=(u,bh) in base plane.          |
-| Cylinder          | radius, height_x                            | symmetry, reference y,z    | -                  |                                                          |
+| Cylinder          | height_x, radius                            | symmetry, reference y-z    | -                  |                                                          |
 | Sphere            | radius                                      | (none)                     | -                  |                                                          |
-| Cone              | base_radius, top_radius, height_x           | symmetry, reference y-z    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
-| SphericalSegment  | base_radius, top_radius, height_x           | symmetry, reference y-z    | -                  | Cap if one radius = 0, segment if both > 0.              |
+| Cone              | height_x,base_radius, top_radius            | symmetry, reference y-z    | -                  | Frustum if top_radius > 0, cone if = 0.                  |
+| SphericalSegment  | height_x,base_radius, top_radius            | symmetry, reference y-z    | -                  | Cap if one radius = 0, segment if both > 0.              |
 | Mesh              | - (dimensionless)                           | x, y, z                    | External URI or    | Use as-authored local frame, or override with AxisX/Y/Z; |
 |                   |                                             |                            | TriangleMesh (V,F) | Supports indexed triangles; units = meters               |
 */
@@ -101,197 +102,65 @@ struct StackedShape
   // Eigen::Vector3d axis_stack_reference;
 };
 
-inline bool isPrimitive(geometry::ShapeType t)
-{
-  using geometry::ShapeType;
-  switch (t)
-  {
-    case ShapeType::None:
-    case ShapeType::Mesh:
-      return false;
-    default:
-      return true;
-  }
-}
+bool isPrimitive(geometry::ShapeType t);
+bool isPrimitive2D(geometry::ShapeType t);
+bool isPrimitive3D(geometry::ShapeType t);
 
-inline bool isPrimitive2D(geometry::ShapeType t)
-{
-  using geometry::ShapeType;
-  switch (t)
-  {
-    case ShapeType::Line:  // 2D or 3D; counted as 2D-capable
-    case ShapeType::Rectangle:
-    case ShapeType::Circle:
-    case ShapeType::Polygon:
-    case ShapeType::Triangle:
-    case ShapeType::Plane:
-      return true;
-    default:
-      return false;
-  }
-}
+bool isPrimitive(const geometry::Shape& s);
+bool isPrimitive2D(const geometry::Shape& s);
+bool isPrimitive3D(const geometry::Shape& s);
 
-inline bool isPrimitive3D(geometry::ShapeType t)
-{
-  using geometry::ShapeType;
-  switch (t)
-  {
-    case ShapeType::Line:  // 2D or 3D; counted as 3D-capable
-    case ShapeType::Box:
-    case ShapeType::TriangularPrism:
-    case ShapeType::Cylinder:
-    case ShapeType::Sphere:
-    case ShapeType::Cone:
-    case ShapeType::SphericalSegment:
-      return true;
-    default:
-      return false;
-  }
-}
-
-inline bool isPrimitive(const geometry::Shape& s)
-{
-  return isPrimitive(s.type);
-}
-inline bool isPrimitive2D(const geometry::Shape& s)
-{
-  return isPrimitive2D(s.type);
-}
-inline bool isPrimitive3D(const geometry::Shape& s)
-{
-  return isPrimitive3D(s.type);
-}
-
-inline bool primitiveHasDimensions(const geometry::Shape& s)
-{
-  return !s.dimensions.empty();
-}
-inline bool primitiveHasVertices(const geometry::Shape& s)
-{
-  return !s.vertices.empty();
-}
-
-// Dimension-less by SPEC: shapes that are not defined via `dimensions[]`.
-inline bool isDimensionless(geometry::ShapeType t)
-{
-  using geometry::ShapeType;
-  switch (t)
-  {
-    case ShapeType::Polygon:
-    case ShapeType::Triangle:
-    case ShapeType::Mesh:
-    case ShapeType::None:
-      return true;  // not dimension-led by design
-    default:
-      return false;  // supports/uses dimensions
-  }
-}
-
-// Dimension-less by INSTANCE: either the type is dimension-less by spec,
-// or this instance simply has no dimensions filled in.
-inline bool isDimensionless(const geometry::Shape& s)
-{
-  if (isDimensionless(s.type))
-    return true;                // spec says no dims
-  return s.dimensions.empty();  // no dims provided in this instance
-}
-
-inline bool hasExternalMesh(const Shape& s)
-{
-  return std::holds_alternative<MeshRef>(s.mesh);
-}
-inline bool hasInlineMesh(const Shape& s)
-{
-  return std::holds_alternative<InlineMeshPtr>(s.mesh);
-}
-inline const MeshRef* getExternalMesh(const Shape& s)
-{
-  return std::get_if<MeshRef>(&s.mesh);
-}
-inline const TriangleMesh* getInlineMesh(const Shape& s)
-{
-  if (const auto p = std::get_if<TriangleMeshPtr>(&s.mesh))
-    return p->get();
-  return nullptr;
-}
+bool primitiveHasDimensions(const geometry::Shape& s);
+bool primitiveHasVertices(const geometry::Shape& s);
 
 bool is2DShape(const Shape& shape);
+
+// Dimension-less by SPEC: shapes that are not defined via `dimensions[]`.
+bool isDimensionless(geometry::ShapeType t);
+
+// Dimension-less by INSTANCE
+bool isDimensionless(const geometry::Shape& s);
+
+bool hasExternalMesh(const Shape& s);
+bool hasInlineMesh(const Shape& s);
+const MeshRef* getExternalMesh(const Shape& s);
+const TriangleMesh* getInlineMesh(const Shape& s);
+
+// Already-declared API (left unchanged) --------------------------------------
+
+// Returns the primary axis for the shape:
+// - 2D: the surface normal (canonical axes[0])
+// - 3D: the symmetry / extrusion axis (canonical axes[0])
+// - Mesh: there is no canonical choice; if provided, returns axes[0],
+//         otherwise returns a stable +X fallback.
+//
+// Contract: callers that rely on a specific direction SHOULD set axes[0].
+// For Mesh, consider precomputing your own principal/extrusion axis (e.g. AABB
+// longest axis or PCA) and storing it in axes[0] when constructing the Shape.
+const Eigen::Vector3d& getShapePrimaryAxis(const Shape& shape);
+
+// In-plane / reference axes (the "other" two):
+// - For 2D: these are the two in-plane directions.
+// - For 3D of revolution/extrusion: these are the two reference directions perpendicular to symmetry.
+// - For Mesh: there is no canonical choice; if not provided we fall back to world Y/Z.
+//
+// Naming: we use "U" and "V" to avoid implying a specific semantic like Width/Height.
+const Eigen::Vector3d& getShapeUAxis(const Shape& shape);
+const Eigen::Vector3d& getShapeVAxis(const Shape& shape);
+
 double getShapeHeight(const Shape& shape);
+double getShapeBaseRadius(const geometry::Shape& shape);
+double getShapeTopRadius(const geometry::Shape& shape);
+double getShapeMaxRadius(const geometry::Shape& shape);
 
-double shapeBaseRadius(const geometry::Shape& shape);
-double shapeTopRadius(const geometry::Shape& shape);
-double shapeMaxRadius(const geometry::Shape& shape);
-
-const Eigen::Vector3d& getShapeNormalAxis(const Shape& shape);
-const Eigen::Vector3d& getShapeReferenceAxis(const Shape& shape);
-const Eigen::Vector3d& getShapeSymmetryAxis(const Shape& shape);
-
+double getTopRadiusAtHeight(double base_radius, double top_radius, double total_height, double new_height);
 geometry::Shape truncateShapeToHeight(const geometry::Shape& shape, double new_height);
 
-static bool isValidSegment(double r1, double r2, double h, double epsilon = 1e-12)
-{
-  if (r1 < 0 || r2 < 0 || h <= 0)
-    return false;
+bool isValidSegment(double r1, double r2, double h, double epsilon = 1e-12);
 
-  return true;
-}
-
-inline double inferSegmentHeightFromRadii(double r1, double r2)
-{
-  if (r1 < 0 || r2 < 0)
-    throw std::invalid_argument("Radii must be non-negative");
-
-  if (r1 == r2)
-    throw std::invalid_argument("Radii are equal: height is undefined for flat spherical cap");
-
-  double num = r2 * r2 - r1 * r1;
-  double den = 2 * std::sqrt((r1 * r1 + r2 * r2) / 2.0);  // Safe initial guess for R
-  double h = std::abs(num / den);                         // Approximate; could refine if needed
-
-  // Or: Solve directly via full expression
-  return (r2 * r2 - r1 * r1) / (2 * std::sqrt(std::max(r1 * r1, r2 * r2)));
-}
-
-inline double inferTopRadiusFromHeight(double r1, double h)
-{
-  if (r1 < 0 || h <= 0)
-    throw std::invalid_argument("Base radius must be non-negative and height > 0");
-
-  // From: R = (r2^2 + h^2 - r1^2) / (2h) -> isolate r2
-  // Assume same sphere used for both ends
-  double R = (r1 * r1 + h * h) / (2 * h);
-
-  if (R <= 0 || !std::isfinite(R))
-    throw std::invalid_argument("Invalid curvature derived from base radius and height");
-
-  double theta = std::asin(r1 / R);
-  double phi = theta + h / R;
-  return R * std::sin(phi);
-}
-
-inline double inferBaseRadiusFromHeight(double r2, double h)
-{
-  if (r2 < 0.0 || h <= 0.0)
-    throw std::invalid_argument("Top radius must be non-negative and height > 0");
-
-  // Mirror of inferTopRadiusFromHeight:
-  // Use the same sphere radius estimate and advance by pm h/R in angle space.
-  // R = (r^2 + h^2) / (2h)
-  const double R = (r2 * r2 + h * h) / (2.0 * h);
-
-  if (!(R > 0.0) || !std::isfinite(R))
-    throw std::invalid_argument("Invalid curvature derived from top radius and height");
-
-  // theta2 = asin(r2 / R);  phi1 = theta2 - h/R  -> r1 = R * sin(phi1)
-  const double x = std::clamp(r2 / R, -1.0, 1.0);
-  const double theta2 = std::asin(x);
-  const double phi1 = theta2 - (h / R);
-
-  const double r1 = R * std::sin(phi1);
-  if (r1 < 0.0)
-    return 0.0;  // guard tiny negatives from FP error
-  return r1;
-}
+double inferSegmentHeightFromRadii(double r1, double r2);
+double inferTopRadiusFromHeight(double r1, double h);
+double inferBaseRadiusFromHeight(double r2, double h);
 
 Eigen::Vector3d getShapeCentroid(const Shape& shape);
 ShapeType shapeTypeFromString(const std::string& str);
@@ -299,22 +168,7 @@ std::string shapeTypeToString(ShapeType type);
 
 // Helpers ---------------------------------------------------------------------
 
-inline const char* originPolicyToString(OriginPolicy p)
-{
-  switch (p)
-  {
-    case OriginPolicy::Native:
-      return "Native";
-    case OriginPolicy::BaseCenter:
-      return "BaseCenter";
-    case OriginPolicy::AABBCenter:
-      return "AABBCenter";
-    case OriginPolicy::VolumeCentroid:
-      return "VolumeCentroid";
-    default:
-      return "<unknown-origin>";
-  }
-}
+const char* originPolicyToString(OriginPolicy p);
 
 // Canonical semantic labels for axes per shape type.
 // Returns a span-like triplet of const char* for (X,Y,Z).
@@ -325,145 +179,14 @@ struct AxisLabels
   const char* Z;
 };
 
-inline AxisLabels shapeAxisLabels(ShapeType t)
-{
-  using ST = ShapeType;
-  switch (t)
-  {
-    case ST::Rectangle:  // axes = [Height (X), Width (Y), Normal (Z)]
-    case ST::Triangle:
-    case ST::Polygon:
-      return { "Height", "Width", "Normal" };
-    case ST::Circle:
-      return { "RefX", "RefY", "Normal" };
-    case ST::Plane:
-      return { "RefX", "RefY", "Normal" };
-    case ST::Box:  // axes = [Depth (X), Width (Y), Height (Z)]
-      return { "Depth", "Width", "Height" };
-    case ST::TriangularPrism:  // axes = [Altitude (X), Base (Y), Height (Z)]
-      return { "Altitude", "Base", "Height" };
-    case ST::Cylinder:  // axes = [RefX, RefY, Symmetry]
-    case ST::Cone:
-    case ST::SphericalSegment:
-      return { "RefX", "RefY", "Symmetry" };
-    case ST::Mesh:
-      return { "X", "Y", "Z" };  // mesh frame as-authored unless overridden
-    case ST::Line:
-      return { "Dir", "(n/a)", "(n/a)" };
-    case ST::Sphere:
-      return { "(none)", "(none)", "(none)" };
-    default:
-      return { "X", "Y", "Z" };
-  }
-}
+AxisLabels shapeAxisLabels(ShapeType t);
 
 // Printers --------------------------------------------------------------------
 
-inline std::ostream& operator<<(std::ostream& os, ShapeType type)
-{
-  return os << shapeTypeToString(type);
-}
-
-inline std::ostream& operator<<(std::ostream& os, const MeshRef& mref)
-{
-  os << "MeshRef(uri='" << mref.uri << "')";
-  return os;
-}
-
-inline std::ostream& operator<<(std::ostream& os, const TriangleMesh& M)
-{
-  os << "IndexedTriMesh(V=" << M.V.size() << ", F=" << M.F.size() << ")";
-  return os;
-}
-
-inline std::ostream& operator<<(std::ostream& os, const Shape& shape)
-{
-  // Fixed formatting for compact, deterministic logs
-  auto flags = os.flags();
-  auto prec = os.precision();
-  os.setf(std::ios::fixed, std::ios::floatfield);
-  os.precision(6);
-
-  os << "Shape(type=" << shape.type << ", origin=" << originPolicyToString(shape.origin) << ", scale=("
-     << shape.scale.x() << ", " << shape.scale.y() << ", " << shape.scale.z() << ")";
-
-  // dimensions
-  os << ", dimensions=[";
-  for (size_t i = 0; i < shape.dimensions.size(); ++i)
-  {
-    os << shape.dimensions[i];
-    if (i + 1 < shape.dimensions.size())
-      os << ", ";
-  }
-  os << "]";
-
-  // axes with semantic labels
-  const auto labels = shapeAxisLabels(shape.type);
-  os << ", axes={";
-  if (!shape.axes.empty())
-  {
-    // Print up to first 3 axes, labelled
-    const size_t n = std::min<size_t>(shape.axes.size(), 3);
-    for (size_t i = 0; i < n; ++i)
-    {
-      const auto& a = shape.axes[i];
-      const char* name = (i == 0 ? labels.X : i == 1 ? labels.Y : labels.Z);
-      os << name << "=(" << a.x() << ", " << a.y() << ", " << a.z() << ")";
-      if (i + 1 < n)
-        os << ", ";
-    }
-    if (shape.axes.size() > 3)
-      os << ", ...+" << (shape.axes.size() - 3);
-  }
-  os << "}";
-
-  // vertices (limit)
-  os << ", vertices=[";
-  const size_t max_show = 4;
-  for (size_t i = 0; i < shape.vertices.size() && i < max_show; ++i)
-  {
-    const auto& v = shape.vertices[i];
-    os << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")";
-    if (i + 1 < std::min(shape.vertices.size(), max_show))
-      os << ", ";
-  }
-  if (shape.vertices.size() > max_show)
-    os << ", ...+" << (shape.vertices.size() - max_show);
-  os << "]";
-
-  // mesh (variant)
-  os << ", mesh=";
-  std::visit(
-      [&](const auto& alt) {
-        using T = std::decay_t<decltype(alt)>;
-        if constexpr (std::is_same_v<T, std::monostate>)
-        {
-          os << "None";
-        }
-        else if constexpr (std::is_same_v<T, MeshRef>)
-        {
-          os << alt;  // MeshRef printer
-        }
-        else if constexpr (std::is_same_v<T, std::unique_ptr<const TriangleMesh>>)
-        {
-          if (alt)
-            os << *alt;
-          else
-            os << "InlineMesh(nullptr)";
-        }
-        else
-        {
-          os << "<unknown-mesh-alt>";
-        }
-      },
-      shape.mesh);
-
-  os << ")";
-  // restore stream state
-  os.flags(flags);
-  os.precision(prec);
-  return os;
-}
+std::ostream& operator<<(std::ostream& os, ShapeType type);
+std::ostream& operator<<(std::ostream& os, const MeshRef& mref);
+std::ostream& operator<<(std::ostream& os, const TriangleMesh& M);
+std::ostream& operator<<(std::ostream& os, const Shape& shape);
 
 }  // namespace geometry
 }  // namespace sodf

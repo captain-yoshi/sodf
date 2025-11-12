@@ -446,23 +446,17 @@ inline bool meshifyPrimitiveApplied(const geometry::Shape& s, std::vector<Eigen:
       p = p.cwiseProduct(s.scale);
   }
 
-  // 3) Apply axes (if provided)
-  if (s.axes.size() >= 3)
+  // 3) Apply axes per canonical convention (primary=X, refs=Y/Z).
+  //    buildCanonicalAxes() already routes through getShapePrimaryAxis/U/V
+  //    and produces a robust right-handed ONB with fallbacks.
   {
-    Eigen::Vector3d X = s.axes[0].normalized();
-    Eigen::Vector3d Y = s.axes[1].normalized();
-    // Gram–Schmidt to keep ONB robust, then Z = X×Y
-    Y -= X * (X.dot(Y));
-    if (Y.norm() > 0)
-      Y.normalize();
-    Eigen::Vector3d Z = X.cross(Y);
-    if (Z.norm() > 0)
-      Z.normalize();
+    Eigen::Vector3d Xc, Yc, Zc;
+    buildCanonicalAxes(s, Xc, Yc, Zc, 1e-9);
 
     Eigen::Matrix3d R;
-    R.col(0) = X;  // canonical X
-    R.col(1) = Y;  // canonical Y
-    R.col(2) = Z;  // canonical Z
+    R.col(0) = Xc;  // canonical X = primary (Normal/Symmetry/Extrusion or authored X)
+    R.col(1) = Yc;  // canonical Y = in-plane/reference U
+    R.col(2) = Zc;  // canonical Z = in-plane/reference V
 
     for (auto& p : V)
       p = R * p;
@@ -556,32 +550,29 @@ inline bool meshifyStackedShapePrimitives(const geometry::StackedShape& stacked,
         break;
     }
 
-    // 3) Strip canonical end caps at x=0 and x=seg_H (before any rotation/tilt)
-    const bool is_first = (si == 0);
-    const bool is_last = (si == static_cast<int>(stacked.shapes.size()) - 1);
-    if (!is_first)
-      stripCapAtPlaneX(Vseg, Fseg, 0.0, cap_tol);
-    if (!is_last)
-      stripCapAtPlaneX(Vseg, Fseg, seg_H, cap_tol);
-
-    // 4) Apply the shape's axes (right-handed ONB derived from s.axes)
+    // 3) Rotate into the shape’s canonical axes (Primary = Xc, U = Yc, V = Zc).
     Eigen::Vector3d Xc, Yc, Zc;
-    buildCanonicalAxes(s, Xc, Yc, Zc, 1e-9);  // produces an orthonormal basis
-
+    buildCanonicalAxes(s, Xc, Yc, Zc, 1e-9);  // uses getShapePrimaryAxis/U/V internally
     Eigen::Matrix3d R_shape;
     R_shape.col(0) = Xc;
     R_shape.col(1) = Yc;
     R_shape.col(2) = Zc;
+    for (auto& p : Vseg)
+      p = R_shape * p;
 
-    // 5) Apply the entry's full SE3 pose
+    // 4) Strip end caps *along the primary axis* using the generic helper
+    const bool is_first = (si == 0);
+    const bool is_last = (si == static_cast<int>(stacked.shapes.size()) - 1);
+    if (!is_first)
+      stripCapAtPlaneAlong(Vseg, Fseg, Xc, 0.0, cap_tol);
+    if (!is_last)
+      stripCapAtPlaneAlong(Vseg, Fseg, Xc, seg_H, cap_tol);
+
+    // 5) Apply the entry’s SE(3) pose in the stacked frame
     const Eigen::Matrix3d R_entry = entry.base_transform.linear();
     const Eigen::Vector3d t_entry = entry.base_transform.translation();
-
     for (auto& p : Vseg)
-    {
-      // canonical → shape axes → segment pose in stacked frame
-      p = R_entry * (R_shape * p) + t_entry;
-    }
+      p = R_entry * p + t_entry;
 
     // Append into fused buffers (already in stacked frame coords).
     appendMesh(Vseg, Fseg, V_out, F_out);
