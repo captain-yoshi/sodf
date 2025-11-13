@@ -9,15 +9,13 @@ namespace sodf {
 namespace components {
 
 /// One operation in the origin “program”
-using OriginConstraint = std::variant<geometry::Transform,        // absolute pose
-                                      geometry::AlignFrames,      // frame-to-frame
-                                      geometry::AlignPairFrames,  // pair alignment
-                                      Coincident,                 //
-                                      Concentric,                 //
-                                      Parallel,                   //
-                                      Angle,                      //
-                                      Distance,                   //
-                                      SeatConeOnCylinder          //
+using OriginConstraint = std::variant<geometry::Transform,  // absolute pose
+                                      Coincident,           //
+                                      Concentric,           //
+                                      Parallel,             //
+                                      Angle,                //
+                                      Distance,             //
+                                      SeatConeOnCylinder    //
                                       >;
 
 struct OriginComponent
