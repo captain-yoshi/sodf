@@ -25,6 +25,11 @@ Eigen::Isometry3d get_local_to_root(database::Database& db, database::EntityID e
 // Find the unique root/global entity (tagged or parentless)
 std::optional<database::EntityID> find_root_frame_entity(database::Database& db);
 
+/// Get the global transform of the root frame (first element) for a given object id.
+/// Uses an existing ObjectEntityMap.
+Eigen::Isometry3d get_root_global_transform(database::Database& db, const database::ObjectEntityMap& obj_map,
+                                            const std::string& object_id);
+
 // Recursively update one frame’s global transform
 void update_global_transform(database::Database& db, database::EntityID id, components::TransformComponent& tf,
                              std::size_t frame_idx, const database::ObjectEntityMap& obj_map,
