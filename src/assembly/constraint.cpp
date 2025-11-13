@@ -2,8 +2,64 @@
 #include <algorithm>
 #include <cmath>
 
+#include <iostream>
+#include <iomanip>
+
 namespace sodf {
 namespace assembly {
+
+// ---------- tiny debug helpers (optional) ------------------------------------
+
+void dumpAxis(const char* label, const Axis& a)
+{
+  std::cout << "      " << label << ".point = [" << a.point.transpose() << "]  dir = [" << a.direction.transpose()
+            << "]\n";
+}
+
+void dumpPlane(const char* label, const Plane& p)
+{
+  std::cout << "      " << label << ".point = [" << p.point.transpose() << "]  normal = [" << p.normal.transpose()
+            << "]\n";
+}
+
+void printTF(const char* label, const Eigen::Isometry3d& T)
+{
+  const Eigen::Vector3d t = T.translation();
+  const Eigen::AngleAxisd aa(T.linear());
+  std::cout << std::fixed << std::setprecision(6) << "    " << label << " t = [" << t.x() << ", " << t.y() << ", "
+            << t.z() << "]"
+            << "  aa = (" << aa.angle() << ", [" << aa.axis().transpose() << "])\n";
+}
+
+void dumpPose(const char* label, const Eigen::Isometry3d& P)
+{
+  printTF(label, P);
+}
+
+void dumpLineToLine(const Axis& A, const Axis& B)
+{
+  const Eigen::Vector3d u = A.direction.normalized();
+  const Eigen::Vector3d v = B.direction.normalized();
+  const double c = std::clamp(u.dot(v), -1.0, 1.0);
+  const double ang = std::acos(c);
+
+  // shortest distance between two (possibly skew) lines
+  const Eigen::Vector3d w0 = A.point - B.point;
+  const double denom = 1.0 - c * c;
+  double dist;
+  if (denom < 1e-12)
+  {
+    // nearly parallel: distance = |(A0-B0) x u|
+    dist = w0.cross(u).norm();
+  }
+  else
+  {
+    const double s = (w0.dot(u) - w0.dot(v) * c) / denom;
+    const Eigen::Vector3d PcA = A.point - s * u;
+    dist = (B.point - PcA).cross(v).norm();
+  }
+  std::cout << "      angle(u,v) = " << ang << " rad, line-line shortest dist ≈ " << dist << " m\n";
+}
 
 static inline Eigen::Matrix3d align_dir_to_dir(const Eigen::Vector3d& a, const Eigen::Vector3d& b)
 {
