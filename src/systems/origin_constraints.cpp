@@ -18,6 +18,46 @@
 namespace sodf {
 namespace systems {
 
+static std::string infer_host_object(const components::OriginComponent& origin)
+{
+  std::string result;
+
+  for (const auto& any : origin.constraints)
+  {
+    std::visit(
+        [&](const auto& c) {
+          using C = std::decay_t<decltype(c)>;
+          std::string host_ref;
+
+          if constexpr (std::is_same_v<C, components::Coincident>)
+            host_ref = c.host;  // "table/shape/tabletop#frame"
+          else if constexpr (std::is_same_v<C, components::Concentric>)
+            host_ref = c.host;  // "table/insertion/A1#axis"
+          else if constexpr (std::is_same_v<C, components::Parallel>)
+            host_ref = c.host;
+          else if constexpr (std::is_same_v<C, components::Angle>)
+            host_ref = c.host;
+          else if constexpr (std::is_same_v<C, components::Distance>)
+            host_ref = c.host;
+          else if constexpr (std::is_same_v<C, components::SeatConeOnCylinder>)
+            host_ref = c.host_cyl;
+
+          if (!result.empty() || host_ref.empty())
+            return;
+
+          const auto slash = host_ref.find('/');
+          if (slash != std::string::npos)
+            result = host_ref.substr(0, slash);  // "table"
+        },
+        any);
+
+    if (!result.empty())
+      break;
+  }
+
+  return result;
+}
+
 void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& map)
 {
   using namespace sodf::components;
@@ -43,6 +83,11 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
       if (obj.empty())
         throw std::runtime_error("[Origin] Cannot infer guest_object for entity.");
       origin.guest_object = obj;
+    }
+
+    if (origin.host_object.empty())
+    {
+      origin.host_object = infer_host_object(origin);
     }
 
     // ---------- Establish baseline T0 in WORLD ----------
@@ -95,6 +140,7 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
 
               T0 = sodf::geometry::alignCenterFrames(T1, T2, S1, S2, step.tolerance);  // WORLD baseline
               new_parent = step.target_id;  // parent under the target object (non-empty)
+              std::cout << "new local parent = " << new_parent << std::endl;
               baseline_found = true;
             }
           },
@@ -108,13 +154,37 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
     lp.w_pos = 1.0;
 
     LSLinearStats stats{};
-    Eigen::Isometry3d T = systems::solve_origin_least_squares_once(db, map, eid, origin, T0, lp, &stats);
+    Eigen::Isometry3d T_world = systems::solve_origin_least_squares_once(db, map, eid, origin, T0, lp, &stats);
 
-    // ---------- Apply candidate pose (no rollback policy) ----------
-    // If baseline picked a non-empty parent (Align*), keep it; otherwise WORLD ("").
-    root_node.local = T;
-    root_node.parent = new_parent;  // "" means WORLD (allowed)
+    Eigen::Isometry3d T_local = T_world;
+
+    if (!origin.host_object.empty())
+    {
+      // Find host entity
+      auto it = map.find(origin.host_object);
+      if (it == map.end())
+        throw std::runtime_error("[Origin] host_object '" + origin.host_object + "' not found in ObjectEntityMap");
+
+      const auto host_eid = it->second;
+
+      // Get host's global transform W_H (use whatever helper you already have)
+      // e.g. something like:
+      const Eigen::Isometry3d W_H = sodf::systems::get_root_global_transform(db, map, origin.host_object);
+
+      // Express guest pose in host frame
+      T_local = W_H.inverse() * T_world;
+      new_parent = origin.host_object;  // parent under host
+    }
+    else
+    {
+      new_parent.clear();  // WORLD
+    }
+
+    // Write back
+    root_node.local = T_local;
+    root_node.parent = new_parent;
     root_node.dirty = true;
+
     sodf::systems::update_entity_global_transforms(db, eid, map);
 
     // ---------- Validate in WORLD; throw on failure (no rollback) ----------
