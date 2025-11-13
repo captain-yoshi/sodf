@@ -189,15 +189,6 @@ inline std::string to_string_ref(const Ref& r)
   return os.str();
 }
 
-inline void printTF(const char* label, const Eigen::Isometry3d& T)
-{
-  const Eigen::Vector3d t = T.translation();
-  const Eigen::AngleAxisd aa(T.linear());
-  std::cout << std::fixed << std::setprecision(6) << "    " << label << " t = [" << t.x() << ", " << t.y() << ", "
-            << t.z() << "]"
-            << "  aa = (" << aa.angle() << ", [" << aa.axis().transpose() << "])\n";
-}
-
 }  // namespace assembly
 }  // namespace sodf
 

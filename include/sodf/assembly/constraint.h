@@ -26,6 +26,13 @@ using Point = Eigen::Vector3d;
 
 // ---------- Primitive solvers (pure geometry) ----------
 
+void dumpAxis(const char* label, const Axis& a);
+void dumpPlane(const char* label, const Plane& p);
+void printTF(const char* label, const Eigen::Isometry3d& T);
+
+void dumpPose(const char* label, const Eigen::Isometry3d& P);
+void dumpLineToLine(const Axis& A, const Axis& B);
+
 // Coincident
 Pose solveCoincidentFrameFrame(const Pose& Fh, const Pose& Fg);
 Pose solveCoincidentPlaneFrame(const Plane& Hplane, const Pose& Fg);
