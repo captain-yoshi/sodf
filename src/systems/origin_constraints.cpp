@@ -112,37 +112,6 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
               new_parent = step.parent;
               baseline_found = true;
             }
-            else if constexpr (std::is_same_v<TStep, sodf::geometry::AlignFrames>)
-            {
-              // Align a local frame of THIS entity to a frame on another object.
-              const auto Fsrc = sodf::systems::get_local_to_root(db, eid, step.source_tf);
-
-              auto it = map.find(step.target_id);
-              if (it == map.end())
-                throw std::runtime_error("[Origin] AlignFrames target '" + step.target_id + "' not found.");
-
-              const auto Ftgt = sodf::systems::get_local_to_root(db, it->second, step.target_tf);
-
-              T0 = Ftgt * Fsrc.inverse();   // WORLD baseline
-              new_parent = step.target_id;  // parent under the target object (non-empty)
-              baseline_found = true;
-            }
-            else if constexpr (std::is_same_v<TStep, sodf::geometry::AlignPairFrames>)
-            {
-              auto it = map.find(step.target_id);
-              if (it == map.end())
-                throw std::runtime_error("[Origin] AlignPairFrames target '" + step.target_id + "' not found.");
-
-              const auto S1 = sodf::systems::get_local_to_root(db, eid, step.source_tf1);
-              const auto S2 = sodf::systems::get_local_to_root(db, eid, step.source_tf2);
-              const auto T1 = sodf::systems::get_local_to_root(db, it->second, step.target_tf1);
-              const auto T2 = sodf::systems::get_local_to_root(db, it->second, step.target_tf2);
-
-              T0 = sodf::geometry::alignCenterFrames(T1, T2, S1, S2, step.tolerance);  // WORLD baseline
-              new_parent = step.target_id;  // parent under the target object (non-empty)
-              std::cout << "new local parent = " << new_parent << std::endl;
-              baseline_found = true;
-            }
           },
           step_any);
     }

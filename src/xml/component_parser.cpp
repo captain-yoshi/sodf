@@ -778,61 +778,6 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     program.emplace_back(abs);
   };
 
-  auto pushAlignFrames = [&](const tinyxml2::XMLElement* node) {
-    geometry::AlignFrames align;
-    align.target_id = evalTextAttributeRequired(node, "with");
-    if (const auto* src = node->FirstChildElement("Source"))
-      align.source_tf = evalTextAttribute(src, "name", "");
-    if (const auto* tgt = node->FirstChildElement("Target"))
-      align.target_tf = evalTextAttribute(tgt, "name", "");
-    program.emplace_back(align);
-  };
-
-  auto pushAlignPairFrames = [&](const tinyxml2::XMLElement* node) {
-    geometry::AlignPairFrames align;
-    align.target_id = evalTextAttributeRequired(node, "with");
-    align.tolerance = evalNumberAttributeRequired(node, "tolerance");
-
-    int found = 0;
-    for (const auto* tag = node->FirstChildElement(); tag; tag = tag->NextSiblingElement())
-    {
-      const std::string tname = tag->Name();
-      const std::string name = evalTextAttributeRequired(tag, "name");
-
-      if (tname == "Source" || tname == "SourceTransform")
-      {
-        if (found == 0)
-          align.source_tf1 = name;
-        else if (found == 1)
-          align.source_tf2 = name;
-        else
-          throw std::runtime_error("Too many <Source> in <AlignPairFrames> at line " +
-                                   std::to_string(tag->GetLineNum()));
-      }
-      else if (tname == "Target" || tname == "TargetTransform")
-      {
-        if (found == 2)
-          align.target_tf1 = name;
-        else if (found == 3)
-          align.target_tf2 = name;
-        else
-          throw std::runtime_error("Too many <Target> in <AlignPairFrames> at line " +
-                                   std::to_string(tag->GetLineNum()));
-      }
-      else
-      {
-        throw std::runtime_error("Unexpected <" + tname + "> in <AlignPairFrames> at line " +
-                                 std::to_string(tag->GetLineNum()));
-      }
-      ++found;
-    }
-    if (align.source_tf1.empty() || align.source_tf2.empty() || align.target_tf1.empty() || align.target_tf2.empty())
-      throw std::runtime_error("Missing Source/Target pairs in <AlignPairFrames> at line " +
-                               std::to_string(node->GetLineNum()));
-
-    program.emplace_back(align);
-  };
-
   // Constraint leaf pushers ---------------------------------------------------
 
   auto pushCoincident = [&](const tinyxml2::XMLElement* node) {
@@ -896,15 +841,6 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     {
       pushTransform(child);
     }
-    else if (tag == "AlignFrames")
-    {
-      pushAlignFrames(child);
-    }
-    else if (tag == "AlignPairFrames" || tag == "AlignGeometricPair")
-    {
-      pushAlignPairFrames(child);
-    }
-
     else if (tag == "Coincident")
     {
       pushCoincident(child);
