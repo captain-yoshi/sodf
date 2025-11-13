@@ -86,7 +86,6 @@ add_library(${PROJECT_NAME}
   src/assembly/constraint.cpp
   src/assembly/constraint_selector.cpp
   src/assembly/selector_context_db.cpp
-  src/geometry/alignment.cpp
   src/geometry/shape.cpp
   src/geometry/frame.cpp
   src/physics/domain_shape.cpp

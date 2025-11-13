@@ -8,7 +8,7 @@ namespace systems {
 
 /**
  * Apply OriginComponent constraints to position each entity's root frame.
- * - Supports geometry::Transform / AlignFrames / AlignPairFrames
+ * - Supports geometry::Transform
  * - Supports constraint leaves: Coincident, Concentric, Parallel, Angle, Distance, SeatConeOnCylinder
  * - Uses selector_context_db to resolve strings like "table/insert/M24#axis"
  */
