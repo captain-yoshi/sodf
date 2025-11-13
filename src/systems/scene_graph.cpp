@@ -67,6 +67,27 @@ std::optional<database::EntityID> find_root_frame_entity(database::Database& db)
   return tagged.front();
 }
 
+Eigen::Isometry3d get_root_global_transform(database::Database& db, const database::ObjectEntityMap& obj_map,
+                                            const std::string& object_id)
+{
+  // 1) Find the entity from the provided map
+  auto it = obj_map.find(object_id);
+  if (it == obj_map.end())
+    throw std::runtime_error("[scene_graph] get_root_global_transform: object id '" + object_id + "' not found");
+
+  const database::EntityID eid = it->second;
+
+  // 2) Make sure this entity's global transforms are up-to-date
+  update_entity_global_transforms(db, eid, obj_map);
+
+  // 3) Return the global of the root frame (first element)
+  auto* tf = db.get<components::TransformComponent>(eid);
+  if (!tf || tf->elements.empty())
+    throw std::runtime_error("[scene_graph] get_root_global_transform: entity has no TransformComponent or no frames");
+
+  return tf->elements.front().second.global;
+}
+
 // Recursively update one frame’s global transform (returns true if recomputed)
 static bool update_global_transform(database::Database& db, database::EntityID id, components::TransformComponent& tf,
                                     std::size_t frame_idx, const database::ObjectEntityMap& obj_map, bool force)
