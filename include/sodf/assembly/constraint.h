@@ -58,8 +58,8 @@ Pose solveDistancePointPoint(const Point& Hp, const Point& Gp, double distance);
 
 // SeatConeOnCylinder (axes aligned + seating depth)
 // Inputs: host cylinder radius r, axis H; guest cone radii (r0 at z=0, r1 at z=H), height Hcone, axis G
-Pose solveSeatConeOnCylinder(double r_cyl, const Axis& Hcyl, double r0_cone, double r1_cone, double H_cone,
-                             const Axis& Gcone, double tol = 1e-9, int max_it = 60);
+bool solveSeatConeOnCylinder(double r_cyl, const Axis& Hcyl, double r0_cone, double r1_cone, double H_cone,
+                             const Axis& Gcone, Pose& T_out, double tol = 1e-9, int max_it = 60);
 
 }  // namespace assembly
 }  // namespace sodf

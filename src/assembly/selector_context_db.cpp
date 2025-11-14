@@ -197,6 +197,74 @@ static bool read_cylinder_from_domain(Database& db, database::Database::entity_t
   return false;
 }
 
+static bool stacked_cone_profile(const geometry::StackedShape& stack, double& out_r0, double& out_r1, double& out_H)
+{
+  using geometry::getShapeBaseRadius;
+  using geometry::getShapeHeight;
+  using geometry::getShapeTopRadius;
+  using geometry::Shape;
+  using geometry::ShapeType;
+
+  bool have_any = false;
+  double r_top = 0.0;
+  double r_bottom = 0.0;
+  double H_total = 0.0;
+
+  for (const auto& entry : stack.shapes)
+  {
+    const Shape& s = entry.shape;
+
+    H_total += getShapeHeight(s);
+    switch (s.type)
+    {
+      case ShapeType::Cylinder:
+      {
+        const double r = getShapeBaseRadius(s);  // base == top
+        if (!have_any)
+        {
+          r_top = r;  // first segment top
+          r_bottom = r;
+        }
+        else
+        {
+          r_bottom = r;  // last radius wins
+        }
+        have_any = true;
+        break;
+      }
+
+      case ShapeType::Cone:
+      {
+        const double r0 = getShapeBaseRadius(s);  // at top of this segment
+        const double r1 = getShapeTopRadius(s);   // at bottom of this segment
+        if (!have_any)
+        {
+          r_top = r0;  // very first segment’s top radius
+          r_bottom = r1;
+        }
+        else
+        {
+          // segments are stacked, so we continue from previous bottom
+          r_bottom = r1;
+        }
+        have_any = true;
+        break;
+      }
+
+      default:
+        break;  // ignore non-relevant shapes
+    }
+  }
+
+  if (!have_any)
+    return false;
+
+  out_r0 = r_top;
+  out_r1 = r_bottom;
+  out_H = H_total;
+  return true;
+}
+
 // Resolve cone dims from a DomainShape by following its stacked_shape_id.
 // Pose (axis point/dir) comes from the DOMAIN frame at `key`.
 static bool read_cone_from_domain(Database& db, database::Database::entity_type e, const std::string& key,
@@ -206,36 +274,30 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
   using components::ShapeComponent;
   using components::StackedShapeComponent;
 
-  // 1) Pose from the domain's own frame
   const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
   out_axis.point = T.translation();
 
-  // 2) The domain instance itself
   const auto* dsc = db.get_element<DomainShapeComponent>(e, key);
   if (!dsc)
     return false;
 
-  // 3) Follow provenance to stacked/shape geometry (preferred source of dims)
-  const std::string& src_id = dsc->stacked_shape_id;  // may be empty
+  const std::string& src_id = dsc->stacked_shape_id;
   if (!src_id.empty())
   {
-    // 3a) Prefer a cone from the stacked shape
     if (const auto* ss = db.get_element<StackedShapeComponent>(e, src_id))
     {
-      for (const auto& entry : ss->shapes)
-      {
-        const geometry::Shape& s = entry.shape;
-        if (s.type == geometry::ShapeType::Cone)
-        {
-          out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(s));
-          r0 = geometry::getShapeBaseRadius(s);
-          r1 = geometry::getShapeTopRadius(s);
-          H = geometry::getShapeHeight(s);
-          return true;
-        }
-      }
+      // Use stacked profile to accumulate height across all segments
+      double rr0 = 0.0, rr1 = 0.0, HH = 0.0;
+      if (!stacked_cone_profile(*ss, rr0, rr1, HH))
+        return false;
+
+      out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(ss->shapes.front().shape));
+      r0 = rr0;
+      r1 = rr1;
+      H = HH;
+      return true;
     }
-    // 3b) Or a single analytic shape
+
     if (const auto* s = db.get_element<ShapeComponent>(e, src_id))
     {
       if (s->type == geometry::ShapeType::Cone)
@@ -249,7 +311,7 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
     }
   }
 
-  // 4) Last-chance: analytic shape under the same `key`
+  // Fallback: analytic cone directly under `key`
   if (const auto* s = db.get_element<ShapeComponent>(e, key))
   {
     if (s->type == geometry::ShapeType::Cone)
@@ -390,45 +452,42 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
   {
     if (const auto* stack = db.get_element<StackedShapeComponent>(e, stack_id))
     {
-      bool have_cyl = false, have_cone = false;
+      bool have_cyl = false;
       double cyl_R = 0.0;
-      double cone_r0 = 0.0, cone_r1 = 0.0, cone_H = 0.0;
 
+      // 1) Always try to get an outer cylinder radius (for wells, holes, etc.).
       for (const auto& entry : stack->shapes)
       {
         const geometry::Shape& s = entry.shape;
-        switch (s.type)
+        if (s.type == geometry::ShapeType::Cylinder)
         {
-          case geometry::ShapeType::Cone:
-            cone_r0 = geometry::getShapeBaseRadius(s);
-            cone_r1 = geometry::getShapeTopRadius(s);
-            cone_H = geometry::getShapeHeight(s);
-            have_cone = true;
-            break;
-          case geometry::ShapeType::Cylinder:
-            cyl_R = geometry::getShapeBaseRadius(s);  // base==top
+          const double R = geometry::getShapeBaseRadius(s);  // base == top
+          if (!have_cyl || R > cyl_R)
+          {
             have_cyl = true;
-            break;
-          default:
-            break;
+            cyl_R = R;
+          }
         }
-        if (have_cone)
-          break;  // prefer cone if both present
       }
 
-      if (have_cone)
-        wire_cone(cone_r0, cone_r1, cone_H);
-      else if (have_cyl)
-        wire_cylinder(cyl_R);
+      if (have_cyl)
+        wire_cylinder(cyl_R);  // SeatConeOnCylinder(host, ...) will happily use this
+
+      // 2) Also try to build a stacked cone profile (for outer cone-ish guests).
+      double r0 = 0.0, r1 = 0.0, H = 0.0;
+      if (stacked_cone_profile(*stack, r0, r1, H))
+        wire_cone(r0, r1, H);  // SeatConeOnCylinder(guest, ...) will use this
     }
-    else
+    else if (const auto* s = db.get_element<ShapeComponent>(e, stack_id))
     {
-      if (const auto* s = db.get_element<ShapeComponent>(e, stack_id))
+      // Simple analytic shape referenced instead of a stack.
+      if (s->type == geometry::ShapeType::Cylinder)
       {
-        if (s->type == geometry::ShapeType::Cone)
-          wire_cone(geometry::getShapeBaseRadius(*s), geometry::getShapeTopRadius(*s), geometry::getShapeHeight(*s));
-        else if (s->type == geometry::ShapeType::Cylinder)
-          wire_cylinder(geometry::getShapeBaseRadius(*s));
+        wire_cylinder(geometry::getShapeBaseRadius(*s));
+      }
+      else if (s->type == geometry::ShapeType::Cone)
+      {
+        wire_cone(geometry::getShapeBaseRadius(*s), geometry::getShapeTopRadius(*s), geometry::getShapeHeight(*s));
       }
     }
   }

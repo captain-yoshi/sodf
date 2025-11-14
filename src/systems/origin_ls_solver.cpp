@@ -98,6 +98,211 @@ static inline Residual axis_frame_distance_residual(const sodf::assembly::Axis& 
   return { 0.0, std::abs(have - want) };
 }
 
+template <typename Accum>
+static void add_coincident_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G,
+                              const sodf::components::OriginComponent& origin,
+                              const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P,
+                              Accum&& accum)
+{
+  using namespace sodf::assembly;
+  using namespace sodf::geometry;
+
+  bool done = false;
+  try
+  {
+    Plane Hp = resolvePlane(H, ctx);
+    Pose Fg = resolvePose(G, ctx);
+
+    const Eigen::Vector3d n = Hp.normal.normalized();
+    const Eigen::Vector3d xg_pos = Fg.translation();
+    const double rd = n.dot(xg_pos - Hp.point);
+
+    Eigen::Matrix<double, 1, 6> Jd = Eigen::Matrix<double, 1, 6>::Zero();
+    Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg_pos);
+    Jd.block<1, 3>(0, 3) = n.transpose();
+    accum(Jd, Eigen::VectorXd::Constant(1, rd), P.w_pos);
+
+    const Eigen::Vector3d aG = pick_guest_axis(G.selector, Fg);
+    const Eigen::Vector3d r_ang = aG.cross(n);
+
+    Eigen::Matrix<double, 3, 6> Ja = Eigen::Matrix<double, 3, 6>::Zero();
+    Ja.block<3, 3>(0, 0) = -skew(n) * skew(aG);
+    accum(Ja, Eigen::Map<const Eigen::Vector3d>(r_ang.data()), P.w_ang);
+
+    done = true;
+  }
+  catch (...)
+  {
+  }
+
+  if (!done)
+  {
+    try
+    {
+      Pose Fh = resolvePose(H, ctx);
+      Pose Fg = resolvePose(G, ctx);
+
+      Plane Hp{ Fh.translation(), Fh.linear().col(0) };  // canonical plane
+
+      const Eigen::Vector3d n = Hp.normal.normalized();
+      const Eigen::Vector3d xg_pos = Fg.translation();
+      const double rd = n.dot(xg_pos - Hp.point);
+
+      Eigen::Matrix<double, 1, 6> Jd = Eigen::Matrix<double, 1, 6>::Zero();
+      Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg_pos);
+      Jd.block<1, 3>(0, 3) = n.transpose();
+      accum(Jd, Eigen::VectorXd::Constant(1, rd), P.w_pos);
+
+      const Eigen::Vector3d aG = pick_guest_axis(G.selector, Fg);
+      const Eigen::Vector3d r_ang = aG.cross(n);
+
+      Eigen::Matrix<double, 3, 6> Ja = Eigen::Matrix<double, 3, 6>::Zero();
+      Ja.block<3, 3>(0, 0) = -skew(n) * skew(aG);
+      accum(Ja, Eigen::Map<const Eigen::Vector3d>(r_ang.data()), P.w_ang);
+    }
+    catch (...)
+    {
+    }
+  }
+}
+
+template <typename Accum>
+static void add_concentric_axis_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G,
+                                   const sodf::components::OriginComponent& origin,
+                                   const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P,
+                                   Accum&& accum)
+{
+  using namespace sodf::assembly;
+  using namespace sodf::geometry;
+
+  Axis aH = resolveAxis(H, ctx);
+  Axis aG = resolveAxis(G, ctx);
+
+  const Eigen::Vector3d h = aH.direction.normalized();
+  const Eigen::Vector3d g = aG.direction.normalized();
+  const Eigen::Vector3d Pg = aG.point;
+  const Eigen::Vector3d Ph = aH.point;
+
+  // angular part
+  Eigen::Vector3d r_ang = g.cross(h);
+  Eigen::Matrix<double, 3, 6> J_ang = Eigen::Matrix<double, 3, 6>::Zero();
+  J_ang.block<3, 3>(0, 0) = -skew(h) * skew(g);
+  accum(J_ang, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
+
+  // lateral part (orthogonal to host axis)
+  Eigen::Matrix3d N = proj_perp(h);
+  Eigen::Vector3d r_pos = N * (Pg - Ph);
+  Eigen::Matrix<double, 3, 6> J_pos = Eigen::Matrix<double, 3, 6>::Zero();
+  J_pos.block<3, 3>(0, 0) = N * skew(Pg);
+  J_pos.block<3, 3>(0, 3) = N;
+  accum(J_pos, Eigen::Map<Eigen::Vector3d>(r_pos.data()), P.w_pos);
+}
+
+template <typename Accum>
+void add_parallel_axis_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G,
+                          const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P,
+                          Accum&& accum)
+{
+  using namespace sodf::assembly;
+  using Eigen::Vector3d;
+
+  Axis aH = resolveAxis(H, ctx);
+  Axis aG = resolveAxis(G, ctx);
+
+  const Vector3d h = aH.direction.normalized();
+  const Vector3d g = aG.direction.normalized();
+
+  Vector3d r_ang = g.cross(h);
+  Eigen::Matrix<double, 3, 6> J = Eigen::Matrix<double, 3, 6>::Zero();
+  J.block<3, 3>(0, 0) = -sodf::geometry::skew(h) * sodf::geometry::skew(g);
+  accum(J, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
+}
+
+template <typename Accum>
+void add_distance_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G, double value,
+                     const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P, Accum&& accum)
+{
+  using namespace sodf::assembly;
+
+  bool added = false;
+  try
+  {
+    Plane Hp = resolvePlane(H, ctx);
+    Pose Fg = resolvePose(G, ctx);
+
+    const Eigen::Vector3d n = Hp.normal.normalized();
+    const Eigen::Vector3d xg = Fg.translation();
+    double rd = n.dot(xg - Hp.point) - value;
+
+    Eigen::Matrix<double, 1, 6> J = Eigen::Matrix<double, 1, 6>::Zero();
+    J.block<1, 3>(0, 0) = n.transpose() * sodf::geometry::skew(xg);
+    J.block<1, 3>(0, 3) = n.transpose();
+    accum(J, Eigen::VectorXd::Constant(1, rd), P.w_pos);
+    added = true;
+  }
+  catch (...)
+  {
+  }
+
+  if (!added)
+  {
+    try
+    {
+      Axis Ha = resolveAxis(H, ctx);
+      Pose Fg = resolvePose(G, ctx);
+
+      const Eigen::Vector3d u = Ha.direction.normalized();
+      const Eigen::Vector3d xg = Fg.translation();
+      double rd = (xg - Ha.point).dot(u) - value;
+
+      Eigen::Matrix<double, 1, 6> J = Eigen::Matrix<double, 1, 6>::Zero();
+      J.block<1, 3>(0, 0) = u.transpose() * sodf::geometry::skew(xg);
+      J.block<1, 3>(0, 3) = u.transpose();
+      accum(J, Eigen::VectorXd::Constant(1, rd), P.w_pos);
+    }
+    catch (...)
+    {
+    }
+  }
+}
+
+template <typename Accum>
+void add_angle_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G, double radians,
+                  const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P, Accum&& accum)
+{
+  using namespace sodf::assembly;
+
+  Axis aH = resolveAxis(H, ctx);
+  Axis aG = resolveAxis(G, ctx);
+
+  const Eigen::Vector3d h = aH.direction.normalized();
+  const Eigen::Vector3d g = aG.direction.normalized();
+
+  const double cdes = std::cos(radians);
+  const double r = g.dot(h) - cdes;  // scalar residual
+
+  Eigen::Matrix<double, 1, 6> J = Eigen::Matrix<double, 1, 6>::Zero();
+  J.block<1, 3>(0, 0) = (g.cross(h)).transpose();
+  accum(J, Eigen::VectorXd::Constant(1, r), P.w_ang);
+}
+
+static inline void fill_concentric_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                         const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
+{
+  try
+  {
+    auto aH = sodf::assembly::resolveAxis(H, ctx);
+    auto aG = sodf::assembly::resolveAxis(G, ctx);
+    auto R = concentric_residual(aH, aG);
+    e.ang_rad = R.angle_rad;
+    e.dist_m = R.dist_m;
+  }
+  catch (...)
+  {
+    e.ok = false;
+  }
+}
+
 }  // namespace
 
 namespace sodf {
@@ -109,8 +314,6 @@ using sodf::assembly::Pose;
 using sodf::assembly::Ref;
 
 using namespace sodf::geometry;
-
-// ---------------- Jacobian diagnostics ----------------
 
 static JacobianReport summarize_linear_system_from_JTJ(const Eigen::Matrix<double, 6, 6>& JTJ, int rows)
 {
@@ -181,8 +384,7 @@ void print_jacobian_report(const JacobianReport& j)
 
 Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const database::ObjectEntityMap& map,
                                                   database::EntityID /*eid*/, components::OriginComponent& origin,
-                                                  const Eigen::Isometry3d& T0, const LSSolveParams& P,
-                                                  LSLinearStats* out_stats)
+                                                  const LSSolveParams& P, LSLinearStats* out_stats)
 {
   // WORLD-only selector context
   auto ctx = sodf::assembly::makeSelectorContext(db, map);
@@ -205,171 +407,60 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
         [&](const auto& step) {
           using TStep = std::decay_t<decltype(step)>;
 
-          if constexpr (std::is_same_v<TStep, components::Concentric>)
+          if constexpr (std::is_same_v<TStep, sodf::geometry::Transform>)
+          {
+            // known type; just don't add LS residuals for it
+            return;
+          }
+          else if constexpr (std::is_same_v<TStep, components::Concentric>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
             Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
-
-            Axis aH = sodf::assembly::resolveAxis(H, ctx);
-            Axis aG = sodf::assembly::resolveAxis(G, ctx);
-
-            const Eigen::Vector3d h = aH.direction.normalized();
-            const Eigen::Vector3d g = aG.direction.normalized();
-            const Eigen::Vector3d Pg = aG.point;
-            const Eigen::Vector3d Ph = aH.point;
-
-            // angular residual
-            Eigen::Vector3d r_ang = g.cross(h);
-            Eigen::Matrix<double, 3, 6> J_ang = Eigen::Matrix<double, 3, 6>::Zero();
-            J_ang.block<3, 3>(0, 0) = -skew(h) * skew(g);
-            accum(J_ang, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
-
-            // position residual (orthogonal to host axis)
-            Eigen::Matrix3d N = proj_perp(h);
-            Eigen::Vector3d r_pos = N * (Pg - Ph);
-            Eigen::Matrix<double, 3, 6> J_pos = Eigen::Matrix<double, 3, 6>::Zero();
-            J_pos.block<3, 3>(0, 0) = N * skew(Pg);
-            J_pos.block<3, 3>(0, 3) = N;
-            accum(J_pos, Eigen::Map<Eigen::Vector3d>(r_pos.data()), P.w_pos);
+            add_concentric_axis_ls(H, G, origin, ctx, P, accum);
           }
           else if constexpr (std::is_same_v<TStep, components::Parallel>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
             Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
-
-            Axis aH = sodf::assembly::resolveAxis(H, ctx);
-            Axis aG = sodf::assembly::resolveAxis(G, ctx);
-
-            const Eigen::Vector3d h = aH.direction.normalized();
-            const Eigen::Vector3d g = aG.direction.normalized();
-            Eigen::Vector3d r_ang = g.cross(h);
-            Eigen::Matrix<double, 3, 6> J = Eigen::Matrix<double, 3, 6>::Zero();
-            J.block<3, 3>(0, 0) = -skew(h) * skew(g);
-            accum(J, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
+            add_parallel_axis_ls(H, G, ctx, P, accum);
           }
           else if constexpr (std::is_same_v<TStep, components::Coincident>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
             Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
-            bool done = false;
-            try
-            {
-              Plane Hp = sodf::assembly::resolvePlane(H, ctx);
-              Pose Fg = sodf::assembly::resolvePose(G, ctx);
-
-              // --- Distance residual (point-to-plane) ---
-              const Eigen::Vector3d n = Hp.normal.normalized();
-              const Eigen::Vector3d xg_pos = Fg.translation();
-              const double rd = n.dot(xg_pos - Hp.point);
-
-              Eigen::Matrix<double, 1, 6> Jd = Eigen::Matrix<double, 1, 6>::Zero();
-              Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg_pos);
-              Jd.block<1, 3>(0, 3) = n.transpose();
-              accum(Jd, Eigen::VectorXd::Constant(1, rd), P.w_pos);
-
-              // --- Angular residual (align selected guest axis with plane normal) ---
-              const Eigen::Vector3d aG = pick_guest_axis(G.selector, Fg);  // <- NEW
-              const Eigen::Vector3d r_ang = aG.cross(n);
-
-              Eigen::Matrix<double, 3, 6> Ja = Eigen::Matrix<double, 3, 6>::Zero();
-              Ja.block<3, 3>(0, 0) = -skew(n) * skew(aG);
-              accum(Ja, Eigen::Map<const Eigen::Vector3d>(r_ang.data()), P.w_ang);
-
-              done = true;
-            }
-            catch (...)
-            {
-            }
-
-            if (!done)
-            {
-              try
-              {
-                Pose Fh = sodf::assembly::resolvePose(H, ctx);
-                Pose Fg = sodf::assembly::resolvePose(G, ctx);
-
-                // Host plane = host frame’s YZ plane, normal = +X (canonical)
-                Plane Hp{ Fh.translation(), Fh.linear().col(0) };
-
-                const Eigen::Vector3d n = Hp.normal.normalized();
-                const Eigen::Vector3d xg_pos = Fg.translation();
-                const double rd = n.dot(xg_pos - Hp.point);
-
-                Eigen::Matrix<double, 1, 6> Jd = Eigen::Matrix<double, 1, 6>::Zero();
-                Jd.block<1, 3>(0, 0) = n.transpose() * skew(xg_pos);
-                Jd.block<1, 3>(0, 3) = n.transpose();
-                accum(Jd, Eigen::VectorXd::Constant(1, rd), P.w_pos);
-
-                // selector-aware axis again
-                const Eigen::Vector3d aG = pick_guest_axis(G.selector, Fg);  // <- NEW
-                const Eigen::Vector3d r_ang = aG.cross(n);
-
-                Eigen::Matrix<double, 3, 6> Ja = Eigen::Matrix<double, 3, 6>::Zero();
-                Ja.block<3, 3>(0, 0) = -skew(n) * skew(aG);
-                accum(Ja, Eigen::Map<const Eigen::Vector3d>(r_ang.data()), P.w_ang);
-              }
-              catch (...)
-              {
-              }
-            }
+            add_coincident_ls(H, G, origin, ctx, P, accum);
           }
 
           else if constexpr (std::is_same_v<TStep, components::Distance>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
             Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
-            bool added = false;
-            try
-            {
-              Plane Hp = sodf::assembly::resolvePlane(H, ctx);
-              Pose Fg = sodf::assembly::resolvePose(G, ctx);
-              const Eigen::Vector3d n = Hp.normal.normalized();
-              const Eigen::Vector3d xg = Fg.translation();
-              double rd = n.dot(xg - Hp.point) - step.value;
-              Eigen::Matrix<double, 1, 6> J = Eigen::Matrix<double, 1, 6>::Zero();
-              J.block<1, 3>(0, 0) = n.transpose() * skew(xg);
-              J.block<1, 3>(0, 3) = n.transpose();
-              accum(J, Eigen::VectorXd::Constant(1, rd), P.w_pos);
-              added = true;
-            }
-            catch (...)
-            {
-            }
-
-            if (!added)
-            {
-              try
-              {
-                Axis Ha = sodf::assembly::resolveAxis(H, ctx);
-                Pose Fg = sodf::assembly::resolvePose(G, ctx);
-                const Eigen::Vector3d u = Ha.direction.normalized();
-                const Eigen::Vector3d xg = Fg.translation();
-                double rd = (xg - Ha.point).dot(u) - step.value;
-                Eigen::Matrix<double, 1, 6> J = Eigen::Matrix<double, 1, 6>::Zero();
-                J.block<1, 3>(0, 0) = u.transpose() * skew(xg);
-                J.block<1, 3>(0, 3) = u.transpose();
-                accum(J, Eigen::VectorXd::Constant(1, rd), P.w_pos);
-              }
-              catch (...)
-              {
-              }
-            }
+            add_distance_ls(H, G, step.value, ctx, P, accum);
           }
           else if constexpr (std::is_same_v<TStep, components::Angle>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
             Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
-            Axis aH = sodf::assembly::resolveAxis(H, ctx);
-            Axis aG = sodf::assembly::resolveAxis(G, ctx);
-            const Eigen::Vector3d h = aH.direction.normalized();
-            const Eigen::Vector3d g = aG.direction.normalized();
-            const double cdes = std::cos(step.radians);
-            const double r = g.dot(h) - cdes;  // scalar residual
-            Eigen::Matrix<double, 1, 6> J = Eigen::Matrix<double, 1, 6>::Zero();
-            J.block<1, 3>(0, 0) = (g.cross(h)).transpose();
-            accum(J, Eigen::VectorXd::Constant(1, r), P.w_ang);
+            add_angle_ls(H, G, step.radians, ctx, P, accum);
           }
-          // SeatConeOnCylinder and geometry::Transform / Align* are handled elsewhere
+          else if constexpr (std::is_same_v<TStep, components::SeatConeOnCylinder>)
+          {
+            Ref H = sodf::assembly::make_host_ref(step.host_cyl, origin);
+            Ref G = sodf::assembly::make_guest_ref(step.guest_cone, origin);
+
+            // Reuse the same concentric axis LS contribution
+            add_concentric_axis_ls(H, G, origin, ctx, P, accum);
+
+            // Important: DO NOT constrain motion along the axis here.
+            // Keep seating depth for the discrete SeatConeOnCylinder pass.
+          }
+          else
+          {
+            std::ostringstream oss;
+            oss << "solve_origin_least_squares_once: unsupported constraint type in OriginComponent::constraints. "
+                << "TStep = " << typeid(TStep).name();
+            throw std::runtime_error(oss.str());
+          }
         },
         step_any);
   }
@@ -393,8 +484,7 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
   }
 
   // Update pose (left-multiply)
-  Eigen::Isometry3d dT = expSE3(xi);
-  return dT * T0;
+  return expSE3(xi);
 }
 
 // ----------------------- diagnostics (WORLD) -------------------------
@@ -422,23 +512,16 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
         [&](const auto& step) {
           using TStep = std::decay_t<decltype(step)>;
 
-          if constexpr (std::is_same_v<TStep, components::Concentric>)
+          if constexpr (std::is_same_v<TStep, sodf::geometry::Transform>)
+          {
+            return;
+          }
+          else if constexpr (std::is_same_v<TStep, components::Concentric>)
           {
             Ref H = assembly::make_host_ref(step.host, origin);
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Concentric", to_ref_str(H), to_ref_str(G) };
-            try
-            {
-              auto aH = resolveAxis(H, ctx);
-              auto aG = resolveAxis(G, ctx);
-              auto R = concentric_residual(aH, aG);
-              e.ang_rad = R.angle_rad;
-              e.dist_m = R.dist_m;
-            }
-            catch (...)
-            {
-              e.ok = false;
-            }
+            fill_concentric_entry(e, H, G, ctx);
             out.push_back(std::move(e));
           }
           else if constexpr (std::is_same_v<TStep, components::Parallel>)
@@ -577,8 +660,15 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref H = assembly::make_host_ref(step.host_cyl, origin);
             Ref G = assembly::make_guest_ref(step.guest_cone, origin);
             ResidualEntry e{ "SeatCone", to_ref_str(H), to_ref_str(G) };
-            e.ok = true;  // neutral
+            fill_concentric_entry(e, H, G, ctx);
             out.push_back(std::move(e));
+          }
+          else
+          {
+            std::ostringstream oss;
+            oss << "compute_origin_residuals_compact: unsupported constraint type. "
+                << "TStep = " << typeid(TStep).name();
+            throw std::runtime_error(oss.str());
           }
         },
         step_any);

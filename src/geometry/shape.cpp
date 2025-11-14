@@ -761,23 +761,6 @@ Shape truncateShapeToHeight(const Shape& shape, double new_height)
       dim(result).at(DimRole::BaseRadius) = rb;        // unchanged
       dim(result).at(DimRole::TopRadius) = clipped_r;  // new top
       dim(result).at(DimRole::Height) = new_height;    // new height
-
-      std::cout << "[SphericalSegment Truncation]\n"
-                   "  base_r     = "
-                << rb
-                << "\n"
-                   "  top_r      = "
-                << rt
-                << "\n"
-                   "  h          = "
-                << h
-                << "\n"
-                   "  new_height = "
-                << new_height
-                << "\n"
-                   "  new_r      = "
-                << clipped_r << std::endl;
-      break;
     }
 
     default:
