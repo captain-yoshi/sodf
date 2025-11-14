@@ -191,39 +191,85 @@ Pose solveDistancePointPoint(const Point& Hp, const Point& Gp, double distance)
   return T;
 }
 
-static inline double cone_radius_at(double r0, double r1, double H, double z)
+inline double cone_radius_at(double r0, double r1, double H, double z)
 {
-  double t = std::clamp(z / std::max(H, 1e-16), 0.0, 1.0);
-  return (1.0 - t) * r0 + t * r1;
+  if (H <= 0.0)
+    return r0;             // degenerate, but safe
+  const double t = z / H;  // ∈[0,1]
+  return r0 + (r1 - r0) * t;
 }
 
-Pose solveSeatConeOnCylinder(double r_cyl, const Axis& Hcyl, double r0_cone, double r1_cone, double H_cone,
-                             const Axis& Gcone, double tol, int max_it)
+bool solveSeatConeOnCylinder(double r_cyl, const Axis& Hcyl, double r0_cone, double r1_cone, double H_cone,
+                             const Axis& Gcone, Pose& T_out, double tol, int max_it)
 {
-  Pose T = Pose::Identity();
+  T_out = Pose::Identity();
 
   // 1) Align axes
-  T.linear() = align_dir_to_dir(Hcyl.direction, Gcone.direction);
+  T_out.linear() = align_dir_to_dir(Hcyl.direction, Gcone.direction);
 
-  // 2) Find z* where cone radius matches cylinder radius
-  double lo = 0.0, hi = H_cone, z = 0.0;
+  // 1a) Check if a solution z∈[0,H] can even exist.
+  const double r_lo = cone_radius_at(r0_cone, r1_cone, H_cone, 0.0);
+  const double r_hi = cone_radius_at(r0_cone, r1_cone, H_cone, H_cone);
+  const double r_min = std::min(r_lo, r_hi);
+  const double r_max = std::max(r_lo, r_hi);
+
+  if (r_cyl < r_min - tol || r_cyl > r_max + tol)
+  {
+    // No solution: cylinder radius entirely outside [r_min, r_max]
+    return false;
+  }
+
+  // 2) Find z* where cone radius matches cylinder radius using bisection
+  double lo = 0.0;
+  double hi = H_cone;
+  double z = 0.0;
+  double err = 0.0;
+
+  const bool increasing = (r_hi >= r_lo);  // radius vs. z monotonic direction
+
   for (int it = 0; it < max_it; ++it)
   {
     z = 0.5 * (lo + hi);
-    double r = cone_radius_at(r0_cone, r1_cone, H_cone, z);
-    double err = r - r_cyl;
-    if (std::abs(err) < tol)
+    const double r = cone_radius_at(r0_cone, r1_cone, H_cone, z);
+    err = r - r_cyl;
+
+    if (std::abs(err) <= tol)
       break;
-    (err > 0.0) ? (lo = z) : (hi = z);
+
+    if (increasing)
+    {
+      // r(z) increasing: r>r_cyl => z too big
+      if (err > 0.0)
+        hi = z;
+      else
+        lo = z;
+    }
+    else
+    {
+      // r(z) decreasing: r<r_cyl => z too big
+      if (err < 0.0)
+        hi = z;
+      else
+        lo = z;
+    }
   }
 
-  // 3) Translate so guest cone circle at z seats at cylinder "mouth" plane (through Hcyl.point)
-  Eigen::Vector3d pG = T * Gcone.point;  // rotated guest axis anchor
-  Eigen::Vector3d pH = Hcyl.point;
-  // Move pG by (pH - (pG + z*Hdir))
-  Eigen::Vector3d d = pH - (pG + z * Hcyl.direction);
-  T.pretranslate(d);
-  return T;
+  // Could not reach tolerance after max_it → treat as "no solution"
+  if (std::abs(err) > tol)
+    return false;
+
+  // 3) Translate so guest cone circle at z* seats at cylinder mouth plane
+  Eigen::Vector3d pG = T_out * Gcone.point;  // rotated guest anchor, in HOST frame
+  Eigen::Vector3d pH = Hcyl.point;           // host mouth, in HOST frame
+  const Eigen::Vector3d h = Hcyl.direction.normalized();
+
+  // Decide which way along the axis to move: always move TOWARDS the host mouth.
+  // If pG is “in front” of pH along +h, we must move in -h; otherwise in +h.
+  const double sign_axis = ((pG - pH).dot(h) >= 0.0) ? -1.0 : +1.0;
+
+  Eigen::Vector3d d = pH - (pG + sign_axis * z * h);
+  T_out.pretranslate(d);
+  return true;
 }
 
 }  // namespace assembly

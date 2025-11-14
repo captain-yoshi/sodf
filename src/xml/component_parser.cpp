@@ -185,8 +185,6 @@ void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLEle
   Link link;
   const std::string id = evalElementIdRequired(elem);
 
-  std::cout << "link id = " << id << std::endl;
-
   // BoundingBox (ptional)
   const tinyxml2::XMLElement* bbox = elem->FirstChildElement("BoundingBox");
   if (bbox)
