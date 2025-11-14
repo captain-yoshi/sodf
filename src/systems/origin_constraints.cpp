@@ -515,25 +515,35 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
     // ---------- Validate in WORLD; throw on failure (no rollback) ----------
     auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
 
+    // Count constraints that are either hard-failed (!ok)
+    // or numerically outside tolerance.
     std::size_t bad = 0;
-    std::ostringstream why;
     for (const auto& e : residuals)
     {
-      const bool ok = e.ok && (e.ang_rad <= kOriginAngTolRad) && (e.dist_m <= kOriginDistTolM);
-      if (!ok)
+      bool violated = false;
+
+      if (!e.ok)
       {
-        ++bad;
-        why << " - " << e.kind << " host='" << e.host_ref << "' guest='" << e.guest_ref
-            << "' ang=" << sodf::geometry::toDegrees(e.ang_rad) << "deg"
-            << " dist=" << (e.dist_m * 1e3) << "mm\n";
+        violated = true;
       }
+      else
+      {
+        const bool ang_bad = (std::abs(e.ang_rad) > kOriginAngTolRad);
+        const bool dist_bad = (std::abs(e.dist_m) > kOriginDistTolM);
+        violated = ang_bad || dist_bad;
+      }
+
+      if (violated)
+        ++bad;
     }
 
     if (bad)
     {
       // Leave the current (bad) pose as-is so the user can inspect it, but signal failure.
+      std::string why = sodf::systems::format_origin_residual_errors(residuals, kOriginAngTolRad, kOriginDistTolM);
+
       throw std::runtime_error("Origin solve violated " + std::to_string(bad) + " constraint(s) beyond tolerance:\n" +
-                               why.str());
+                               why);
     }
   });
 }

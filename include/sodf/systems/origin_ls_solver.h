@@ -37,6 +37,8 @@ struct ResidualEntry
   double ang_rad = 0.0;  // angular residual (rad), meaning varies per kind (see below)
   double dist_m = 0.0;   // distance residual (m)
   bool ok = true;        // within tolerances?
+
+  std::string error_msg;
 };
 
 /**
@@ -62,8 +64,8 @@ void print_jacobian_report(const JacobianReport& j);
 std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& db,
                                                             const database::ObjectEntityMap& map,
                                                             const components::OriginComponent& origin);
-
-void print_residual_line(const ResidualEntry& e, double tol_ang, double tol_dist);
+std::string format_origin_residual_errors(const std::vector<ResidualEntry>& residuals, double tol_ang_rad,
+                                          double tol_dist_m);
 
 }  // namespace systems
 }  // namespace sodf
