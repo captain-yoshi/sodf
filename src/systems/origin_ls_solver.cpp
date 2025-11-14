@@ -289,6 +289,11 @@ void add_angle_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G, do
 static inline void fill_concentric_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
                                          const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
 {
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
   try
   {
     auto aH = sodf::assembly::resolveAxis(H, ctx);
@@ -297,10 +302,223 @@ static inline void fill_concentric_entry(sodf::systems::ResidualEntry& e, const 
     e.ang_rad = R.angle_rad;
     e.dist_m = R.dist_m;
   }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = std::string("concentric_residual: ") + ex.what();
+  }
   catch (...)
   {
     e.ok = false;
+    e.error_msg = "concentric_residual: unknown exception";
   }
+}
+
+static inline void fill_parallel_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                       const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
+{
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
+  try
+  {
+    auto aH = sodf::assembly::resolveAxis(H, ctx);
+    auto aG = sodf::assembly::resolveAxis(G, ctx);
+    auto R = parallel_residual(aH, aG);
+    e.ang_rad = R.angle_rad;
+    e.dist_m = 0.0;
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = std::string("parallel_residual: ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = "parallel_residual: unknown exception";
+  }
+}
+static inline void fill_distance_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                       const sodf::assembly::Ref& G, double value,
+                                       const sodf::assembly::SelectorContext& ctx)
+{
+  using namespace sodf::assembly;
+
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
+  std::string first_error;  // keep error of attempt 1 (if any)
+
+  // -------- Attempt 1: Plane–Frame distance --------
+  try
+  {
+    auto Hp = resolvePlane(H, ctx);
+    auto Fg = resolvePose(G, ctx);
+
+    auto R = plane_frame_residual(Hp, Fg);
+    e.ang_rad = R.angle_rad;
+
+    const Eigen::Vector3d n = Hp.normal.normalized();
+    const double have = n.dot(Fg.translation() - Hp.point);
+    e.dist_m = std::abs(have - value);
+    return;  // success
+  }
+  catch (const std::exception& ex)
+  {
+    first_error = std::string("attempt 1 (Plane–Frame): ") + ex.what();
+  }
+  catch (...)
+  {
+    first_error = "attempt 1 (Plane–Frame): unknown exception";
+  }
+
+  // -------- Attempt 2: Axis–Frame distance --------
+  try
+  {
+    auto Ha = resolveAxis(H, ctx);
+    auto Fg = resolvePose(G, ctx);
+
+    auto R = axis_frame_distance_residual(Ha, Fg, value);
+    e.ang_rad = 0.0;
+    e.dist_m = R.dist_m;
+    return;  // success
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = first_error;
+    if (!e.error_msg.empty())
+      e.error_msg += " | ";
+    e.error_msg += std::string("attempt 2 (Axis–Frame): ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = first_error;
+    if (!e.error_msg.empty())
+      e.error_msg += " | ";
+    e.error_msg += "attempt 2 (Axis–Frame): unknown exception";
+  }
+}
+
+static inline void fill_coincident_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                         const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
+{
+  using namespace sodf::assembly;
+
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
+  std::string first_error;  // keep error of attempt 1 (if any)
+
+  // -------- Attempt 1: host as Plane, guest as Pose --------
+  try
+  {
+    auto Hp = resolvePlane(H, ctx);
+    auto Fg = resolvePose(G, ctx);
+
+    int col = 0;
+    if (G.selector == "axisY")
+      col = 1;
+    else if (G.selector == "axisZ")
+      col = 2;
+
+    auto R = plane_frame_residual_axis(Hp, Fg, col);
+    e.ang_rad = R.angle_rad;
+    e.dist_m = R.dist_m;
+    return;  // success
+  }
+  catch (const std::exception& ex)
+  {
+    first_error = std::string("attempt 1 (Plane host): ") + ex.what();
+  }
+  catch (...)
+  {
+    first_error = "attempt 1 (Plane host): unknown exception";
+  }
+
+  // -------- Attempt 2: host as Pose → canonical plane (X-axis normal) --------
+  try
+  {
+    auto Fh = resolvePose(H, ctx);
+    auto Fg = resolvePose(G, ctx);
+
+    Plane Hp{ Fh.translation(), Fh.linear().col(0) };  // canonical plane from host
+
+    int col = 0;
+    if (G.selector == "axisY")
+      col = 1;
+    else if (G.selector == "axisZ")
+      col = 2;
+
+    auto R = plane_frame_residual_axis(Hp, Fg, col);
+    e.ang_rad = R.angle_rad;
+    e.dist_m = R.dist_m;
+    return;  // success
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = first_error;
+    if (!e.error_msg.empty())
+      e.error_msg += " | ";
+    e.error_msg += std::string("attempt 2 (Pose host): ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = first_error;
+    if (!e.error_msg.empty())
+      e.error_msg += " | ";
+    e.error_msg += "attempt 2 (Pose host): unknown exception";
+  }
+}
+
+static inline void fill_angle_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                    const sodf::assembly::Ref& G, double target_radians,
+                                    const sodf::assembly::SelectorContext& ctx)
+{
+  using namespace sodf::assembly;
+
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
+  try
+  {
+    auto aH = resolveAxis(H, ctx);
+    auto aG = resolveAxis(G, ctx);
+    double hv = sodf::geometry::angle_between(aH.direction, aG.direction);
+    e.ang_rad = std::abs(hv - target_radians);
+    e.dist_m = 0.0;
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = std::string("angle_residual: ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = "angle_residual: unknown exception";
+  }
+}
+
+// SeatCone already uses concentric axis residuals for diagnostics
+static inline void fill_seatcone_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                       const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
+{
+  // Just delegate to concentric with its own error handling
+  fill_concentric_entry(e, H, G, ctx);
+  e.kind = "SeatCone";  // if you want to override the label
 }
 
 }  // namespace
@@ -529,111 +747,23 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref H = assembly::make_host_ref(step.host, origin);
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Parallel", to_ref_str(H), to_ref_str(G) };
-            try
-            {
-              auto aH = resolveAxis(H, ctx);
-              auto aG = resolveAxis(G, ctx);
-              auto R = parallel_residual(aH, aG);
-              e.ang_rad = R.angle_rad;
-              e.dist_m = 0.0;
-            }
-            catch (...)
-            {
-              e.ok = false;
-            }
+            fill_parallel_entry(e, H, G, ctx);
             out.push_back(std::move(e));
           }
-          // --- in compute_origin_residuals_compact(), Coincident diagnostics branch ---
           else if constexpr (std::is_same_v<TStep, components::Coincident>)
           {
             Ref H = assembly::make_host_ref(step.host, origin);
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Coincident", to_ref_str(H), to_ref_str(G) };
-            bool ok = false;
-            try
-            {
-              auto Hp = resolvePlane(H, ctx);
-              auto Fg = resolvePose(G, ctx);
-
-              // selector-aware angle (uses guest axis X/Y/Z):
-              int col = 0;
-              if (G.selector == "axisY")
-                col = 1;
-              else if (G.selector == "axisZ")
-                col = 2;
-              auto R = plane_frame_residual_axis(Hp, Fg, col);  // <- NEW
-
-              e.ang_rad = R.angle_rad;
-              e.dist_m = R.dist_m;
-              ok = true;
-            }
-            catch (...)
-            {
-            }
-
-            if (!ok)
-            {
-              try
-              {
-                auto Fh = resolvePose(H, ctx);
-                auto Fg = resolvePose(G, ctx);
-                Plane Hp{ Fh.translation(), Fh.linear().col(0) };
-
-                int col = 0;
-                if (G.selector == "axisY")
-                  col = 1;
-                else if (G.selector == "axisZ")
-                  col = 2;
-                auto R = plane_frame_residual_axis(Hp, Fg, col);  // <- NEW
-
-                e.ang_rad = R.angle_rad;
-                e.dist_m = R.dist_m;
-                ok = true;
-              }
-              catch (...)
-              {
-              }
-            }
-            e.ok = ok;
+            fill_coincident_entry(e, H, G, ctx);
             out.push_back(std::move(e));
           }
-
           else if constexpr (std::is_same_v<TStep, components::Distance>)
           {
             Ref H = assembly::make_host_ref(step.host, origin);
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Distance", to_ref_str(H), to_ref_str(G) };
-            bool ok = false;
-            try
-            {
-              auto Hp = resolvePlane(H, ctx);
-              auto Fg = resolvePose(G, ctx);
-              auto R = plane_frame_residual(Hp, Fg);
-              e.ang_rad = R.angle_rad;
-              const Eigen::Vector3d n = Hp.normal.normalized();
-              const double have = n.dot(Fg.translation() - Hp.point);
-              e.dist_m = std::abs(have - step.value);
-              ok = true;
-            }
-            catch (...)
-            {
-            }
-            if (!ok)
-            {
-              try
-              {
-                auto Ha = resolveAxis(H, ctx);
-                auto Fg = resolvePose(G, ctx);
-                auto R = axis_frame_distance_residual(Ha, Fg, step.value);
-                e.ang_rad = 0.0;
-                e.dist_m = R.dist_m;
-                ok = true;
-              }
-              catch (...)
-              {
-              }
-            }
-            e.ok = ok;
+            fill_distance_entry(e, H, G, step.value, ctx);
             out.push_back(std::move(e));
           }
           else if constexpr (std::is_same_v<TStep, components::Angle>)
@@ -641,18 +771,7 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref H = assembly::make_host_ref(step.host, origin);
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Angle", to_ref_str(H), to_ref_str(G) };
-            try
-            {
-              auto aH = resolveAxis(H, ctx);
-              auto aG = resolveAxis(G, ctx);
-              const double have = angle_between(aH.direction, aG.direction);
-              e.ang_rad = std::abs(have - step.radians);
-              e.dist_m = 0.0;
-            }
-            catch (...)
-            {
-              e.ok = false;
-            }
+            fill_angle_entry(e, H, G, step.radians, ctx);
             out.push_back(std::move(e));
           }
           else if constexpr (std::is_same_v<TStep, components::SeatConeOnCylinder>)
@@ -660,7 +779,7 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref H = assembly::make_host_ref(step.host_cyl, origin);
             Ref G = assembly::make_guest_ref(step.guest_cone, origin);
             ResidualEntry e{ "SeatCone", to_ref_str(H), to_ref_str(G) };
-            fill_concentric_entry(e, H, G, ctx);
+            fill_seatcone_entry(e, H, G, ctx);
             out.push_back(std::move(e));
           }
           else
@@ -677,14 +796,61 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
   return out;
 }
 
-void print_residual_line(const ResidualEntry& e, double tol_ang, double tol_dist)
+std::string format_origin_residual_errors(const std::vector<ResidualEntry>& residuals, double tol_ang_rad,
+                                          double tol_dist_m)
 {
-  const bool ok = (e.ang_rad <= tol_ang) && (e.dist_m <= tol_dist);
-  std::cout << "  [" << (ok ? "OK " : "BAD") << "] " << std::left << std::setw(11) << e.kind << " host='" << e.host_ref
-            << "'  guest='" << e.guest_ref << "'"
-            << "  ang=" << std::fixed << std::setprecision(4) << sodf::geometry::toDegrees(e.ang_rad) << "deg"
-            << "  dist=" << std::setprecision(6) << e.dist_m * 1e3 << "mm"
-            << "\n";
+  std::ostringstream oss;
+
+  auto dump_error_lines = [&](const ResidualEntry& e) {
+    if (e.error_msg.empty())
+      return;
+
+    // error_msg is something like:
+    // "attempt 1 (...): ... | attempt 2 (...): ..."
+    std::string msg = e.error_msg;
+    std::size_t start = 0;
+    while (start < msg.size())
+    {
+      std::size_t pipe = msg.find('|', start);
+      std::string part = msg.substr(start, (pipe == std::string::npos ? msg.size() : pipe) - start);
+
+      // trim leading spaces
+      auto first_non_space = part.find_first_not_of(" \t");
+      if (first_non_space != std::string::npos)
+        part.erase(0, first_non_space);
+
+      if (!part.empty())
+        oss << "       error: " << part << "\n";
+
+      if (pipe == std::string::npos)
+        break;
+      start = pipe + 1;
+    }
+  };
+
+  for (const auto& e : residuals)
+  {
+    // 1) Hard errors (failed to evaluate residual)
+    if (!e.ok)
+    {
+      oss << " - " << e.kind << " host='" << e.host_ref << "' guest='" << e.guest_ref << "'\n";
+      dump_error_lines(e);
+      continue;
+    }
+
+    // 2) Numerical violations beyond tolerance
+    const bool violated = (std::abs(e.ang_rad) > tol_ang_rad) || (std::abs(e.dist_m) > tol_dist_m);
+
+    if (!violated)
+      continue;
+
+    oss << " - " << e.kind << " host='" << e.host_ref << "' guest='" << e.guest_ref << "'"
+        << " ang=" << sodf::geometry::toDegrees(e.ang_rad) << "deg"
+        << " dist=" << (e.dist_m * 1e3) << "mm"
+        << "\n";
+  }
+
+  return oss.str();
 }
 
 }  // namespace systems
