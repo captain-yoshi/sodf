@@ -54,8 +54,7 @@ struct ResidualEntry
  */
 Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const database::ObjectEntityMap& map,
                                                   database::EntityID eid, components::OriginComponent& origin,
-                                                  const Eigen::Isometry3d& T0, const LSSolveParams& P = {},
-                                                  LSLinearStats* out_stats = nullptr);
+                                                  const LSSolveParams& P = {}, LSLinearStats* out_stats = nullptr);
 
 JacobianReport summarize_linear_system(const LSLinearStats& S);
 void print_jacobian_report(const JacobianReport& j);

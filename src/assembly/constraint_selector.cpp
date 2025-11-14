@@ -9,53 +9,6 @@
 namespace sodf {
 namespace assembly {
 
-// ---------- tiny debug helpers (optional) ------------------------------------
-
-static inline void dumpAxis(const char* label, const Axis& a)
-{
-  std::cout << "      " << label << ".point = [" << a.point.transpose() << "]  dir = [" << a.direction.transpose()
-            << "]\n";
-}
-
-static inline void dumpPlane(const char* label, const Plane& p)
-{
-  std::cout << "      " << label << ".point = [" << p.point.transpose() << "]  normal = [" << p.normal.transpose()
-            << "]\n";
-}
-
-// Provided elsewhere in your codebase; we just call it.
-extern void printTF(const char* label, const Eigen::Isometry3d& P);
-
-static inline void dumpPose(const char* label, const Eigen::Isometry3d& P)
-{
-  printTF(label, P);
-}
-
-static inline void dumpLineToLine(const Axis& A, const Axis& B)
-{
-  const Eigen::Vector3d u = A.direction.normalized();
-  const Eigen::Vector3d v = B.direction.normalized();
-  const double c = std::clamp(u.dot(v), -1.0, 1.0);
-  const double ang = std::acos(c);
-
-  // shortest distance between two (possibly skew) lines
-  const Eigen::Vector3d w0 = A.point - B.point;
-  const double denom = 1.0 - c * c;
-  double dist;
-  if (denom < 1e-12)
-  {
-    // nearly parallel: distance = |(A0-B0) x u|
-    dist = w0.cross(u).norm();
-  }
-  else
-  {
-    const double s = (w0.dot(u) - w0.dot(v) * c) / denom;
-    const Eigen::Vector3d PcA = A.point - s * u;
-    dist = (B.point - PcA).cross(v).norm();
-  }
-  std::cout << "      angle(u,v) = " << ang << " rad, line-line shortest dist ≈ " << dist << " m\n";
-}
-
 // -------------------- Frame conversion helpers (world ↔ host) ----------------
 
 // NOTE: These helpers are local to this file; we compute the host pose (H_w)
@@ -266,8 +219,6 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
   {
     Pose Fh_w = resolvePose(host, ctx);
     Pose Fg_w = resolvePose(guest, ctx);
-    dumpPose("host pose (world)", Fh_w);
-    dumpPose("guest pose (world)", Fg_w);
 
     Pose Fh_h = to_host_pose(H_w, Fh_w);  // should be ~Identity
     Pose Fg_h = to_host_pose(H_w, Fg_w);
@@ -285,14 +236,12 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
   try
   {
     Plane Hp_w = resolvePlane(host, ctx);
-    dumpPlane("host plane (world)", Hp_w);
 
     Plane Hp_h = to_host_plane(H_w, Hp_w);
 
     try
     {
       Pose Fg_w = resolvePose(guest, ctx);
-      dumpPose("guest pose (world)", Fg_w);
       Pose Fg_h = to_host_pose(H_w, Fg_w);
 
       Pose dH = solveCoincidentPlaneFrame(Hp_h, Fg_h);
@@ -305,7 +254,6 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
     try
     {
       Point Gp_w = resolvePoint(guest, ctx);
-      std::cout << "      guest point (world) = [" << Gp_w.transpose() << "]\n";
       Point Gp_h = to_host_point(H_w, Gp_w);
 
       Pose dH = solveCoincidentPointPoint(Hp_h.point, Gp_h);
@@ -324,8 +272,6 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
   {
     Point Hp_w = resolvePoint(host, ctx);
     Pose Fg_w = resolvePose(guest, ctx);
-    std::cout << "      host point (world) = [" << Hp_w.transpose() << "]\n";
-    dumpPose("guest pose (world)", Fg_w);
 
     Point Hp_h = to_host_point(H_w, Hp_w);
     Pose Fg_h = to_host_pose(H_w, Fg_w);
@@ -351,11 +297,6 @@ Eigen::Isometry3d Concentric(const Ref& host_axis, const Ref& guest_axis, const 
   Axis aH_w = resolveAxis(host_axis, ctx);
   Axis aG_w = resolveAxis(guest_axis, ctx);
 
-  // Debug (world)
-  dumpAxis("host axis (world)", aH_w);
-  dumpAxis("guest axis (world)", aG_w);
-  dumpLineToLine(aH_w, aG_w);
-
   // Convert to host
   Axis aH_h = to_host_axis(H_w, aH_w);
   Axis aG_h = to_host_axis(H_w, aG_w);
@@ -375,10 +316,6 @@ Eigen::Isometry3d Parallel(const Ref& host_axis, const Ref& guest_axis, const Se
 
   Axis aH_w = resolveAxis(host_axis, ctx);
   Axis aG_w = resolveAxis(guest_axis, ctx);
-
-  dumpAxis("host axis (world)", aH_w);
-  dumpAxis("guest axis (world)", aG_w);
-  dumpLineToLine(aH_w, aG_w);
 
   Axis aH_h = to_host_axis(H_w, aH_w);
   Axis aG_h = to_host_axis(H_w, aG_w);
@@ -475,6 +412,7 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
     SelectorContext::InsertionData insH;
     if (!ctx.getInsertion(host_cyl, insH))
       throw std::runtime_error("SeatConeOnCylinder: host '" + host_cyl.raw + "' is not a cylinder and not an insertion");
+
     double rtmp = 0.0;
     if (!insH.getCylinderRadius || !insH.getCylinderRadius(rtmp))
       throw std::runtime_error("SeatConeOnCylinder: host '" + host_cyl.raw + "' lacks cylinder radius");
@@ -492,14 +430,26 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
       throw std::runtime_error("SeatConeOnCylinder: guest '" + guest_cone.raw + "' is not a cone and not an insertion");
     if (!insG.getConeDims || !insG.getConeDims(r0, r1, Hcone))
       throw std::runtime_error("SeatConeOnCylinder: guest '" + guest_cone.raw + "' lacks cone dims");
+
     axG_w = Axis{ insG.mouth.translation(), insG.axis.normalized() };
   }
 
+  // Axes in host frame
   Axis axH_h = to_host_axis(H_w, axH_w);
   Axis axG_h = to_host_axis(H_w, axG_w);
 
-  Eigen::Isometry3d dH = solveSeatConeOnCylinder(r, axH_h, r0, r1, Hcone, axG_h, tol, max_it);
-  return delta_host_to_world(H_w, dH);
+  Pose dH;
+  if (!solveSeatConeOnCylinder(r, axH_h, r0, r1, Hcone, axG_h, dH, tol, max_it))
+  {
+    std::ostringstream oss;
+    oss << "SeatConeOnCylinder: no solution for host='" << host_cyl.raw << "' guest='" << guest_cone.raw
+        << "' (r_cyl=" << r << ", cone radius range=[" << std::min(r0, r1) << ", " << std::max(r0, r1) << "])";
+    throw std::runtime_error(oss.str());
+  }
+
+  Eigen::Isometry3d dW = delta_host_to_world(H_w, dH);
+
+  return dW;
 }
 
 }  // namespace assembly
