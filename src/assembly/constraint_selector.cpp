@@ -139,11 +139,19 @@ Plane resolvePlane(const Ref& r, const SelectorContext& ctx)
     case NamespaceKind::Origin:
     case NamespaceKind::Frame:
     {
-      // Frame's XY plane with +Z normal
       Pose F;
       if (!ctx.getFrame(r, F))
         throw std::runtime_error("resolvePlane: frame not found for '" + r.raw + "'");
-      return Plane{ F.translation(), F.linear().col(0).normalized() };
+
+      Eigen::Vector3d n;
+      if (r.selector == "axisX")
+        n = F.linear().col(0);
+      else if (r.selector == "axisY")
+        n = F.linear().col(1);
+      else  // "", "axis", or "axisZ" → default Z normal
+        n = F.linear().col(2);
+
+      return Plane{ F.translation(), n.normalized() };
     }
 
     case NamespaceKind::Insertion:
