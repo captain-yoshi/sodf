@@ -6,6 +6,7 @@
 #include <sodf/assembly/namespace.h>
 #include <sodf/assembly/selector_context_db.h>
 
+#include <sodf/components/object.h>
 #include <sodf/components/origin.h>
 #include <sodf/components/origin_constraint.h>
 #include <sodf/geometry/transform.h>
@@ -13,7 +14,9 @@
 
 #include <algorithm>
 #include <iostream>
+#include <queue>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace sodf {
 namespace systems {
@@ -57,8 +60,7 @@ static void eval_origin_residuals(database::Database& db, const database::Object
   }
 }
 
-}  // namespace
-
+// Infer host_object from the first constraint that mentions a host.
 static std::string infer_host_object(const components::OriginComponent& origin)
 {
   std::string result;
@@ -99,6 +101,7 @@ static std::string infer_host_object(const components::OriginComponent& origin)
   return result;
 }
 
+// Optional two-pin presnap to give LS a good initial guess
 static bool two_pin_presnap(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
                             components::OriginComponent& origin, Eigen::Isometry3d& T_world)
 {
@@ -151,7 +154,7 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
     return false;  // need exactly 2 pin-like constraints
 
   // ---------------- Temporarily write T_world into DB ----------------
-  auto* tcomp = db.get<TransformComponent>(eid);
+  auto* tcomp = db.get<components::TransformComponent>(eid);
   if (!tcomp || tcomp->elements.empty())
     return false;
 
@@ -160,7 +163,7 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
   std::string parent_backup = root_node.parent;
   Eigen::Isometry3d local_backup = root_node.local;
 
-  root_node.parent.clear();  // WORLD
+  root_node.parent = {};  // WORLD
   root_node.local = T_world;
   root_node.dirty = true;
   sodf::systems::update_entity_global_transforms(db, eid, map);
@@ -227,325 +230,482 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
   return true;
 }
 
-void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& map)
+}  // namespace
+
+// ------------------------ single-Origin solver -----------------------------
+
+static void solve_single_origin(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
+                                components::TransformComponent& tcomp, components::OriginComponent& origin)
 {
   using namespace sodf::components;
 
-  db.each([&](database::EntityID eid, TransformComponent& tcomp, OriginComponent& origin) {
-    // ---------- Ensure a root slot exists ----------
-    if (tcomp.elements.empty())
-      tcomp.elements.emplace_back("root", geometry::TransformNode{});
+  // ---------- Ensure a root slot exists ----------
+  if (tcomp.elements.empty())
+    tcomp.elements.emplace_back("root", geometry::TransformNode{});
 
-    auto& root_pair = tcomp.elements.front();
-    auto& root_node = root_pair.second;
+  auto& root_pair = tcomp.elements.front();
+  auto& root_node = root_pair.second;
 
-    // ---------- Pin guest_object to THIS entity (throw if we cannot infer) ----------
-    auto object_id_from_entity_or_empty = [&](database::EntityID q) -> std::string {
-      for (const auto& kv : map)
-        if (kv.second == q)
-          return kv.first;
-      return {};
-    };
-    if (origin.guest_object.empty() || map.find(origin.guest_object) == map.end() || map.at(origin.guest_object) != eid)
+  // ---------- Pin guest_object to THIS entity (throw if we cannot infer) ----------
+  auto object_id_from_entity_or_empty = [&](database::EntityID q) -> std::string {
+    for (const auto& kv : map)
+      if (kv.second == q)
+        return kv.first;
+    return {};
+  };
+
+  if (origin.guest_object.empty() || map.find(origin.guest_object) == map.end() || map.at(origin.guest_object) != eid)
+  {
+    const std::string obj = object_id_from_entity_or_empty(eid);
+    if (obj.empty())
+      throw std::runtime_error("[Origin] Cannot infer guest_object for entity.");
+    origin.guest_object = obj;
+  }
+
+  // host_object is already inferred in apply_origin_constraints (topology phase)
+
+  // ---------- Establish baseline T0 in WORLD (initial guess) ----------
+  // Empty parent is fine and means WORLD.
+  Eigen::Isometry3d T0 = root_node.local;  // default baseline = current local (assumed world)
+  std::string new_parent = root_node.parent;
+
+  bool baseline_found = false;
+  for (const auto& step_any : origin.constraints)
+  {
+    if (baseline_found)
+      break;
+
+    std::visit(
+        [&](const auto& step) {
+          using TStep = std::decay_t<decltype(step)>;
+
+          if constexpr (std::is_same_v<TStep, sodf::geometry::Transform>)
+          {
+            // Absolute world placement; parent may be "" (WORLD)
+            T0 = step.tf;
+            new_parent = step.parent;
+            baseline_found = true;
+          }
+        },
+        step_any);
+  }
+
+  // Current world guess we will refine with LS and SeatCone passes
+  Eigen::Isometry3d T_world = T0;
+
+  // Optional presnap for the two-pin case (good initial guess)
+  two_pin_presnap(db, map, eid, origin, T_world);
+
+  // ---------- Solve (WORLD-only LS) ----------
+  systems::LSSolveParams lp;
+  lp.lambda = kOriginLsLambda;
+  lp.w_ang = kOriginLsAngleWeight;
+  lp.w_pos = kOriginLsPositionWeight;
+
+  {
+    // Temporarily treat the root as WORLD-parented during LS
+    std::string ls_parent_backup = root_node.parent;
+    Eigen::Isometry3d ls_local_backup = root_node.local;
+
+    LSLinearStats stats{};
+    const int max_ls_iters = kOriginMaxLsIters;
+
+    // Step-size thresholds: emergency escape only
+    const double rot_tol = kOriginLsStepRotTol;      // rad
+    const double trans_tol = kOriginLsStepTransTol;  // m
+
+    // Track best pose seen during LS (by residual)
+    Eigen::Isometry3d T_best = T_world;
+    double best_ang_rad = std::numeric_limits<double>::infinity();
+    double best_dist_m = std::numeric_limits<double>::infinity();
+
+    for (int it = 0; it < max_ls_iters; ++it)
     {
-      const std::string obj = object_id_from_entity_or_empty(eid);
-      if (obj.empty())
-        throw std::runtime_error("[Origin] Cannot infer guest_object for entity.");
-      origin.guest_object = obj;
-    }
+      // 1) Write current guess into DB as WORLD pose
+      root_node.parent = {};  // WORLD
+      root_node.local = T_world;
+      root_node.dirty = true;
+      sodf::systems::update_entity_global_transforms(db, eid, map);
 
-    if (origin.host_object.empty())
-    {
-      origin.host_object = infer_host_object(origin);
-    }
+      // 2) Evaluate residuals at THIS pose
+      double max_ang = 0.0;
+      double max_dist = 0.0;
+      eval_origin_residuals(db, map, origin, max_ang, max_dist);
 
-    // ---------- Establish baseline T0 in WORLD (initial guess) ----------
-    // Empty parent is fine and means WORLD.
-    Eigen::Isometry3d T0 = root_node.local;  // default baseline = current local (assumed world)
-    std::string new_parent = root_node.parent;
+      // 3) Track best pose so far
+      if (max_dist < best_dist_m || (max_dist == best_dist_m && max_ang < best_ang_rad))
+      {
+        best_dist_m = max_dist;
+        best_ang_rad = max_ang;
+        T_best = T_world;
+      }
 
-    bool baseline_found = false;
-    for (const auto& step_any : origin.constraints)
-    {
-      if (baseline_found)
+      // 4) Residual-based stopping: if already good enough, stop LS
+      if (max_ang <= kOriginAngTolRad && max_dist <= kOriginDistTolM)
         break;
 
-      std::visit(
-          [&](const auto& step) {
-            using TStep = std::decay_t<decltype(step)>;
+      // 5) One GN step around *current DB pose*
+      Eigen::Isometry3d dT = systems::solve_origin_least_squares_once(db, map, eid, origin, lp, &stats);
+      // dT is an increment: T_new = dT * T_old
 
-            if constexpr (std::is_same_v<TStep, sodf::geometry::Transform>)
-            {
-              // Absolute world placement; parent may be "" (WORLD)
-              T0 = step.tf;
-              new_parent = step.parent;
-              baseline_found = true;
-            }
-          },
-          step_any);
+      // 6) Apply increment (left-multiply)
+      T_world = dT * T_world;
+
+      // 7) Step-size based emergency escape: if updates are vanishingly small, bail
+      Eigen::AngleAxisd aa(dT.linear());
+      const double rot_norm = std::abs(aa.angle());
+      const double trans_norm = dT.translation().norm();
+      if (rot_norm < rot_tol && trans_norm < trans_tol)
+        break;
     }
 
-    // Current world guess we will refine with LS and SeatCone passes
-    Eigen::Isometry3d T_world = T0;
+    // Restore best pose found during LS, not the last iterate
+    T_world = T_best;
 
-    // Optional presnap for the two-pin case (good initial guess)
-    two_pin_presnap(db, map, eid, origin, T_world);
+    // Restore whatever was there before LS; we'll overwrite it correctly below anyway
+    root_node.parent = ls_parent_backup;
+    root_node.local = ls_local_backup;
+    root_node.dirty = true;
+    sodf::systems::update_entity_global_transforms(db, eid, map);
+  }
 
-    // ---------- Solve (WORLD-only LS) ----------
-    systems::LSSolveParams lp;
-    lp.lambda = kOriginLsLambda;
-    lp.w_ang = kOriginLsAngleWeight;
-    lp.w_pos = kOriginLsPositionWeight;
+  // ---------- Discrete SeatCone pass *after* LS ----------
+  {
+    // Start from the LS solution
+    Eigen::Isometry3d T_world_seat = T_world;
 
+    // For seating, temporarily treat the root as world-parented
+    std::string seat_parent_backup = root_node.parent;
+    Eigen::Isometry3d local_backup = root_node.local;
+
+    root_node.parent = {};  // WORLD
+    root_node.local = T_world_seat;
+    root_node.dirty = true;
+    sodf::systems::update_entity_global_transforms(db, eid, map);
+
+    bool has_seatcone = false;
+
+    const int max_seat_iters = kOriginMaxSeatConeIters;
+    const double seat_eps = kOriginSeatConeEps;
+
+    int iter = 0;
+    for (;;)
     {
-      // Temporarily treat the root as WORLD-parented during LS
-      std::string ls_parent_backup = root_node.parent;
-      Eigen::Isometry3d ls_local_backup = root_node.local;
+      bool changed = false;
+      auto ctx = sodf::assembly::makeSelectorContext(db, map);
 
-      LSLinearStats stats{};
-      const int max_ls_iters = kOriginMaxLsIters;
-
-      // Step-size thresholds: emergency escape only
-      const double rot_tol = kOriginLsStepRotTol;      // rad
-      const double trans_tol = kOriginLsStepTransTol;  // m
-
-      // Track best pose seen during LS (by residual)
-      Eigen::Isometry3d T_best = T_world;
-      double best_ang_rad = std::numeric_limits<double>::infinity();
-      double best_dist_m = std::numeric_limits<double>::infinity();
-
-      for (int it = 0; it < max_ls_iters; ++it)
+      for (const auto& step_any : origin.constraints)
       {
-        // 1) Write current guess into DB as WORLD pose
-        root_node.parent.clear();  // WORLD
-        root_node.local = T_world;
+        std::visit(
+            [&](const auto& step) {
+              using TStep = std::decay_t<decltype(step)>;
+              if constexpr (std::is_same_v<TStep, components::SeatConeOnCylinder>)
+              {
+                sodf::assembly::Ref H = sodf::assembly::make_host_ref(step.host_cyl, origin);
+                sodf::assembly::Ref G = sodf::assembly::make_guest_ref(step.guest_cone, origin);
+
+                Eigen::Isometry3d dW = sodf::assembly::SeatConeOnCylinder(H, G, ctx, step.tol, step.max_it);
+
+                if (!dW.isApprox(Eigen::Isometry3d::Identity(), seat_eps))
+                {
+                  has_seatcone = true;
+                  changed = true;
+
+                  // Update running world pose
+                  T_world_seat = dW * T_world_seat;
+
+                  // Write back so subsequent SeatCone sees updated pose
+                  root_node.local = T_world_seat;
+                  root_node.dirty = true;
+                  sodf::systems::update_entity_global_transforms(db, eid, map);
+                }
+              }
+            },
+            step_any);
+      }
+
+      if (!changed)
+        break;  // all SeatCone constraints are satisfied up to seat_eps
+
+      if (++iter >= max_seat_iters)
+      {
+        // --- 1) Put the guest at the *last* seated pose for diagnostics
+        root_node.parent = {};           // WORLD for simplicity
+        root_node.local = T_world_seat;  // last pose we tried
         root_node.dirty = true;
         sodf::systems::update_entity_global_transforms(db, eid, map);
 
-        // 2) Evaluate residuals at THIS pose
-        double max_ang = 0.0;
-        double max_dist = 0.0;
-        eval_origin_residuals(db, map, origin, max_ang, max_dist);
+        // --- 2) Compute residuals at this pose
+        auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
 
-        // 3) Track best pose so far
-        if (max_dist < best_dist_m || (max_dist == best_dist_m && max_ang < best_ang_rad))
+        std::ostringstream diag;
+        for (const auto& e : residuals)
         {
-          best_dist_m = max_dist;
-          best_ang_rad = max_ang;
-          T_best = T_world;
+          // Only show SeatCone / SeatConeOnCylinder residuals
+          if (e.kind.find("SeatCone") == std::string::npos && e.kind.find("SeatConeOnCylinder") == std::string::npos)
+            continue;
+
+          diag << "   - " << e.kind << " host='" << e.host_ref << "'"
+               << " guest='" << e.guest_ref << "'"
+               << " ang=" << sodf::geometry::toDegrees(e.ang_rad) << "deg"
+               << " dist=" << (e.dist_m * 1e3) << "mm\n";
         }
 
-        // 4) Residual-based stopping: if already good enough, stop LS
-        if (max_ang <= kOriginAngTolRad && max_dist <= kOriginDistTolM)
-          break;
+        // --- 3) Restore original pose before going back to caller
+        root_node.parent = seat_parent_backup;
+        root_node.local = local_backup;
+        root_node.dirty = true;
+        sodf::systems::update_entity_global_transforms(db, eid, map);
 
-        // 5) One GN step around *current DB pose*
-        Eigen::Isometry3d dT = systems::solve_origin_least_squares_once(db, map, eid, origin, lp, &stats);
-        // dT is an increment: T_new = dT * T_old
+        // --- 4) Build error message
+        std::ostringstream oss;
+        oss << "[Origin] SeatCone discrete pass failed to converge after " << max_seat_iters
+            << " iterations for guest_object='" << origin.guest_object << "'.\n"
+            << "Likely inconsistent SeatConeOnCylinder constraints "
+               "(e.g., multiple seats fighting each other).";
 
-        // 6) Apply increment (left-multiply)
-        T_world = dT * T_world;
+        if (!diag.str().empty())
+        {
+          oss << "\nDiagnostics (SeatCone residuals at last iteration):\n" << diag.str();
+        }
 
-        // 7) Step-size based emergency escape: if updates are vanishingly small, bail
-        Eigen::AngleAxisd aa(dT.linear());
-        const double rot_norm = std::abs(aa.angle());
-        const double trans_norm = dT.translation().norm();
-        if (rot_norm < rot_tol && trans_norm < trans_tol)
-          break;
+        throw std::runtime_error(oss.str());
       }
-
-      // Restore best pose found during LS, not the last iterate
-      T_world = T_best;
-
-      // Restore whatever was there before LS; we'll overwrite it correctly below anyway
-      root_node.parent = ls_parent_backup;
-      root_node.local = ls_local_backup;
-      root_node.dirty = true;
-      sodf::systems::update_entity_global_transforms(db, eid, map);
     }
 
-    // ---------- Discrete SeatCone pass *after* LS ----------
+    if (has_seatcone)
     {
-      // Start from the LS solution
-      Eigen::Isometry3d T_world_seat = T_world;
-
-      // For seating, temporarily treat the root as world-parented
-      std::string seat_parent_backup = root_node.parent;
-      Eigen::Isometry3d local_backup = root_node.local;
-
-      root_node.parent.clear();  // WORLD
-      root_node.local = T_world_seat;
-      root_node.dirty = true;
-      sodf::systems::update_entity_global_transforms(db, eid, map);
-
-      bool has_seatcone = false;
-
-      const int max_seat_iters = kOriginMaxSeatConeIters;
-      const double seat_eps = kOriginSeatConeEps;
-
-      int iter = 0;
-      for (;;)
-      {
-        bool changed = false;
-        auto ctx = sodf::assembly::makeSelectorContext(db, map);
-
-        for (const auto& step_any : origin.constraints)
-        {
-          std::visit(
-              [&](const auto& step) {
-                using TStep = std::decay_t<decltype(step)>;
-                if constexpr (std::is_same_v<TStep, components::SeatConeOnCylinder>)
-                {
-                  sodf::assembly::Ref H = sodf::assembly::make_host_ref(step.host_cyl, origin);
-                  sodf::assembly::Ref G = sodf::assembly::make_guest_ref(step.guest_cone, origin);
-
-                  Eigen::Isometry3d dW = sodf::assembly::SeatConeOnCylinder(H, G, ctx, step.tol, step.max_it);
-
-                  if (!dW.isApprox(Eigen::Isometry3d::Identity(), seat_eps))
-                  {
-                    has_seatcone = true;
-                    changed = true;
-
-                    // Update running world pose
-                    T_world_seat = dW * T_world_seat;
-
-                    // Write back so subsequent SeatCone sees updated pose
-                    root_node.local = T_world_seat;
-                    root_node.dirty = true;
-                    sodf::systems::update_entity_global_transforms(db, eid, map);
-                  }
-                }
-              },
-              step_any);
-        }
-
-        if (!changed)
-          break;  // all SeatCone constraints are satisfied up to seat_eps
-
-        if (++iter >= max_seat_iters)
-        {
-          // --- 1) Put the guest at the *last* seated pose for diagnostics
-          root_node.parent.clear();        // WORLD for simplicity
-          root_node.local = T_world_seat;  // last pose we tried
-          root_node.dirty = true;
-          sodf::systems::update_entity_global_transforms(db, eid, map);
-
-          // --- 2) Compute residuals at this pose
-          auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
-
-          std::ostringstream diag;
-          for (const auto& e : residuals)
-          {
-            // Only show SeatCone / SeatConeOnCylinder residuals
-            if (e.kind.find("SeatCone") == std::string::npos && e.kind.find("SeatConeOnCylinder") == std::string::npos)
-              continue;
-
-            diag << "   - " << e.kind << " host='" << e.host_ref << "'"
-                 << " guest='" << e.guest_ref << "'"
-                 << " ang=" << sodf::geometry::toDegrees(e.ang_rad) << "deg"
-                 << " dist=" << (e.dist_m * 1e3) << "mm\n";
-          }
-
-          // --- 3) Restore original pose before going back to caller
-          root_node.parent = seat_parent_backup;
-          root_node.local = local_backup;
-          root_node.dirty = true;
-          sodf::systems::update_entity_global_transforms(db, eid, map);
-
-          // --- 4) Build error message
-          std::ostringstream oss;
-          oss << "[Origin] SeatCone discrete pass failed to converge after " << max_seat_iters
-              << " iterations for guest_object='" << origin.guest_object << "'.\n"
-              << "Likely inconsistent SeatConeOnCylinder constraints "
-                 "(e.g., multiple seats fighting each other).";
-
-          if (!diag.str().empty())
-          {
-            oss << "\nDiagnostics (SeatCone residuals at last iteration):\n" << diag.str();
-          }
-
-          throw std::runtime_error(oss.str());
-        }
-      }
-
-      if (has_seatcone)
-      {
-        // T_world becomes the seated pose
-        T_world = T_world_seat;
-      }
-
-      // restore local/parent; we'll overwrite them correctly below anyway
-      root_node.parent = seat_parent_backup;
-      root_node.local = local_backup;
-      root_node.dirty = true;
-      sodf::systems::update_entity_global_transforms(db, eid, map);
+      // T_world becomes the seated pose
+      T_world = T_world_seat;
     }
 
-    // ---------- Re-express final world pose in host frame (if any) ----------
-    Eigen::Isometry3d T_local = T_world;
+    // restore local/parent; we'll overwrite them correctly below anyway
+    root_node.parent = seat_parent_backup;
+    root_node.local = local_backup;
+    root_node.dirty = true;
+    sodf::systems::update_entity_global_transforms(db, eid, map);
+  }
 
-    if (!origin.host_object.empty())
+  // ---------- Re-express final world pose in host frame (if any) ----------
+  Eigen::Isometry3d T_local = T_world;
+
+  if (!origin.host_object.empty())
+  {
+    // Find host entity
+    auto it = map.find(origin.host_object);
+    if (it == map.end())
+      throw std::runtime_error("[Origin] host_object '" + origin.host_object + "' not found in ObjectEntityMap");
+
+    const auto host_eid = it->second;
+
+    (void)host_eid;  // host_eid is not used directly; get_root_global_transform uses id
+
+    // Get host's global transform W_H
+    const Eigen::Isometry3d W_H = sodf::systems::get_root_global_transform(db, map, origin.host_object);
+
+    // Express guest pose in host frame
+    T_local = W_H.inverse() * T_world;
+    new_parent = origin.host_object;  // parent under host
+  }
+  else
+  {
+    new_parent.clear();  // WORLD
+  }
+
+  // ---------- Write back final local pose ----------
+  root_node.local = T_local;
+  root_node.parent = new_parent;
+  root_node.dirty = true;
+
+  sodf::systems::update_entity_global_transforms(db, eid, map);
+
+  // ---------- Validate in WORLD; throw on failure (no rollback) ----------
+  auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
+
+  // Count constraints that are either hard-failed (!ok)
+  // or numerically outside tolerance.
+  std::size_t bad = 0;
+  for (const auto& e : residuals)
+  {
+    bool violated = false;
+
+    if (!e.ok)
     {
-      // Find host entity
-      auto it = map.find(origin.host_object);
-      if (it == map.end())
-        throw std::runtime_error("[Origin] host_object '" + origin.host_object + "' not found in ObjectEntityMap");
-
-      const auto host_eid = it->second;
-
-      // Get host's global transform W_H
-      const Eigen::Isometry3d W_H = sodf::systems::get_root_global_transform(db, map, origin.host_object);
-
-      // Express guest pose in host frame
-      T_local = W_H.inverse() * T_world;
-      new_parent = origin.host_object;  // parent under host
+      violated = true;
     }
     else
     {
-      new_parent.clear();  // WORLD
+      const bool ang_bad = (std::abs(e.ang_rad) > kOriginAngTolRad);
+      const bool dist_bad = (std::abs(e.dist_m) > kOriginDistTolM);
+      violated = ang_bad || dist_bad;
     }
 
-    // ---------- Write back final local pose ----------
-    root_node.local = T_local;
-    root_node.parent = new_parent;
-    root_node.dirty = true;
+    if (violated)
+      ++bad;
+  }
 
-    sodf::systems::update_entity_global_transforms(db, eid, map);
+  if (bad)
+  {
+    // Leave the current (bad) pose as-is so the user can inspect it, but signal failure.
+    std::string why = sodf::systems::format_origin_residual_errors(residuals, kOriginAngTolRad, kOriginDistTolM);
 
-    // ---------- Validate in WORLD; throw on failure (no rollback) ----------
-    auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
+    throw std::runtime_error("Origin solve violated " + std::to_string(bad) + " constraint(s) beyond tolerance:\n" +
+                             why);
+  }
+}
 
-    // Count constraints that are either hard-failed (!ok)
-    // or numerically outside tolerance.
-    std::size_t bad = 0;
-    for (const auto& e : residuals)
-    {
-      bool violated = false;
+// ------------------------ multi-Origin driver (topological) -----------------
 
-      if (!e.ok)
-      {
-        violated = true;
-      }
-      else
-      {
-        const bool ang_bad = (std::abs(e.ang_rad) > kOriginAngTolRad);
-        const bool dist_bad = (std::abs(e.dist_m) > kOriginDistTolM);
-        violated = ang_bad || dist_bad;
-      }
+namespace {
 
-      if (violated)
-        ++bad;
-    }
+struct OriginNode
+{
+  database::EntityID eid;
+  std::string object_id;
+  std::string host_object;  // may be empty (WORLD or external)
+};
 
-    if (bad)
-    {
-      // Leave the current (bad) pose as-is so the user can inspect it, but signal failure.
-      std::string why = sodf::systems::format_origin_residual_errors(residuals, kOriginAngTolRad, kOriginDistTolM);
+// Custom hash for EntityID
+struct EntityIDHash
+{
+  std::size_t operator()(const database::EntityID& e) const noexcept
+  {
+    std::size_t h1 = std::hash<std::size_t>{}(e.index);
+    std::size_t h2 = std::hash<std::size_t>{}(e.generation);
+    // standard hash combine
+    return h1 ^ (h2 + 0x9e3779b9u + (h1 << 6) + (h1 >> 2));
+  }
+};
 
-      throw std::runtime_error("Origin solve violated " + std::to_string(bad) + " constraint(s) beyond tolerance:\n" +
-                               why);
-    }
+}  // namespace
+
+void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& obj_map)
+{
+  using EntityID = database::EntityID;
+  using components::ObjectComponent;
+  using components::OriginComponent;
+  using components::TransformComponent;
+
+  // ---------------- Collect all entities that have an Origin ----------------
+  std::unordered_map<EntityID, OriginNode, EntityIDHash> nodes;
+  std::unordered_map<EntityID, int, EntityIDHash> indegree;
+  std::unordered_map<EntityID, std::vector<EntityID>, EntityIDHash> children;
+
+  db.each([&](EntityID eid, ObjectComponent& obj, OriginComponent& origin) {
+    // Ensure host_object is initialized so we can build the dependency graph.
+    if (origin.host_object.empty())
+      origin.host_object = infer_host_object(origin);
+
+    OriginNode node;
+    node.eid = eid;
+    node.object_id = obj.id;  // "thermal-cycler", "table", ...
+    node.host_object = origin.host_object;
+
+    nodes[eid] = node;
+    indegree[eid] = 0;
   });
+
+  if (nodes.empty())
+    return;  // no Origin components at all
+
+  // ---------------- Build dependency edges host -> guest --------------------
+  for (auto& [eid, node] : nodes)
+  {
+    const std::string& host_id = node.host_object;
+    if (host_id.empty())
+      continue;  // attached to WORLD or external thing
+
+    auto it_host = obj_map.find(host_id);
+    if (it_host == obj_map.end())
+    {
+      // Host object not in this scene → effectively WORLD-level parent.
+      continue;
+    }
+
+    EntityID host_eid = it_host->second;
+
+    // Only add an edge if the host itself has an Origin.
+    auto it_node_host = nodes.find(host_eid);
+    if (it_node_host == nodes.end())
+      continue;
+
+    children[host_eid].push_back(eid);
+    indegree[eid] += 1;
+  }
+
+  // ---------------- Topological order (Kahn's algorithm) --------------------
+  std::queue<EntityID> q;
+  for (auto& [eid, deg] : indegree)
+  {
+    if (deg == 0)
+      q.push(eid);  // can be solved immediately (host is WORLD or has no Origin)
+  }
+
+  std::unordered_map<EntityID, std::string, EntityIDHash> last_error;
+  std::size_t processed = 0;
+
+  while (!q.empty())
+  {
+    EntityID eid = q.front();
+    q.pop();
+    ++processed;
+
+    auto* tcomp = db.get<TransformComponent>(eid);
+    auto* origin = db.get<OriginComponent>(eid);
+
+    if (!tcomp || !origin)
+    {
+      // Shouldn't happen, but don't crash the whole solver if DB is inconsistent.
+      last_error[eid] = "Missing TransformComponent or OriginComponent";
+    }
+    else
+    {
+      try
+      {
+        solve_single_origin(db, obj_map, eid, *tcomp, *origin);
+        last_error.erase(eid);
+      }
+      catch (const std::exception& ex)
+      {
+        last_error[eid] = ex.what();
+      }
+    }
+
+    // "Unlock" children that depended on this origin
+    auto it_children = children.find(eid);
+    if (it_children != children.end())
+    {
+      for (EntityID child : it_children->second)
+      {
+        if (--indegree[child] == 0)
+          q.push(child);
+      }
+    }
+  }
+
+  // ---------------- Detect cycles / unresolved dependencies -----------------
+  if (processed != nodes.size())
+  {
+    std::ostringstream oss;
+    oss << "[Origin] Could not solve all Origin components "
+           "(likely cycle or missing hosts).\n";
+
+    for (auto& [eid, node] : nodes)
+    {
+      if (indegree[eid] > 0)
+      {
+        oss << " - object='" << node.object_id << "'";
+        if (!node.host_object.empty())
+          oss << " host='" << node.host_object << "'";
+        auto it_err = last_error.find(eid);
+        if (it_err != last_error.end())
+          oss << " last_error=\"" << it_err->second << "\"";
+        oss << "\n";
+      }
+    }
+
+    throw std::runtime_error(oss.str());
+  }
 }
 
 }  // namespace systems
