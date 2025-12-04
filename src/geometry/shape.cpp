@@ -761,6 +761,7 @@ Shape truncateShapeToHeight(const Shape& shape, double new_height)
       dim(result).at(DimRole::BaseRadius) = rb;        // unchanged
       dim(result).at(DimRole::TopRadius) = clipped_r;  // new top
       dim(result).at(DimRole::Height) = new_height;    // new height
+      break;
     }
 
     default:
