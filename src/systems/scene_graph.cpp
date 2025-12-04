@@ -93,7 +93,7 @@ static bool update_global_transform(database::Database& db, database::EntityID i
                                     std::size_t frame_idx, const database::ObjectEntityMap& obj_map, bool force)
 {
   auto& kv = tf.elements[frame_idx];
-  const auto& frame_name = kv.first;
+  const std::string& frame_name = kv.first;
   auto& frame = kv.second;
 
   // --- 1) Ensure parent is up to date; capture its global if any
@@ -145,74 +145,115 @@ static bool update_global_transform(database::Database& db, database::EntityID i
   if (!need_recompute)
     return false;
 
-  // --- 3) If joint-driven, (re)build local before composing global
+  // --- 3) If joint-driven, (re)build local from rest_local + delta(q)
   if (frame_idx != 0 && !frame.is_static)
   {
     if (auto* joints = db.get<components::JointComponent>(id))
     {
-      auto* joint = database::get_element(joints->elements, frame_name);
-      if (!joint)
-        throw std::runtime_error("Cannot find joint element: " + frame_name);
-
-      switch (joint->type)
+      if (auto* joint = database::get_element(joints->elements, frame_name))
       {
-        case components::JointType::REVOLUTE:
+        Eigen::Isometry3d delta = Eigen::Isometry3d::Identity();
+
+        switch (joint->type)
         {
-          Eigen::Vector3d axis = joint->axes.col(0);
-          frame.local = Eigen::Translation3d(0, 0, 0) * Eigen::AngleAxisd(joint->position[0], axis.normalized());
-          break;
+          case components::JointType::REVOLUTE:
+          {
+            Eigen::Vector3d axis = joint->axes.col(0);
+            if (axis.norm() > 0.0)
+            {
+              axis.normalize();
+              delta = Eigen::Translation3d(0, 0, 0) * Eigen::AngleAxisd(joint->position[0], axis);
+            }
+            break;
+          }
+
+          case components::JointType::PRISMATIC:
+          {
+            Eigen::Vector3d axis = joint->axes.col(0);
+            if (axis.norm() > 0.0)
+            {
+              axis.normalize();
+              delta = Eigen::Translation3d(joint->position[0] * axis);
+            }
+            break;
+          }
+
+          case components::JointType::SPHERICAL:
+          {
+            if (joint->position.size() >= 3)
+            {
+              const double yaw = joint->position[0];
+              const double pitch = joint->position[1];
+              const double roll = joint->position[2];
+
+              Eigen::Vector3d ax0 = joint->axes.col(0).normalized();
+              Eigen::Vector3d ax1 = joint->axes.col(1).normalized();
+              Eigen::Vector3d ax2 = joint->axes.col(2).normalized();
+
+              Eigen::AngleAxisd Rx(roll, ax0);
+              Eigen::AngleAxisd Ry(pitch, ax1);
+              Eigen::AngleAxisd Rz(yaw, ax2);
+
+              delta = Eigen::Translation3d(0, 0, 0) * (Rz * Ry * Rx);
+            }
+            break;
+          }
+
+          case components::JointType::PLANAR:
+          {
+            if (joint->position.size() >= 3)
+            {
+              const double tx = joint->position[0];
+              const double ty = joint->position[1];
+              const double rz = joint->position[2];
+
+              Eigen::Vector3d x = joint->axes.col(0).normalized();
+              Eigen::Vector3d y = joint->axes.col(1).normalized();
+              Eigen::Vector3d n = joint->axes.col(2).normalized();
+
+              Eigen::Vector3d t = tx * x + ty * y;
+              delta = Eigen::Translation3d(t) * Eigen::AngleAxisd(rz, n);
+            }
+            break;
+          }
+
+          case components::JointType::FLOATING:
+          {
+            if (joint->position.size() >= 6)
+            {
+              Eigen::Vector3d t = joint->position.segment<3>(0);
+              const double yaw = joint->position[3];
+              const double pitch = joint->position[4];
+              const double roll = joint->position[5];
+
+              Eigen::Vector3d ax3 = joint->axes.col(3).normalized();
+              Eigen::Vector3d ax4 = joint->axes.col(4).normalized();
+              Eigen::Vector3d ax5 = joint->axes.col(5).normalized();
+
+              Eigen::AngleAxisd Rx(roll, ax3);
+              Eigen::AngleAxisd Ry(pitch, ax4);
+              Eigen::AngleAxisd Rz(yaw, ax5);
+
+              delta = Eigen::Translation3d(t) * (Rz * Ry * Rx);
+            }
+            break;
+          }
+
+          case components::JointType::FIXED:
+          default:
+            // Keep delta = Identity; local = rest_local.
+            break;
         }
-        case components::JointType::PRISMATIC:
-        {
-          Eigen::Vector3d axis = joint->axes.col(0);
-          frame.local = Eigen::Translation3d(joint->position[0] * axis.normalized());
-          break;
-        }
-        case components::JointType::SPHERICAL:
-        {
-          double yaw = joint->position[0], pitch = joint->position[1], roll = joint->position[2];
-          Eigen::AngleAxisd Rx(roll, joint->axes.col(0).normalized());
-          Eigen::AngleAxisd Ry(pitch, joint->axes.col(1).normalized());
-          Eigen::AngleAxisd Rz(yaw, joint->axes.col(2).normalized());
-          frame.local = Eigen::Translation3d(0, 0, 0) * (Rz * Ry * Rx);
-          break;
-        }
-        case components::JointType::PLANAR:
-        {
-          double tx = joint->position[0], ty = joint->position[1], rz = joint->position[2];
-          Eigen::Vector3d x = joint->axes.col(0).normalized();
-          Eigen::Vector3d y = joint->axes.col(1).normalized();
-          Eigen::Vector3d n = joint->axes.col(2).normalized();
-          frame.local = Eigen::Translation3d(tx * x + ty * y) * Eigen::AngleAxisd(rz, n);
-          break;
-        }
-        case components::JointType::FLOATING:
-        {
-          Eigen::Vector3d t = joint->position.segment<3>(0);
-          double yaw = joint->position[3], pitch = joint->position[4], roll = joint->position[5];
-          Eigen::AngleAxisd Rx(roll, joint->axes.col(3).normalized());
-          Eigen::AngleAxisd Ry(pitch, joint->axes.col(4).normalized());
-          Eigen::AngleAxisd Rz(yaw, joint->axes.col(5).normalized());
-          frame.local = Eigen::Translation3d(t) * (Rz * Ry * Rx);
-          break;
-        }
-        case components::JointType::FIXED:
-        default:
-          break;
+
+        // Compose current pose from authored rest pose and joint delta
+        frame.local = frame.rest_local * delta;
       }
+      // else: dynamic frame but no joint entry -> leave frame.local as-is
     }
   }
 
   // --- 4) Compose global
-  if (frame_idx == 0)
-  {
-    // world or attached to external parent
-    frame.global = parent_global * frame.local;
-  }
-  else
-  {
-    frame.global = parent_global * frame.local;
-  }
+  frame.global = parent_global * frame.local;
 
   frame.dirty = false;
   return true;
