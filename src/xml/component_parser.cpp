@@ -901,6 +901,13 @@ void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
 
     geometry::TransformNode frame = parseTransformNode(transform_elem);
 
+    // Joints are not static frames
+    if (std::strcmp(elem->Name(), "Joint") == 0)
+    {
+      frame.is_static = false;
+      frame.dirty = true;  // ensure first propagate recomputes from joint state
+    }
+
     auto* component = db.get_or_add<components::TransformComponent>(eid);
     component->elements.emplace_back(id, std::move(frame));
   }
