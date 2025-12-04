@@ -204,6 +204,80 @@ inline std::string jointActuationToString(JointActuation actuation)
   }
 }
 
+inline std::ostream& operator<<(std::ostream& os, const Joint& joint)
+{
+  const int dof = static_cast<int>(joint.position.size());
+
+  os << "Joint{ type=" << jointTypeToString(joint.type) << ", actuation=" << jointActuationToString(joint.actuation)
+     << ", dof=" << dof << " }\n";
+
+  // Helper for Eigen vectors
+  auto printVec = [&](const char* label, const Eigen::VectorXd& v, const char* indent = "  ") {
+    if (v.size() == 0)
+      return;
+    os << indent << label << " = [";
+    for (int i = 0; i < v.size(); ++i)
+    {
+      if (i > 0)
+        os << ", ";
+      os << v[i];
+    }
+    os << "]\n";
+  };
+
+  // Axes
+  if (joint.axes.cols() > 0)
+  {
+    os << "  axes:\n";
+    for (int i = 0; i < joint.axes.cols(); ++i)
+    {
+      os << "    axis[" << i << "] = [" << joint.axes(0, i) << ", " << joint.axes(1, i) << ", " << joint.axes(2, i)
+         << "]\n";
+    }
+  }
+
+  // State
+  printVec("position", joint.position);
+  printVec("velocity", joint.velocity);
+  printVec("effort", joint.effort);
+
+  // Limits
+  os << "  limits:\n";
+  printVec("min_position", joint.limit.min_position, "    ");
+  printVec("max_position", joint.limit.max_position, "    ");
+  printVec("min_velocity", joint.limit.min_velocity, "    ");
+  printVec("max_velocity", joint.limit.max_velocity, "    ");
+  printVec("min_acceleration", joint.limit.min_acceleration, "    ");
+  printVec("max_acceleration", joint.limit.max_acceleration, "    ");
+  printVec("min_jerk", joint.limit.min_jerk, "    ");
+  printVec("max_jerk", joint.limit.max_jerk, "    ");
+  printVec("min_effort", joint.limit.min_effort, "    ");
+  printVec("max_effort", joint.limit.max_effort, "    ");
+
+  // Dynamics
+  os << "  dynamics:\n";
+  printVec("stiffness", joint.dynamics.stiffness, "    ");
+  printVec("damping", joint.dynamics.damping, "    ");
+  printVec("inertia", joint.dynamics.inertia, "    ");
+
+  if (!joint.dynamics.rest_position.empty())
+  {
+    os << "    rest_position = [";
+    for (std::size_t i = 0; i < joint.dynamics.rest_position.size(); ++i)
+    {
+      if (i > 0)
+        os << ", ";
+      if (joint.dynamics.rest_position[i])
+        os << *joint.dynamics.rest_position[i];
+      else
+        os << "null";
+    }
+    os << "]\n";
+  }
+
+  return os;
+}
+
 }  // namespace components
 }  // namespace sodf
 
