@@ -145,6 +145,7 @@ geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform
   (void)tryEvalTextAttribute(transform_elem, "parent", &frame.parent);
 
   frame.local = parseIsometry3D(transform_elem);
+  frame.rest_local = frame.local;
   frame.global = Eigen::Isometry3d::Identity();
   frame.dirty = true;
 
