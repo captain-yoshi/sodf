@@ -3,6 +3,10 @@
 
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <vector>
+#include <stdexcept>
+
 #include <Eigen/Geometry>
 
 #include <sodf/database/database.h>
@@ -15,11 +19,16 @@
 namespace sodf {
 namespace systems {
 
-// -----------------------------------------------------------------------------
-// Read-only helpers (generic: Database or DatabaseDiff)
-// -----------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Generic helpers (DB-like)
+//  We keep these light, header-only, and only rely on the minimal API:
+///   - each(lambda(EntityID, const ObjectComponent&))
+///   - get_const<TransformComponent>(eid)
+///   - get_element<TransformComponent>(eid, key)
+///
+/// This lets us support Database and DatabaseDiff without duplicating logic.
+/// ---------------------------------------------------------------------------
 
-// Build object-id → entity map
 template <class DBLike>
 database::ObjectEntityMap make_object_entity_map(DBLike& db)
 {
@@ -51,6 +60,7 @@ Eigen::Isometry3d get_local_to_root(DBLike& db, database::EntityID eid, const st
 
   Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
 
+  // climb to root(0), collect indices
   std::vector<int> chain;
   for (int cur = idx; cur != 0;)
   {
@@ -62,6 +72,7 @@ Eigen::Isometry3d get_local_to_root(DBLike& db, database::EntityID eid, const st
     cur = pidx;
   }
 
+  // compose root→child
   for (auto it = chain.rbegin(); it != chain.rend(); ++it)
     T = T * tmap[*it].second.local;
 
@@ -69,40 +80,135 @@ Eigen::Isometry3d get_local_to_root(DBLike& db, database::EntityID eid, const st
 }
 
 // Find the unique root/global entity (tagged)
-template <class DBLike>
-std::optional<database::EntityID> find_root_frame_entity(DBLike& db)
-{
-  std::vector<database::EntityID> tagged;
-  db.each([&](database::EntityID id, const components::RootFrameTag&) { tagged.push_back(id); });
-  if (tagged.empty())
-    return std::nullopt;
-  if (tagged.size() > 1)
-    throw std::runtime_error("Multiple RootFrameTag");
-  return tagged.front();
-}
+// NOTE: we keep this Database-only for now because it typically depends on tags
+//       that are authored in the base DB and not patched in diffs.
+std::optional<database::EntityID> find_root_frame_entity(database::Database& db);
 
-// -----------------------------------------------------------------------------
-// Global-cache update + queries (Database-only for now)
-// -----------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Base (Database) scene graph API
+/// ---------------------------------------------------------------------------
 
-/// Get the global transform of the root frame (first element) for a given object id.
-/// Uses an existing ObjectEntityMap.
 Eigen::Isometry3d get_root_global_transform(database::Database& db, const database::ObjectEntityMap& obj_map,
                                             const std::string& object_id);
 
-// Update only one entity's global transforms (its whole local subtree).
-// Parents are updated on-demand (not forced) if the root points to an external parent.
 void update_entity_global_transforms(database::Database& db, database::EntityID eid,
                                      const database::ObjectEntityMap& obj_map);
 
-// Update all entities’ global transforms
 void update_all_global_transforms(database::Database& db);
 
-// Get global transform by (entity, frame name)
 Eigen::Isometry3d get_global_transform(database::Database& db, database::EntityID eid, const std::string& frame_name);
 
-// Get global transform by absolute path “/objectId/frame”
 Eigen::Isometry3d get_global_transform(database::Database& db, const std::string& abs_path);
+
+/// ---------------------------------------------------------------------------
+/// Diff-local transform cache (Path C)
+/// ---------------------------------------------------------------------------
+
+class SceneGraphCache
+{
+public:
+  using EntityID = database::EntityID;
+
+  explicit SceneGraphCache(database::DatabaseDiff& diff) : diff_(&diff)
+  {
+  }
+
+  database::DatabaseDiff& diff() const
+  {
+    return *diff_;
+  }
+
+  void clear()
+  {
+    revision_ = 0;
+    tcomps_.clear();
+  }
+
+  /// Public hook for the diff scene-graph implementation.
+  components::TransformComponent& get_or_materialize_transform(EntityID eid)
+  {
+    return get_or_materialize(eid);
+  }
+
+private:
+  friend Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const database::ObjectEntityMap& obj_map,
+                                                     const std::string& object_id);
+  friend void update_entity_global_transforms(SceneGraphCache& cache, EntityID eid,
+                                              const database::ObjectEntityMap& obj_map);
+  friend void update_all_global_transforms(SceneGraphCache& cache);
+  friend Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, EntityID eid, const std::string& frame_name);
+  friend Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, const std::string& abs_path);
+
+  void ensure_fresh()
+  {
+    const std::size_t cur = diff_->revision();
+    if (revision_ != cur)
+    {
+      revision_ = cur;
+      tcomps_.clear();
+    }
+  }
+
+  components::TransformComponent& get_or_materialize(EntityID eid);
+
+  database::DatabaseDiff* diff_{ nullptr };
+  std::size_t revision_{ 0 };
+  std::unordered_map<EntityID, components::TransformComponent> tcomps_;
+};
+
+/// ---------------------------------------------------------------------------
+/// Diff-aware Scene Graph API using SceneGraphCache
+/// ---------------------------------------------------------------------------
+
+Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const database::ObjectEntityMap& obj_map,
+                                            const std::string& object_id);
+
+void update_entity_global_transforms(SceneGraphCache& cache, database::EntityID eid,
+                                     const database::ObjectEntityMap& obj_map);
+
+void update_all_global_transforms(SceneGraphCache& cache);
+
+Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, database::EntityID eid, const std::string& frame_name);
+
+Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, const std::string& abs_path);
+
+/// ---------------------------------------------------------------------------
+/// Convenience overloads for DatabaseDiff users (thin wrappers)
+/// ---------------------------------------------------------------------------
+
+inline Eigen::Isometry3d get_root_global_transform(database::DatabaseDiff& diff,
+                                                   const database::ObjectEntityMap& obj_map,
+                                                   const std::string& object_id)
+{
+  SceneGraphCache cache(diff);
+  return get_root_global_transform(cache, obj_map, object_id);
+}
+
+inline void update_entity_global_transforms(database::DatabaseDiff& diff, database::EntityID eid,
+                                            const database::ObjectEntityMap& obj_map)
+{
+  SceneGraphCache cache(diff);
+  update_entity_global_transforms(cache, eid, obj_map);
+}
+
+inline void update_all_global_transforms(database::DatabaseDiff& diff)
+{
+  SceneGraphCache cache(diff);
+  update_all_global_transforms(cache);
+}
+
+inline Eigen::Isometry3d get_global_transform(database::DatabaseDiff& diff, database::EntityID eid,
+                                              const std::string& frame_name)
+{
+  SceneGraphCache cache(diff);
+  return get_global_transform(cache, eid, frame_name);
+}
+
+inline Eigen::Isometry3d get_global_transform(database::DatabaseDiff& diff, const std::string& abs_path)
+{
+  SceneGraphCache cache(diff);
+  return get_global_transform(cache, abs_path);
+}
 
 }  // namespace systems
 }  // namespace sodf

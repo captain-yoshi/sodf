@@ -94,6 +94,14 @@ public:
     traits::each_deduced(impl_, std::forward<Fn>(fn));
   }
 
+  template <class Fn>
+  void each(Fn&& fn) const
+  {
+    // Backend iteration is logically const for callers.
+    // We reuse the backend iterator facilities.
+    traits::each_deduced(const_cast<Backend&>(impl_), std::forward<Fn>(fn));
+  }
+
   Backend& impl()
   {
     return impl_;

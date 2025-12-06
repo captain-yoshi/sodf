@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 #include <type_traits>
+#include <cstddef>
 
 namespace sodf {
 namespace database {
@@ -362,11 +363,11 @@ class DatabaseDiff
 public:
   using entity_type = Database::entity_type;
 
-  explicit DatabaseDiff(const Database& base) : base_(base), patch_(), view_(base_, patch_)
+  explicit DatabaseDiff(const Database& base) : base_(base), patch_(), view_(base_, patch_), revision_(0)
   {
   }
 
-  explicit DatabaseDiff(const DatabaseDiff& parent) : base_(parent), patch_(), view_(base_, patch_)
+  explicit DatabaseDiff(const DatabaseDiff& parent) : base_(parent), patch_(), view_(base_, patch_), revision_(0)
   {
   }
 
@@ -376,18 +377,20 @@ public:
     return base_.ultimate_database();
   }
 
-  // If you ever need to explicitly access the root database.
   const Database& base_database() const
   {
     return base_.ultimate_database();
+  }
+
+  std::size_t revision() const
+  {
+    return revision_;
   }
 
   // Read-only iteration view (for generic helpers)
   template <class Fn>
   void each(Fn&& fn) const
   {
-    // Note: this enumerates only entities existing in the ultimate Database.
-    // This matches current diff semantics (no entity-level adds in patch).
     base_.ultimate_database().each(std::forward<Fn>(fn));
   }
 
@@ -419,12 +422,14 @@ public:
   void add_or_replace(entity_type e, Key&& key, Value&& value)
   {
     patch_.template add_or_replace<C>(e, std::forward<Key>(key), std::forward<Value>(value));
+    ++revision_;
   }
 
   template <class C, class Key>
   void remove(entity_type e, Key&& key)
   {
     patch_.template remove<C>(e, std::forward<Key>(key));
+    ++revision_;
   }
 
   bool empty() const
@@ -435,12 +440,93 @@ public:
   void clear()
   {
     patch_.clear();
+    ++revision_;
+  }
+
+  // -------------------------------------------------------------------------
+  // Internal-ish helpers (needed for Path C materialization)
+  // -------------------------------------------------------------------------
+
+  // Enumerate patch ops for a specific component type on one entity.
+  // Fn signature:
+  //   void(const key_t& key, detail::PatchOpKind kind, const value_t* value_or_null)
+  template <class C, class Fn>
+  void for_each_patch_op(entity_type e, Fn&& fn) const
+  {
+    using key_t = typename detail::element_traits<C>::key_t;
+    using value_t = typename detail::element_traits<C>::value_t;
+
+    const auto* cp = patch_.template get<C>();
+    if (!cp)
+      return;
+
+    auto itE = cp->ops.find(e);
+    if (itE == cp->ops.end())
+      return;
+
+    for (const auto& kv : itE->second)
+    {
+      const key_t& key = kv.first;
+      const auto& op = kv.second;
+
+      if (op.kind == detail::PatchOpKind::Remove)
+      {
+        fn(key, detail::PatchOpKind::Remove, static_cast<const value_t*>(nullptr));
+      }
+      else
+      {
+        fn(key, detail::PatchOpKind::AddOrReplace, &op.value);
+      }
+    }
+  }
+
+  // Materialize a component by copying base then applying patch ops to its elements.
+  // Returns false if base doesn't have the component.
+  template <class C>
+  bool materialize_component(entity_type e, C& out) const
+  {
+    const C* base_c = base_.template get_const<C>(e);
+    if (!base_c)
+      return false;
+
+    out = *base_c;
+
+    using key_t = typename detail::element_traits<C>::key_t;
+    using value_t = typename detail::element_traits<C>::value_t;
+
+    auto erase_key = [&](const key_t& k) {
+      auto& elems = out.elements;
+      elems.erase(std::remove_if(elems.begin(), elems.end(), [&](const auto& p) { return p.first == k; }), elems.end());
+    };
+
+    auto upsert_key = [&](const key_t& k, const value_t& v) {
+      auto& elems = out.elements;
+      auto it = std::find_if(elems.begin(), elems.end(), [&](const auto& p) { return p.first == k; });
+      if (it != elems.end())
+        it->second = v;
+      else
+        elems.emplace_back(k, v);
+    };
+
+    for_each_patch_op<C>(e, [&](const key_t& k, detail::PatchOpKind kind, const value_t* vptr) {
+      if (kind == detail::PatchOpKind::Remove)
+      {
+        erase_key(k);
+      }
+      else if (vptr)
+      {
+        upsert_key(k, *vptr);
+      }
+    });
+
+    return true;
   }
 
 private:
   detail::DiffBase base_;
   detail::DatabasePatch patch_;
   detail::PatchedDatabaseView view_;
+  std::size_t revision_;
 };
 
 /// ---------------------------------------------------------------------------

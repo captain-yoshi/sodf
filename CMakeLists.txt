@@ -97,6 +97,7 @@ add_library(${PROJECT_NAME}
   src/systems/origin_constraints.cpp
   src/systems/origin_ls_solver.cpp
   src/systems/scene_graph.cpp
+  src/systems/scene_graph_diff.cpp
   src/uri_resolver.cpp
   src/xml/component_parser.cpp
   src/xml/element_parser.cpp
