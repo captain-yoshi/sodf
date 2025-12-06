@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <typeindex>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -14,6 +15,8 @@
 
 namespace sodf {
 namespace database {
+
+class DatabaseDiff;  // forward declaration for multi-level diff bases
 
 /// ---------------------------------------------------------------------------
 /// ElementMap helpers
@@ -266,13 +269,43 @@ private:
   std::unordered_map<std::type_index, std::unique_ptr<IComponentPatch>> patches_;
 };
 
-// Read-only overlay view (internal).
+/// ---------------------------------------------------------------------------
+/// Diff base indirection (Database OR DatabaseDiff)
+/// ---------------------------------------------------------------------------
+class DiffBase
+{
+public:
+  using entity_type = Database::entity_type;
+
+  DiffBase(const Database& db) : db_(&db), diff_(nullptr)
+  {
+  }
+  DiffBase(const DatabaseDiff& d) : db_(nullptr), diff_(&d)
+  {
+  }
+
+  const Database& ultimate_database() const;
+
+  template <class C>
+  const C* get_const(entity_type e) const;
+
+  template <class C, class Key>
+  const auto* get_element(entity_type e, const Key& key) const;
+
+private:
+  const Database* db_;
+  const DatabaseDiff* diff_;
+};
+
+/// ---------------------------------------------------------------------------
+/// Read-only overlay view (internal).
+/// ---------------------------------------------------------------------------
 class PatchedDatabaseView
 {
 public:
   using entity_type = Database::entity_type;
 
-  PatchedDatabaseView(const Database& base, const DatabasePatch& patch) : base_(base), patch_(patch)
+  PatchedDatabaseView(const DiffBase& base, const DatabasePatch& patch) : base_(base), patch_(patch)
   {
   }
 
@@ -313,7 +346,7 @@ public:
   }
 
 private:
-  const Database& base_;
+  const DiffBase& base_;
   const DatabasePatch& patch_;
 };
 
@@ -323,7 +356,7 @@ private:
 /// Public façade: DatabaseDiff
 /// ---------------------------------------------------------------------------
 /// DatabaseDiff owns internal patch state and exposes a small authoring + read API.
-/// No public exposure of DatabasePatch or PatchedDatabaseView.
+/// It can be layered over either a Database or another DatabaseDiff.
 class DatabaseDiff
 {
 public:
@@ -333,9 +366,20 @@ public:
   {
   }
 
+  explicit DatabaseDiff(const DatabaseDiff& parent) : base_(parent), patch_(), view_(base_, patch_)
+  {
+  }
+
+  // Keep the old-looking API: returns the ultimate Database.
   const Database& base() const
   {
-    return base_;
+    return base_.ultimate_database();
+  }
+
+  // If you ever need to explicitly access the root database.
+  const Database& base_database() const
+  {
+    return base_.ultimate_database();
   }
 
   // -------------------------------------------------------------------------
@@ -385,10 +429,40 @@ public:
   }
 
 private:
-  const Database& base_;
+  detail::DiffBase base_;
   detail::DatabasePatch patch_;
   detail::PatchedDatabaseView view_;
 };
+
+/// ---------------------------------------------------------------------------
+/// detail::DiffBase inline definitions (after DatabaseDiff is complete)
+/// ---------------------------------------------------------------------------
+namespace detail {
+
+inline const Database& DiffBase::ultimate_database() const
+{
+  if (db_)
+    return *db_;
+  return diff_->base_database();
+}
+
+template <class C>
+inline const C* DiffBase::get_const(entity_type e) const
+{
+  if (db_)
+    return db_->template get_const<C>(e);
+  return diff_->template get_const<C>(e);
+}
+
+template <class C, class Key>
+inline const auto* DiffBase::get_element(entity_type e, const Key& key) const
+{
+  if (db_)
+    return db_->template get_element<C>(e, key);
+  return diff_->template get_element<C>(e, key);
+}
+
+}  // namespace detail
 
 }  // namespace database
 }  // namespace sodf

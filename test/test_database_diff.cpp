@@ -163,3 +163,202 @@ TEST(DatabaseDiff, ClearResetsToBaseView)
     EXPECT_TRUE(c->local.translation().isApprox(Eigen::Vector3d(0.0, 0.0, 0.0)));
   }
 }
+
+TEST(DatabaseDiff, LayeredDiffReadThroughAndOverride)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& tc = base.add<components::TransformComponent>(e);
+
+  tc.elements.emplace_back("frameA", makeNode("root", Eigen::Vector3d(0.0, 0.0, 0.0)));
+
+  // First diff over base
+  database::DatabaseDiff diff1(base);
+
+  // Override in diff1 to (1,2,3)
+  {
+    const auto* a_base = base.get_element<components::TransformComponent>(e, "frameA");
+    ASSERT_NE(a_base, nullptr);
+
+    auto a_override = *a_base;
+    a_override.local.translation() = Eigen::Vector3d(1.0, 2.0, 3.0);
+
+    diff1.add_or_replace<components::TransformComponent>(e, std::string("frameA"), a_override);
+  }
+
+  // Second diff over diff1
+  database::DatabaseDiff diff2(diff1);
+
+  // Should read-through diff1's override
+  {
+    const auto* a = diff2.get_element<components::TransformComponent>(e, "frameA");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(a->local.translation().isApprox(Eigen::Vector3d(1.0, 2.0, 3.0)));
+  }
+
+  // Override again in diff2 to (7,8,9)
+  {
+    const auto* a_d1 = diff1.get_element<components::TransformComponent>(e, "frameA");
+    ASSERT_NE(a_d1, nullptr);
+
+    auto a_override2 = *a_d1;
+    a_override2.local.translation() = Eigen::Vector3d(7.0, 8.0, 9.0);
+
+    diff2.add_or_replace<components::TransformComponent>(e, std::string("frameA"), a_override2);
+  }
+
+  // diff2 sees latest override
+  {
+    const auto* a = diff2.get_element<components::TransformComponent>(e, "frameA");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(a->local.translation().isApprox(Eigen::Vector3d(7.0, 8.0, 9.0)));
+  }
+
+  // diff1 remains unchanged
+  {
+    const auto* a = diff1.get_element<components::TransformComponent>(e, "frameA");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(a->local.translation().isApprox(Eigen::Vector3d(1.0, 2.0, 3.0)));
+  }
+
+  // base remains unchanged
+  {
+    const auto* a = base.get_element<components::TransformComponent>(e, "frameA");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(a->local.translation().isApprox(Eigen::Vector3d(0.0, 0.0, 0.0)));
+  }
+}
+
+TEST(DatabaseDiff, LayeredDiffRemoveHidesLowerOverride)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& tc = base.add<components::TransformComponent>(e);
+  tc.elements.emplace_back("frameB", makeNode("root", Eigen::Vector3d(5.0, 0.0, 0.0)));
+
+  database::DatabaseDiff diff1(base);
+
+  // Override frameB in diff1
+  {
+    const auto* b_base = base.get_element<components::TransformComponent>(e, "frameB");
+    ASSERT_NE(b_base, nullptr);
+
+    auto b_override = *b_base;
+    b_override.local.translation() = Eigen::Vector3d(6.0, 0.0, 0.0);
+
+    diff1.add_or_replace<components::TransformComponent>(e, std::string("frameB"), b_override);
+  }
+
+  // Create diff2 over diff1 and remove frameB there
+  database::DatabaseDiff diff2(diff1);
+  diff2.remove<components::TransformComponent>(e, std::string("frameB"));
+
+  // diff2 should hide it entirely
+  EXPECT_EQ(diff2.get_element<components::TransformComponent>(e, "frameB"), nullptr);
+
+  // diff1 still has its override
+  {
+    const auto* b = diff1.get_element<components::TransformComponent>(e, "frameB");
+    ASSERT_NE(b, nullptr);
+    EXPECT_TRUE(b->local.translation().isApprox(Eigen::Vector3d(6.0, 0.0, 0.0)));
+  }
+
+  // base still has original
+  {
+    const auto* b = base.get_element<components::TransformComponent>(e, "frameB");
+    ASSERT_NE(b, nullptr);
+    EXPECT_TRUE(b->local.translation().isApprox(Eigen::Vector3d(5.0, 0.0, 0.0)));
+  }
+}
+
+TEST(DatabaseDiff, LayeredDiffAddNewElementAtLowerThenOverrideAtUpper)
+{
+  database::Database base;
+
+  auto e = base.create();
+  base.add<components::TransformComponent>(e);
+
+  database::DatabaseDiff diff1(base);
+
+  // Add new element only in diff1
+  diff1.add_or_replace<components::TransformComponent>(e, std::string("virtual"),
+                                                       makeNode("root", Eigen::Vector3d(0.1, 0.2, 0.3)));
+
+  // diff2 layered over diff1
+  database::DatabaseDiff diff2(diff1);
+
+  // Read-through sees diff1 addition
+  {
+    const auto* v = diff2.get_element<components::TransformComponent>(e, "virtual");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->local.translation().isApprox(Eigen::Vector3d(0.1, 0.2, 0.3)));
+  }
+
+  // Override "virtual" in diff2
+  diff2.add_or_replace<components::TransformComponent>(e, std::string("virtual"),
+                                                       makeNode("root", Eigen::Vector3d(9.1, 9.2, 9.3)));
+
+  // diff2 sees its override
+  {
+    const auto* v = diff2.get_element<components::TransformComponent>(e, "virtual");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->local.translation().isApprox(Eigen::Vector3d(9.1, 9.2, 9.3)));
+  }
+
+  // diff1 still sees its original addition
+  {
+    const auto* v = diff1.get_element<components::TransformComponent>(e, "virtual");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->local.translation().isApprox(Eigen::Vector3d(0.1, 0.2, 0.3)));
+  }
+
+  // base doesn't see it
+  EXPECT_EQ(base.get_element<components::TransformComponent>(e, "virtual"), nullptr);
+}
+
+TEST(DatabaseDiff, LayeredDiffClearUpperRevealsLowerState)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& tc = base.add<components::TransformComponent>(e);
+  tc.elements.emplace_back("frameC", makeNode("root", Eigen::Vector3d(0.0, 0.0, 0.0)));
+
+  database::DatabaseDiff diff1(base);
+  diff1.add_or_replace<components::TransformComponent>(e, std::string("frameC"),
+                                                       makeNode("root", Eigen::Vector3d(1.0, 1.0, 1.0)));
+
+  database::DatabaseDiff diff2(diff1);
+  diff2.add_or_replace<components::TransformComponent>(e, std::string("frameC"),
+                                                       makeNode("root", Eigen::Vector3d(2.0, 2.0, 2.0)));
+
+  // Sanity checks
+  {
+    const auto* c1 = diff1.get_element<components::TransformComponent>(e, "frameC");
+    ASSERT_NE(c1, nullptr);
+    EXPECT_TRUE(c1->local.translation().isApprox(Eigen::Vector3d(1.0, 1.0, 1.0)));
+
+    const auto* c2 = diff2.get_element<components::TransformComponent>(e, "frameC");
+    ASSERT_NE(c2, nullptr);
+    EXPECT_TRUE(c2->local.translation().isApprox(Eigen::Vector3d(2.0, 2.0, 2.0)));
+  }
+
+  // Clear only upper diff
+  diff2.clear();
+
+  // Should fall back to diff1's view
+  {
+    const auto* c2 = diff2.get_element<components::TransformComponent>(e, "frameC");
+    ASSERT_NE(c2, nullptr);
+    EXPECT_TRUE(c2->local.translation().isApprox(Eigen::Vector3d(1.0, 1.0, 1.0)));
+  }
+
+  // Base still unchanged
+  {
+    const auto* c0 = base.get_element<components::TransformComponent>(e, "frameC");
+    ASSERT_NE(c0, nullptr);
+    EXPECT_TRUE(c0->local.translation().isApprox(Eigen::Vector3d(0.0, 0.0, 0.0)));
+  }
+}
