@@ -6,6 +6,7 @@ set(SODF_TESTS
     test_xml_parser.cpp
     test_expression_parser.cpp
     test_patch_operations.cpp
+    test_database_diff.cpp
 )
 
 set(TEST_DEPENDECIES
