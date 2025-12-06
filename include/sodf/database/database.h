@@ -382,6 +382,15 @@ public:
     return base_.ultimate_database();
   }
 
+  // Read-only iteration view (for generic helpers)
+  template <class Fn>
+  void each(Fn&& fn) const
+  {
+    // Note: this enumerates only entities existing in the ultimate Database.
+    // This matches current diff semantics (no entity-level adds in patch).
+    base_.ultimate_database().each(std::forward<Fn>(fn));
+  }
+
   // -------------------------------------------------------------------------
   // Read API (patched)
   // -------------------------------------------------------------------------
