@@ -504,3 +504,180 @@ TEST(SceneGraphDiff, CacheInvalidatesOnRevisionChange)
   Eigen::Isometry3d W2 = systems::get_root_global_transform(cache, map, "obj_cache_revision");
   EXPECT_TRUE(W2.translation().isApprox(Eigen::Vector3d(3.0, 0.0, 0.0)));
 }
+
+TEST(DatabaseDiff, WholeComponentReadThroughAndOverrideObjectComponent)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& obj = base.add<components::ObjectComponent>(e);
+  obj.id = "base_id";
+
+  database::DatabaseDiff diff(base);
+  // Read-through
+  {
+    const auto* o = diff.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->id, "base_id");
+  }
+
+  // Override whole component in diff
+  {
+    auto o_override = *base.get_const<components::ObjectComponent>(e);
+    o_override.id = "override_id";
+
+    diff.add_or_replace<components::ObjectComponent>(e, o_override);
+
+    const auto* o = diff.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->id, "override_id");
+
+    const auto* o_base = base.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o_base, nullptr);
+    EXPECT_EQ(o_base->id, "base_id");
+  }
+}
+
+TEST(DatabaseDiff, WholeComponentAddNewObjectComponentOnlyInDiff)
+{
+  database::Database base;
+
+  auto e = base.create();
+  // no ObjectComponent in base
+
+  database::DatabaseDiff diff(base);
+
+  EXPECT_EQ(base.get_const<components::ObjectComponent>(e), nullptr);
+  EXPECT_EQ(diff.get_const<components::ObjectComponent>(e), nullptr);
+
+  components::ObjectComponent o;
+  o.id = "virtual_obj";
+
+  diff.add_or_replace<components::ObjectComponent>(e, o);
+
+  {
+    const auto* o_d = diff.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o_d, nullptr);
+    EXPECT_EQ(o_d->id, "virtual_obj");
+  }
+
+  EXPECT_EQ(base.get_const<components::ObjectComponent>(e), nullptr);
+}
+
+TEST(DatabaseDiff, WholeComponentRemoveObjectComponent)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& obj = base.add<components::ObjectComponent>(e);
+  obj.id = "to_remove";
+
+  database::DatabaseDiff diff(base);
+
+  ASSERT_NE(diff.get_const<components::ObjectComponent>(e), nullptr);
+
+  diff.remove_component<components::ObjectComponent>(e);
+
+  EXPECT_EQ(diff.get_const<components::ObjectComponent>(e), nullptr);
+  EXPECT_NE(base.get_const<components::ObjectComponent>(e), nullptr);
+}
+
+TEST(DatabaseDiff, WholeComponentClearResetsToBaseView)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& obj = base.add<components::ObjectComponent>(e);
+  obj.id = "base_id";
+
+  database::DatabaseDiff diff(base);
+
+  components::ObjectComponent o_override = obj;
+  o_override.id = "override_id";
+
+  diff.add_or_replace<components::ObjectComponent>(e, o_override);
+
+  {
+    const auto* o = diff.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->id, "override_id");
+  }
+
+  diff.clear();
+  EXPECT_TRUE(diff.empty());
+
+  {
+    const auto* o = diff.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->id, "base_id");
+  }
+}
+
+TEST(DatabaseDiff, LayeredDiffWholeComponentOverridesParent)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& obj = base.add<components::ObjectComponent>(e);
+  obj.id = "base_id";
+
+  database::DatabaseDiff d1(base);
+
+  // Override in d1
+  {
+    auto o1 = *base.get_const<components::ObjectComponent>(e);
+    o1.id = "d1_id";
+    d1.add_or_replace<components::ObjectComponent>(e, o1);
+  }
+
+  database::DatabaseDiff d2(d1);
+
+  // Override again in d2
+  {
+    auto o2 = *d1.get_const<components::ObjectComponent>(e);
+    o2.id = "d2_id";
+    d2.add_or_replace<components::ObjectComponent>(e, o2);
+  }
+
+  {
+    const auto* o0 = base.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o0, nullptr);
+    EXPECT_EQ(o0->id, "base_id");
+  }
+  {
+    const auto* o1 = d1.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o1, nullptr);
+    EXPECT_EQ(o1->id, "d1_id");
+  }
+  {
+    const auto* o2 = d2.get_const<components::ObjectComponent>(e);
+    ASSERT_NE(o2, nullptr);
+    EXPECT_EQ(o2->id, "d2_id");
+  }
+}
+
+TEST(DatabaseDiff, LayeredDiffWholeComponentRemoveBeatsParentOverride)
+{
+  database::Database base;
+
+  auto e = base.create();
+  auto& obj = base.add<components::ObjectComponent>(e);
+  obj.id = "base_id";
+
+  database::DatabaseDiff d1(base);
+
+  // Override in d1
+  {
+    auto o1 = obj;
+    o1.id = "d1_id";
+    d1.add_or_replace<components::ObjectComponent>(e, o1);
+  }
+
+  database::DatabaseDiff d2(d1);
+
+  // Remove whole component in d2
+  d2.remove_component<components::ObjectComponent>(e);
+
+  EXPECT_NE(d1.get_const<components::ObjectComponent>(e), nullptr);
+  EXPECT_EQ(d2.get_const<components::ObjectComponent>(e), nullptr);
+}

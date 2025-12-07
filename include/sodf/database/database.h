@@ -13,6 +13,8 @@
 #include <vector>
 #include <type_traits>
 #include <cstddef>
+#include <optional>
+#include <algorithm>
 
 namespace sodf {
 namespace database {
@@ -136,8 +138,22 @@ using ObjectEntityMap = std::unordered_map<std::string, Database::entity_type>;
 /// ---------------------------------------------------------------------------
 namespace detail {
 
+using EntityID = Database::entity_type;
+
+// Detect if component has an "elements" member
+template <typename, typename = void>
+struct has_elements : std::false_type
+{
+};
+template <typename T>
+struct has_elements<T, std::void_t<decltype(std::declval<T&>().elements)>> : std::true_type
+{
+};
+template <typename T>
+inline constexpr bool has_elements_v = has_elements<T>::value;
+
 // Traits to extract key/value types from a component's ElementMap
-template <class C>
+template <class C, typename std::enable_if<has_elements_v<C>, int>::type = 0>
 struct element_traits
 {
   using container_t = decltype(std::declval<C&>().elements);
@@ -174,11 +190,12 @@ enum class PatchOpKind
   Remove
 };
 
+// IMPORTANT: optional value to avoid default-constructing V
 template <class V>
 struct PatchOp
 {
   PatchOpKind kind{ PatchOpKind::AddOrReplace };
-  V value{};
+  std::optional<V> value;
 };
 
 // Type-erased base for component patches
@@ -187,9 +204,11 @@ struct IComponentPatch
   virtual ~IComponentPatch() = default;
 };
 
-// Concrete patch for a specific component type C
-template <class C>
-struct ComponentPatch : IComponentPatch
+// ---------------------------------------------------------------------------
+// Element-level patch (components with .elements)
+// ---------------------------------------------------------------------------
+template <class C, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+struct ComponentPatchElements : IComponentPatch
 {
   using key_t = typename element_traits<C>::key_t;
   using value_t = typename element_traits<C>::value_t;
@@ -198,34 +217,70 @@ struct ComponentPatch : IComponentPatch
   std::unordered_map<EntityID, std::unordered_map<key_t, PatchOp<value_t>>> ops;
 };
 
+// ---------------------------------------------------------------------------
+// Component-level patch (components WITHOUT .elements)
+// ---------------------------------------------------------------------------
+template <class C, typename std::enable_if<!has_elements_v<C>, int>::type = 0>
+struct ComponentPatchWhole : IComponentPatch
+{
+  // Per entity → op
+  std::unordered_map<EntityID, PatchOp<C>> ops;
+};
+
 // A collection of patches across arbitrary component types
 class DatabasePatch
 {
 public:
   DatabasePatch() = default;
 
-  template <class C>
-  ComponentPatch<C>& get_or_create()
+  // ---------- elements components ----------
+  template <class C, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+  ComponentPatchElements<C>& get_or_create()
   {
     const auto ti = std::type_index(typeid(C));
     auto it = patches_.find(ti);
     if (it != patches_.end())
-      return *static_cast<ComponentPatch<C>*>(it->second.get());
+      return *static_cast<ComponentPatchElements<C>*>(it->second.get());
 
-    auto ptr = std::make_unique<ComponentPatch<C>>();
+    auto ptr = std::make_unique<ComponentPatchElements<C>>();
     auto* raw = ptr.get();
     patches_.emplace(ti, std::move(ptr));
     return *raw;
   }
 
-  template <class C>
-  const ComponentPatch<C>* get() const
+  template <class C, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+  const ComponentPatchElements<C>* get() const
   {
     const auto ti = std::type_index(typeid(C));
     auto it = patches_.find(ti);
     if (it == patches_.end())
       return nullptr;
-    return static_cast<const ComponentPatch<C>*>(it->second.get());
+    return static_cast<const ComponentPatchElements<C>*>(it->second.get());
+  }
+
+  // ---------- whole components ----------
+  template <class C, typename std::enable_if<!has_elements_v<C>, int>::type = 0>
+  ComponentPatchWhole<C>& get_or_create()
+  {
+    const auto ti = std::type_index(typeid(C));
+    auto it = patches_.find(ti);
+    if (it != patches_.end())
+      return *static_cast<ComponentPatchWhole<C>*>(it->second.get());
+
+    auto ptr = std::make_unique<ComponentPatchWhole<C>>();
+    auto* raw = ptr.get();
+    patches_.emplace(ti, std::move(ptr));
+    return *raw;
+  }
+
+  template <class C, typename std::enable_if<!has_elements_v<C>, int>::type = 0>
+  const ComponentPatchWhole<C>* get() const
+  {
+    const auto ti = std::type_index(typeid(C));
+    auto it = patches_.find(ti);
+    if (it == patches_.end())
+      return nullptr;
+    return static_cast<const ComponentPatchWhole<C>*>(it->second.get());
   }
 
   bool empty() const
@@ -238,9 +293,11 @@ public:
     patches_.clear();
   }
 
-  // Convenience authoring API:
-  template <class C, class Key, class Value>
-  void add_or_replace(Database::entity_type e, Key&& key, Value&& value)
+  // -------------------------------------------------------------------------
+  // Convenience authoring API (elements)
+  // -------------------------------------------------------------------------
+  template <class C, class Key, class Value, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+  void add_or_replace(EntityID e, Key&& key, Value&& value)
   {
     auto& cp = get_or_create<C>();
     using value_t = typename element_traits<C>::value_t;
@@ -253,8 +310,8 @@ public:
     cp.ops[e][normalize_key<key_t>(key)] = std::move(op);
   }
 
-  template <class C, class Key>
-  void remove(Database::entity_type e, Key&& key)
+  template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+  void remove(EntityID e, Key&& key)
   {
     auto& cp = get_or_create<C>();
     using value_t = typename element_traits<C>::value_t;
@@ -262,8 +319,36 @@ public:
 
     PatchOp<value_t> op;
     op.kind = PatchOpKind::Remove;
+    op.value.reset();
 
     cp.ops[e][normalize_key<key_t>(key)] = std::move(op);
+  }
+
+  // -------------------------------------------------------------------------
+  // Convenience authoring API (whole component)
+  // -------------------------------------------------------------------------
+  template <class C, class Value, typename std::enable_if<!has_elements_v<C>, int>::type = 0>
+  void add_or_replace(EntityID e, Value&& value)
+  {
+    auto& cp = get_or_create<C>();
+
+    PatchOp<C> op;
+    op.kind = PatchOpKind::AddOrReplace;
+    op.value = std::forward<Value>(value);
+
+    cp.ops[e] = std::move(op);
+  }
+
+  template <class C, typename std::enable_if<!has_elements_v<C>, int>::type = 0>
+  void remove_component(EntityID e)
+  {
+    auto& cp = get_or_create<C>();
+
+    PatchOp<C> op;
+    op.kind = PatchOpKind::Remove;
+    op.value.reset();
+
+    cp.ops[e] = std::move(op);
   }
 
 private:
@@ -290,8 +375,8 @@ public:
   template <class C>
   const C* get_const(entity_type e) const;
 
-  template <class C, class Key>
-  const auto* get_element(entity_type e, const Key& key) const;
+  template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+  const typename element_traits<C>::value_t* get_element(entity_type e, const Key& key) const;
 
 private:
   const Database* db_;
@@ -310,14 +395,34 @@ public:
   {
   }
 
+  // -------------------------------------------------------------------------
+  // Whole-component get_const with patch overlay
+  // -------------------------------------------------------------------------
   template <class C>
   const C* get_const(entity_type e) const
   {
+    if constexpr (!has_elements_v<C>)
+    {
+      if (const auto* cp = patch_.template get<C>())
+      {
+        auto it = cp->ops.find(e);
+        if (it != cp->ops.end())
+        {
+          if (it->second.kind == PatchOpKind::Remove)
+            return static_cast<const C*>(nullptr);
+          if (it->second.value)
+            return &(*it->second.value);
+        }
+      }
+    }
     return base_.template get_const<C>(e);
   }
 
-  template <class C, class Key>
-  const auto* get_element(entity_type e, const Key& key) const
+  // -------------------------------------------------------------------------
+  // Element-level get_element with patch overlay
+  // -------------------------------------------------------------------------
+  template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type = 0>
+  const typename element_traits<C>::value_t* get_element(entity_type e, const Key& key) const
   {
     using value_t = typename element_traits<C>::value_t;
     using key_t = typename element_traits<C>::key_t;
@@ -333,7 +438,9 @@ public:
         {
           if (itK->second.kind == PatchOpKind::Remove)
             return static_cast<const value_t*>(nullptr);
-          return &itK->second.value;
+          if (itK->second.value)
+            return &(*itK->second.value);
+          return static_cast<const value_t*>(nullptr);
         }
       }
     }
@@ -341,7 +448,7 @@ public:
   }
 
   template <class C>
-  const auto* get_element(entity_type e, const char* key) const
+  const typename element_traits<C>::value_t* get_element(entity_type e, const char* key) const
   {
     return get_element<C>(e, std::string_view(key));
   }
@@ -403,32 +510,50 @@ public:
     return view_.template get_const<C>(e);
   }
 
-  template <class C, class Key>
-  const auto* get_element(entity_type e, const Key& key) const
+  // Element-level only
+  template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
+  const typename detail::element_traits<C>::value_t* get_element(entity_type e, const Key& key) const
   {
     return view_.template get_element<C>(e, key);
   }
 
-  template <class C>
-  const auto* get_element(entity_type e, const char* key) const
+  template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
+  const typename detail::element_traits<C>::value_t* get_element(entity_type e, const char* key) const
   {
     return view_.template get_element<C>(e, key);
   }
 
   // -------------------------------------------------------------------------
-  // Authoring API
+  // Authoring API (elements)
   // -------------------------------------------------------------------------
-  template <class C, class Key, class Value>
+  template <class C, class Key, class Value, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
   void add_or_replace(entity_type e, Key&& key, Value&& value)
   {
     patch_.template add_or_replace<C>(e, std::forward<Key>(key), std::forward<Value>(value));
     ++revision_;
   }
 
-  template <class C, class Key>
+  template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
   void remove(entity_type e, Key&& key)
   {
     patch_.template remove<C>(e, std::forward<Key>(key));
+    ++revision_;
+  }
+
+  // -------------------------------------------------------------------------
+  // Authoring API (whole component)
+  // -------------------------------------------------------------------------
+  template <class C, class Value, typename std::enable_if<!detail::has_elements_v<C>, int>::type = 0>
+  void add_or_replace(entity_type e, Value&& value)
+  {
+    patch_.template add_or_replace<C>(e, std::forward<Value>(value));
+    ++revision_;
+  }
+
+  template <class C, typename std::enable_if<!detail::has_elements_v<C>, int>::type = 0>
+  void remove_component(entity_type e)
+  {
+    patch_.template remove_component<C>(e);
     ++revision_;
   }
 
@@ -444,13 +569,13 @@ public:
   }
 
   // -------------------------------------------------------------------------
-  // Internal-ish helpers (needed for Path C materialization)
+  // Internal-ish helpers (needed for materialization)
   // -------------------------------------------------------------------------
 
-  // Enumerate patch ops for a specific component type on one entity.
+  // Enumerate patch ops for a specific ELEMENT component type on one entity.
   // Fn signature:
   //   void(const key_t& key, detail::PatchOpKind kind, const value_t* value_or_null)
-  template <class C, class Fn>
+  template <class C, class Fn, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
   void for_each_patch_op(entity_type e, Fn&& fn) const
   {
     using key_t = typename detail::element_traits<C>::key_t;
@@ -475,14 +600,15 @@ public:
       }
       else
       {
-        fn(key, detail::PatchOpKind::AddOrReplace, &op.value);
+        const value_t* vptr = op.value ? &(*op.value) : nullptr;
+        fn(key, detail::PatchOpKind::AddOrReplace, vptr);
       }
     }
   }
 
-  // Materialize a component by copying base then applying patch ops to its elements.
+  // Materialize an ELEMENT component by copying base then applying patch ops.
   // Returns false if base doesn't have the component.
-  template <class C>
+  template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
   bool materialize_component(entity_type e, C& out) const
   {
     const C* base_c = base_.template get_const<C>(e);
@@ -522,6 +648,36 @@ public:
     return true;
   }
 
+  // Materialize a WHOLE component:
+  // - If patch removes -> return false
+  // - If patch replaces -> out = patched
+  // - Else -> out = base
+  template <class C, typename std::enable_if<!detail::has_elements_v<C>, int>::type = 0>
+  bool materialize_component(entity_type e, C& out) const
+  {
+    if (const auto* cp = patch_.template get<C>())
+    {
+      auto it = cp->ops.find(e);
+      if (it != cp->ops.end())
+      {
+        if (it->second.kind == detail::PatchOpKind::Remove)
+          return false;
+        if (it->second.value)
+        {
+          out = *it->second.value;
+          return true;
+        }
+      }
+    }
+
+    const C* base_c = base_.template get_const<C>(e);
+    if (!base_c)
+      return false;
+
+    out = *base_c;
+    return true;
+  }
+
 private:
   detail::DiffBase base_;
   detail::DatabasePatch patch_;
@@ -549,11 +705,13 @@ inline const C* DiffBase::get_const(entity_type e) const
   return diff_->template get_const<C>(e);
 }
 
-template <class C, class Key>
-inline const auto* DiffBase::get_element(entity_type e, const Key& key) const
+template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type>
+inline const typename element_traits<C>::value_t* DiffBase::get_element(entity_type e, const Key& key) const
 {
   if (db_)
     return db_->template get_element<C>(e, key);
+
+  // IMPORTANT: explicit return type avoids GCC auto deduction bug
   return diff_->template get_element<C>(e, key);
 }
 
