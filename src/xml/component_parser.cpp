@@ -97,6 +97,21 @@ void parseStackedShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2
   stacked_shape_component->elements.emplace_back(id, std::move(stack));
 }
 
+void parseStackedShapeRefComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
+                                   database::Database& db, database::EntityID eid)
+{
+  (void)doc;
+  const std::string id = evalElementIdRequired(elem);
+
+  std::string ref_id = evalTextAttributeRequired(elem, "ref");
+  if (ref_id.empty())
+    throw std::runtime_error("Empty 'ref' in <StackedShapeRef> for '" + id + "' at line " +
+                             std::to_string(elem->GetLineNum()));
+
+  auto* stacked_shape_component = db.get_or_add<components::StackedShapeComponent>(eid);
+  stacked_shape_component->elements.emplace_back(id, std::move(ref_id));
+}
+
 void parseParallelGraspComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
                                  database::Database& db, database::EntityID eid)
 {
@@ -127,6 +142,20 @@ void parseShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLEl
   shape_component->elements.emplace_back(id, std::move(shape));
 }
 
+void parseShapeRefComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, database::Database& db,
+                            database::EntityID eid)
+{
+  (void)doc;
+  const std::string id = evalElementIdRequired(elem);
+
+  std::string ref_id = evalTextAttributeRequired(elem, "ref");
+  if (ref_id.empty())
+    throw std::runtime_error("Empty 'ref' in <ShapeRef> for '" + id + "' at line " + std::to_string(elem->GetLineNum()));
+
+  auto* shape_component = db.get_or_add<components::ShapeComponent>(eid);
+  shape_component->elements.emplace_back(id, std::move(ref_id));
+}
+
 void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
                                database::Database& db, database::EntityID eid)
 {
@@ -153,9 +182,9 @@ void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2:
 
   // ----- <StackedShapeRef id="..."/> (optional but validated if present) -----
   std::string stacked_shape_id;
-  const auto* ssr = elem->FirstChildElement("StackedShapeRef");
+  const auto* ssr = elem->FirstChildElement("StackedShapeID");
   if (!ssr)
-    throw std::runtime_error("StackedShapeRef element required in <DomainShape> element");
+    throw std::runtime_error("StackedShapeID element required in <DomainShape> element");
 
   stacked_shape_id = evalTextAttributeRequired(ssr, "id");
   if (stacked_shape_id.empty())
@@ -177,6 +206,21 @@ void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2:
   if (!comp)
     throw std::runtime_error("get_or_add<DomainShapeComponent> failed for DomainShape '" + id + "'");
   comp->elements.emplace_back(id, std::move(ds));
+}
+
+void parseDomainShapeRefComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
+                                  database::Database& db, database::EntityID eid)
+{
+  (void)doc;
+  const std::string id = evalElementIdRequired(elem);
+
+  std::string ref_id = evalTextAttributeRequired(elem, "ref");
+  if (ref_id.empty())
+    throw std::runtime_error("Empty 'ref' in <DomainShapeRef> for '" + id + "' at line " +
+                             std::to_string(elem->GetLineNum()));
+
+  auto* domain_shape_component = db.get_or_add<components::DomainShapeComponent>(eid);
+  domain_shape_component->elements.emplace_back(id, std::move(ref_id));
 }
 
 void parseLinkComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem, database::Database& db,

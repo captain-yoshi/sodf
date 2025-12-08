@@ -34,10 +34,17 @@ void parseProductComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XML
                            database::Database& db, database::EntityID eid);
 void parseShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem, database::Database& db,
                          database::EntityID eid);
-void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
-                               database::Database& db, database::EntityID eid);
+
+void parseShapeRefComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                            database::Database& db, database::EntityID eid);
 void parseStackedShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
                                 database::Database& db, database::EntityID eid);
+void parseStackedShapeRefComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem,
+                                   database::Database& db, database::EntityID eid);
+void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                               database::Database& db, database::EntityID eid);
+void parseDomainShapeRefComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
+                                  database::Database& db, database::EntityID eid);
 void parseTouchscreenComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
                                database::Database& db, database::EntityID eid);
 void parseTransformComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* obj_elem,
@@ -57,8 +64,11 @@ void parseVirtualButtonComponent(const tinyxml2::XMLDocument* doc, const tinyxml
   X(Button, parseButtonComponent)                                                                                       \
   X(VirtualButton, parseVirtualButtonComponent)                                                                         \
   X(Shape, parseShapeComponent)                                                                                         \
+  X(ShapeRef, parseShapeRefComponent)                                                                                   \
   X(StackedShape, parseStackedShapeComponent)                                                                           \
+  X(StackedShapeRef, parseStackedShapeRefComponent)                                                                     \
   X(DomainShape, parseDomainShapeComponent)                                                                             \
+  X(DomainShapeRef, parseDomainShapeRefComponent)                                                                       \
   X(ParallelGrasp, parseParallelGraspComponent)                                                                         \
   X(Container, parseContainerComponent)                                                                                 \
   /* Special: Control tags, not a true components. The handler does nothing. */                                         \
