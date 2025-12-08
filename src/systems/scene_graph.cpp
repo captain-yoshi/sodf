@@ -6,81 +6,21 @@
 namespace sodf {
 namespace systems {
 
-// Build object-id → entity map
-database::ObjectEntityMap make_object_entity_map(database::Database& db)
-{
-  database::ObjectEntityMap map;
-  db.each([&](database::EntityID id, const components::ObjectComponent& obj) { map.emplace(obj.id, id); });
-  return map;
-}
-
-// Local transform from root → named frame (within one entity)
-Eigen::Isometry3d get_local_to_root(database::Database& db, database::EntityID eid, const std::string& frame_name)
-{
-  const auto* tfc = db.get_const<components::TransformComponent>(eid);
-  if (!tfc)
-    throw std::runtime_error("Entity missing TransformComponent.");
-
-  const auto& tmap = tfc->elements;
-
-  auto find_idx = [&](const std::string& name) -> int {
-    for (size_t i = 0; i < tmap.size(); ++i)
-      if (tmap[i].first == name)
-        return static_cast<int>(i);
-    return -1;
-  };
-
-  const int idx = find_idx(frame_name);
-  if (idx == -1)
-    throw std::runtime_error("Frame '" + frame_name + "' not found in entity.");
-
-  Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
-
-  // climb to root(0), collect indices
-  std::vector<int> chain;
-  for (int cur = idx; cur != 0;)
-  {
-    chain.push_back(cur);
-    const std::string& parent = tmap[cur].second.parent;
-    const int pidx = find_idx(parent);
-    if (pidx == -1)
-      throw std::runtime_error("Parent frame '" + parent + "' not found in entity.");
-    cur = pidx;
-  }
-
-  // compose root→child
-  for (auto it = chain.rbegin(); it != chain.rend(); ++it)
-    T = T * tmap[*it].second.local;
-
-  return T;
-}
-
-// Find the unique root/global entity (tagged)
-std::optional<database::EntityID> find_root_frame_entity(database::Database& db)
-{
-  std::vector<database::EntityID> tagged;
-  db.each([&](database::EntityID id, const components::RootFrameTag&) { tagged.push_back(id); });
-  if (tagged.empty())
-    return std::nullopt;  // no explicit global root
-  if (tagged.size() > 1)
-    throw std::runtime_error("Multiple RootFrameTag");
-  return tagged.front();
-}
+// -----------------------------------------------------------------------------
+// Database-only global-cache implementation
+// -----------------------------------------------------------------------------
 
 Eigen::Isometry3d get_root_global_transform(database::Database& db, const database::ObjectEntityMap& obj_map,
                                             const std::string& object_id)
 {
-  // 1) Find the entity from the provided map
   auto it = obj_map.find(object_id);
   if (it == obj_map.end())
     throw std::runtime_error("[scene_graph] get_root_global_transform: object id '" + object_id + "' not found");
 
   const database::EntityID eid = it->second;
 
-  // 2) Make sure this entity's global transforms are up-to-date
   update_entity_global_transforms(db, eid, obj_map);
 
-  // 3) Return the global of the root frame (first element)
   auto* tf = db.get<components::TransformComponent>(eid);
   if (!tf || tf->elements.empty())
     throw std::runtime_error("[scene_graph] get_root_global_transform: entity has no TransformComponent or no frames");
@@ -96,13 +36,11 @@ static bool update_global_transform(database::Database& db, database::EntityID i
   const std::string& frame_name = kv.first;
   auto& frame = kv.second;
 
-  // --- 1) Ensure parent is up to date; capture its global if any
   bool parent_recomputed = false;
   Eigen::Isometry3d parent_global = Eigen::Isometry3d::Identity();
 
   if (frame_idx == 0)
   {
-    // Root can have an external parent object
     if (!frame.parent.empty())
     {
       auto it = obj_map.find(frame.parent);
@@ -114,7 +52,6 @@ static bool update_global_transform(database::Database& db, database::EntityID i
       {
         if (!ptf->elements.empty())
         {
-          // Do NOT force the parent entity; just update if it’s dirty.
           parent_recomputed = update_global_transform(db, parent_eid, *ptf, 0, obj_map, /*force=*/false);
           parent_global = ptf->elements[0].second.global;
         }
@@ -123,7 +60,6 @@ static bool update_global_transform(database::Database& db, database::EntityID i
   }
   else
   {
-    // Inner frame depends on another frame in the same TransformComponent
     const std::string& parent_name = frame.parent;
     auto pit =
         std::find_if(tf.elements.begin(), tf.elements.end(), [&](const auto& p) { return p.first == parent_name; });
@@ -140,12 +76,10 @@ static bool update_global_transform(database::Database& db, database::EntityID i
     }
   }
 
-  // --- 2) Decide whether THIS node needs recompute
   const bool need_recompute = force || frame.dirty || parent_recomputed;
   if (!need_recompute)
     return false;
 
-  // --- 3) If joint-driven, (re)build local from rest_local + delta(q)
   if (frame_idx != 0 && !frame.is_static)
   {
     if (auto* joints = db.get<components::JointComponent>(id))
@@ -241,20 +175,15 @@ static bool update_global_transform(database::Database& db, database::EntityID i
 
           case components::JointType::FIXED:
           default:
-            // Keep delta = Identity; local = rest_local.
             break;
         }
 
-        // Compose current pose from authored rest pose and joint delta
         frame.local = frame.rest_local * delta;
       }
-      // else: dynamic frame but no joint entry -> leave frame.local as-is
     }
   }
 
-  // --- 4) Compose global
   frame.global = parent_global * frame.local;
-
   frame.dirty = false;
   return true;
 }
@@ -270,26 +199,17 @@ void update_entity_global_transforms(database::Database& db, database::EntityID 
     throw std::runtime_error("[scene_graph] update_entity_global_transforms: entity " + std::to_string(eid.index) +
                              " has an empty TransformComponent (no frames).");
 
-  // If the root was just modified, force the whole local subtree for this entity.
   const bool force_subtree = tf->elements[0].second.dirty;
 
   for (std::size_t i = 0; i < tf->elements.size(); ++i)
-  {
-    // This call already:
-    //  - updates the parent entity’s root if needed (and only if needed),
-    //  - respects `force_subtree` for this entity,
-    //  - walks children frames inside this TransformComponent.
     update_global_transform(db, eid, *tf, i, obj_map, /*force=*/force_subtree);
-  }
 }
 
-// Update all entities’ global transforms (forces subtree when root is dirty)
 void update_all_global_transforms(database::Database& db)
 {
   auto obj_map = make_object_entity_map(db);
 
   db.each([&](database::EntityID id, components::TransformComponent& tf) {
-    // If root is dirty, force the whole subtree of this entity
     const bool force_subtree = (!tf.elements.empty() && tf.elements[0].second.dirty);
 
     for (std::size_t i = 0; i < tf.elements.size(); ++i)
@@ -297,7 +217,6 @@ void update_all_global_transforms(database::Database& db)
   });
 }
 
-// Get global transform by (entity, frame name)
 Eigen::Isometry3d get_global_transform(database::Database& db, database::EntityID eid, const std::string& frame_name)
 {
   auto* tf = db.get_element<components::TransformComponent>(eid, frame_name);
@@ -306,7 +225,6 @@ Eigen::Isometry3d get_global_transform(database::Database& db, database::EntityI
   return tf->global;
 }
 
-// Get global transform by absolute path “/objectId/frame”
 Eigen::Isometry3d get_global_transform(database::Database& db, const std::string& abs_path)
 {
   if (abs_path.empty() || abs_path[0] != '/')

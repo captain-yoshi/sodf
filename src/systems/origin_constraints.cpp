@@ -1,4 +1,5 @@
-// src/systems/origin_constraints.cpp
+#include <sodf/database/database.h>
+
 #include <sodf/systems/origin_ls_solver.h>
 #include <sodf/systems/scene_graph.h>
 
@@ -265,7 +266,6 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
   // host_object is already inferred in apply_origin_constraints (topology phase)
 
   // ---------- Establish baseline T0 in WORLD (initial guess) ----------
-  // Empty parent is fine and means WORLD.
   Eigen::Isometry3d T0 = root_node.local;  // default baseline = current local (assumed world)
   std::string new_parent = root_node.parent;
 
@@ -346,7 +346,6 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
 
       // 5) One GN step around *current DB pose*
       Eigen::Isometry3d dT = systems::solve_origin_least_squares_once(db, map, eid, origin, lp, &stats);
-      // dT is an increment: T_new = dT * T_old
 
       // 6) Apply increment (left-multiply)
       T_world = dT * T_world;
@@ -441,7 +440,6 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
         std::ostringstream diag;
         for (const auto& e : residuals)
         {
-          // Only show SeatCone / SeatConeOnCylinder residuals
           if (e.kind.find("SeatCone") == std::string::npos && e.kind.find("SeatConeOnCylinder") == std::string::npos)
             continue;
 
@@ -461,8 +459,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
         std::ostringstream oss;
         oss << "[Origin] SeatCone discrete pass failed to converge after " << max_seat_iters
             << " iterations for guest_object='" << origin.guest_object << "'.\n"
-            << "Likely inconsistent SeatConeOnCylinder constraints "
-               "(e.g., multiple seats fighting each other).";
+            << "Likely inconsistent SeatConeOnCylinder constraints (e.g., multiple seats fighting each other).";
 
         if (!diag.str().empty())
         {
@@ -496,10 +493,6 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
     if (it == map.end())
       throw std::runtime_error("[Origin] host_object '" + origin.host_object + "' not found in ObjectEntityMap");
 
-    const auto host_eid = it->second;
-
-    (void)host_eid;  // host_eid is not used directly; get_root_global_transform uses id
-
     // Get host's global transform W_H
     const Eigen::Isometry3d W_H = sodf::systems::get_root_global_transform(db, map, origin.host_object);
 
@@ -522,8 +515,6 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
   // ---------- Validate in WORLD; throw on failure (no rollback) ----------
   auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
 
-  // Count constraints that are either hard-failed (!ok)
-  // or numerically outside tolerance.
   std::size_t bad = 0;
   for (const auto& e : residuals)
   {
@@ -546,7 +537,6 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
 
   if (bad)
   {
-    // Leave the current (bad) pose as-is so the user can inspect it, but signal failure.
     std::string why = sodf::systems::format_origin_residual_errors(residuals, kOriginAngTolRad, kOriginDistTolM);
 
     throw std::runtime_error("Origin solve violated " + std::to_string(bad) + " constraint(s) beyond tolerance:\n" +
@@ -565,18 +555,6 @@ struct OriginNode
   std::string host_object;  // may be empty (WORLD or external)
 };
 
-// Custom hash for EntityID
-struct EntityIDHash
-{
-  std::size_t operator()(const database::EntityID& e) const noexcept
-  {
-    std::size_t h1 = std::hash<std::size_t>{}(e.index);
-    std::size_t h2 = std::hash<std::size_t>{}(e.generation);
-    // standard hash combine
-    return h1 ^ (h2 + 0x9e3779b9u + (h1 << 6) + (h1 >> 2));
-  }
-};
-
 }  // namespace
 
 void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& obj_map)
@@ -587,12 +565,11 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
   using components::TransformComponent;
 
   // ---------------- Collect all entities that have an Origin ----------------
-  std::unordered_map<EntityID, OriginNode, EntityIDHash> nodes;
-  std::unordered_map<EntityID, int, EntityIDHash> indegree;
-  std::unordered_map<EntityID, std::vector<EntityID>, EntityIDHash> children;
+  std::unordered_map<EntityID, OriginNode> nodes;
+  std::unordered_map<EntityID, int> indegree;
+  std::unordered_map<EntityID, std::vector<EntityID>> children;
 
   db.each([&](EntityID eid, ObjectComponent& obj, OriginComponent& origin) {
-    // Ensure host_object is initialized so we can build the dependency graph.
     if (origin.host_object.empty())
       origin.host_object = infer_host_object(origin);
 
@@ -613,18 +590,16 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
   {
     const std::string& host_id = node.host_object;
     if (host_id.empty())
-      continue;  // attached to WORLD or external thing
+      continue;
 
     auto it_host = obj_map.find(host_id);
     if (it_host == obj_map.end())
     {
-      // Host object not in this scene → effectively WORLD-level parent.
       continue;
     }
 
     EntityID host_eid = it_host->second;
 
-    // Only add an edge if the host itself has an Origin.
     auto it_node_host = nodes.find(host_eid);
     if (it_node_host == nodes.end())
       continue;
@@ -638,10 +613,10 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
   for (auto& [eid, deg] : indegree)
   {
     if (deg == 0)
-      q.push(eid);  // can be solved immediately (host is WORLD or has no Origin)
+      q.push(eid);
   }
 
-  std::unordered_map<EntityID, std::string, EntityIDHash> last_error;
+  std::unordered_map<EntityID, std::string> last_error;
   std::size_t processed = 0;
 
   while (!q.empty())
@@ -655,7 +630,6 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
 
     if (!tcomp || !origin)
     {
-      // Shouldn't happen, but don't crash the whole solver if DB is inconsistent.
       last_error[eid] = "Missing TransformComponent or OriginComponent";
     }
     else
@@ -671,7 +645,6 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
       }
     }
 
-    // "Unlock" children that depended on this origin
     auto it_children = children.find(eid);
     if (it_children != children.end())
     {
@@ -687,8 +660,7 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
   if (processed != nodes.size())
   {
     std::ostringstream oss;
-    oss << "[Origin] Could not solve all Origin components "
-           "(likely cycle or missing hosts).\n";
+    oss << "[Origin] Could not solve all Origin components (likely cycle or missing hosts).\n";
 
     for (auto& [eid, node] : nodes)
     {

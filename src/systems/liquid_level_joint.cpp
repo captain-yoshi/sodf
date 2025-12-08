@@ -3,10 +3,61 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
+
+#include <sodf/components/container.h>
+#include <sodf/components/transform.h>
+#include <sodf/components/joint.h>
+#include <sodf/components/domain_shape.h>
+#include <sodf/components/shape.h>
 
 namespace sodf {
 namespace systems {
 
+namespace {
+
+using EntityID = database::EntityID;
+
+// Utility: fetch an element value via diff, failing with a good error
+template <class C, class Key>
+static const auto& require_elem_const(const database::DatabaseDiff& diff, EntityID eid, const Key& key,
+                                      const std::string& what)
+{
+  const auto* v = diff.template get_element<C>(eid, key);
+  if (!v)
+  {
+    std::ostringstream os;
+    os << "[liquid_level/diff] " << what << " '" << key << "' not found on entity.";
+    throw std::runtime_error(os.str());
+  }
+  return *v;
+}
+
+// Utility: mark a transform frame dirty via diff patching
+static void mark_tf_dirty(database::DatabaseDiff& diff, EntityID eid, const std::string& frame_id)
+{
+  if (frame_id.empty())
+    return;
+
+  const auto* tf = diff.get_element<components::TransformComponent>(eid, frame_id);
+  if (!tf)
+  {
+    std::ostringstream os;
+    os << "[liquid_level/diff] Transform frame '" << frame_id << "' not found on entity.";
+    throw std::runtime_error(os.str());
+  }
+
+  auto tf_copy = *tf;
+  tf_copy.dirty = true;
+
+  diff.add_or_replace<components::TransformComponent>(eid, frame_id, tf_copy);
+}
+
+}  // namespace
+
+// -----------------------------------------------------------------------------
+// Existing base-db version (unchanged)
+// -----------------------------------------------------------------------------
 void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vector3d& gravity_world)
 {
   db.each([&](database::EntityID eid, components::ContainerComponent& containers, components::TransformComponent& tcomp,
@@ -14,14 +65,12 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
               components::StackedShapeComponent& scomp) {
     for (auto& [name, c] : containers.elements)
     {
-      // Skip benign cases
       if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty() ||
           c.payload.frame_id.empty())
       {
         continue;
       }
 
-      // Resolve domain shape
       physics::DomainShape* dom = database::get_element(dcomp.elements, c.payload.domain_shape_id);
       if (!dom)
       {
@@ -31,7 +80,6 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         throw std::runtime_error(os.str());
       }
 
-      // Resolve joint + validate actuation/type/DOF
       auto* joint = database::get_element(jcomp.elements, c.fluid.liquid_level_joint_id);
       if (!joint)
       {
@@ -54,7 +102,6 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         throw std::runtime_error(os.str());
       }
 
-      // Frames
       auto* tf_payload = database::get_element(tcomp.elements, c.payload.frame_id);
       if (!tf_payload)
       {
@@ -65,7 +112,6 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
 
       Eigen::Vector3d p_base_world = tf_payload->global.translation();
 
-      // FillEnv
       physics::FillEnv env;
       env.T_world_domain = tf_payload->global;
       env.p_base_world = p_base_world;
@@ -95,7 +141,6 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         dom->setMeshCacheFromStack(*stack, /*radial_res=*/64, /*axial_res_spherical=*/16, /*weld_tol=*/1e-9);
       }
 
-      // Compute world-vertical height
       double h_world = 0.0;
       try
       {
@@ -110,7 +155,6 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
 
       if (!tilted)
       {
-        // Clamp in world space
         double hmax_world = 0.0;
         try
         {
@@ -123,7 +167,6 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
       }
       else
       {
-        // Convert to axis displacement and clamp in axis space
         const Eigen::Vector3d g_up = -env.g_down_world.normalized();
         const Eigen::Vector3d axis_world = dom->heightAxisWorld(env);
         const double cos_theta = axis_world.dot(g_up);
@@ -155,10 +198,9 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
             h_axis = std::clamp(h_axis, hmax_axis, 0.0);
         }
 
-        h = h_axis;  // axis coords from here on
+        h = h_axis;
       }
 
-      // Joint hard limits (axis units)
       if (joint->limit.min_position.size() == 1 && joint->limit.max_position.size() == 1)
       {
         const double jmin = joint->limit.min_position[0];
@@ -167,12 +209,10 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
           h = std::clamp(h, jmin, jmax);
       }
 
-      // Write joint state
       if (joint->position.size() != 1)
         joint->resize(1);
       joint->position[0] = h;
 
-      // Mark frames dirty
       if (!c.fluid.liquid_level_frame_id.empty())
       {
         if (auto* tf_ll = database::get_element(tcomp.elements, c.fluid.liquid_level_frame_id))
@@ -194,6 +234,184 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
            << name << "'.";
         throw std::runtime_error(os.str());
       }
+    }
+  });
+}
+
+// -----------------------------------------------------------------------------
+// NEW diff-safe version
+// -----------------------------------------------------------------------------
+void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen::Vector3d& gravity_world)
+{
+  using components::ContainerComponent;
+  using components::DomainShapeComponent;
+  using components::JointComponent;
+  using components::StackedShapeComponent;
+  using components::TransformComponent;
+
+  // Iterate safely: request const refs so we don't mutate base storage.
+  diff.each([&](EntityID eid, const ContainerComponent& containers, const TransformComponent& /*tcomp*/,
+                const JointComponent& /*jcomp*/, const DomainShapeComponent& /*dcomp*/,
+                const StackedShapeComponent& /*scomp*/) {
+    for (const auto& kv : containers.elements)
+    {
+      const std::string& name = kv.first;
+      const auto& c = kv.second;
+
+      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty() ||
+          c.payload.frame_id.empty())
+      {
+        continue;
+      }
+
+      // ---------------- Resolve immutable inputs through the diff ----------------
+
+      const auto& dom_base =
+          require_elem_const<DomainShapeComponent>(diff, eid, c.payload.domain_shape_id, "DomainShape");
+
+      const auto& joint_base = require_elem_const<JointComponent>(diff, eid, c.fluid.liquid_level_joint_id, "Joint");
+
+      if (joint_base.actuation != components::JointActuation::VIRTUAL)
+      {
+        std::ostringstream os;
+        os << "[liquid_level/diff] Joint '" << c.fluid.liquid_level_joint_id << "' must be VIRTUAL (is "
+           << components::jointActuationToString(joint_base.actuation) << ").";
+        throw std::runtime_error(os.str());
+      }
+      if (joint_base.type != components::JointType::PRISMATIC || joint_base.dof() != 1)
+      {
+        std::ostringstream os;
+        os << "[liquid_level/diff] Joint '" << c.fluid.liquid_level_joint_id << "' must be 1-DOF PRISMATIC.";
+        throw std::runtime_error(os.str());
+      }
+
+      const auto& tf_payload = require_elem_const<TransformComponent>(diff, eid, c.payload.frame_id, "Payload frame");
+
+      Eigen::Vector3d p_base_world = tf_payload.global.translation();
+
+      physics::FillEnv env;
+      env.T_world_domain = tf_payload.global;
+      env.p_base_world = p_base_world;
+      env.g_down_world = gravity_world.normalized();
+
+      const double tol = 1e-15;
+
+      // We'll compute against a working DomainShape (copy),
+      // and only patch it back if we need to build mesh cache.
+      auto dom_work = dom_base;
+
+      const bool tilted = !dom_work.canUseAnalyticNow(env);
+
+      if (tilted && !dom_work.hasMesh())
+      {
+        if (dom_work.stacked_shape_id.empty())
+        {
+          std::ostringstream os;
+          os << "[liquid_level/diff] DomainShape '" << c.payload.domain_shape_id
+             << "' requires mesh but has no stacked_shape_id.";
+          throw std::runtime_error(os.str());
+        }
+
+        const auto& stack =
+            require_elem_const<StackedShapeComponent>(diff, eid, dom_work.stacked_shape_id, "StackedShape");
+
+        dom_work.setMeshCacheFromStack(stack, /*radial_res=*/64, /*axial_res_spherical=*/16, /*weld_tol=*/1e-9);
+
+        // Patch updated DomainShape (mesh cache) into the diff
+        diff.add_or_replace<DomainShapeComponent>(eid, c.payload.domain_shape_id, dom_work);
+      }
+
+      double h_world = 0.0;
+      try
+      {
+        h_world = dom_work.heightFromVolume(c.payload.volume, env, tol);
+      }
+      catch (const std::exception& e)
+      {
+        std::ostringstream os;
+        os << "[liquid_level/diff] heightFromVolume failed for domain '" << c.payload.domain_shape_id
+           << "': " << e.what();
+        throw std::runtime_error(os.str());
+      }
+
+      double h = 0.0;
+
+      if (!tilted)
+      {
+        double hmax_world = 0.0;
+        try
+        {
+          hmax_world = dom_work.maxFillHeight(env);
+        }
+        catch (...)
+        {
+        }
+        h = (hmax_world > 0.0) ? std::clamp(h_world, 0.0, hmax_world) : h_world;
+      }
+      else
+      {
+        const Eigen::Vector3d g_up = -env.g_down_world.normalized();
+        const Eigen::Vector3d axis_world = dom_work.heightAxisWorld(env);
+        const double cos_theta = axis_world.dot(g_up);
+        const double eps = 1e-12;
+
+        if (std::abs(cos_theta) < eps)
+        {
+          std::ostringstream os;
+          os << "[liquid_level/diff] Domain height axis nearly perpendicular to gravity for container '" << name
+             << "'; cannot map vertical height to axis displacement.";
+          throw std::runtime_error(os.str());
+        }
+
+        double h_axis = h_world / cos_theta;
+
+        double hmax_world = 0.0;
+        try
+        {
+          hmax_world = dom_work.maxFillHeight(env);
+        }
+        catch (...)
+        {
+        }
+
+        if (hmax_world > 0.0)
+        {
+          const double hmax_axis = hmax_world / cos_theta;
+          if (hmax_axis >= 0.0)
+            h_axis = std::clamp(h_axis, 0.0, hmax_axis);
+          else
+            h_axis = std::clamp(h_axis, hmax_axis, 0.0);
+        }
+
+        h = h_axis;
+      }
+
+      // Joint hard limits (axis units)
+      if (joint_base.limit.min_position.size() == 1 && joint_base.limit.max_position.size() == 1)
+      {
+        const double jmin = joint_base.limit.min_position[0];
+        const double jmax = joint_base.limit.max_position[0];
+        if (jmax > jmin)
+          h = std::clamp(h, jmin, jmax);
+      }
+
+      // ---------------- Patch the joint element ----------------
+
+      auto joint_work = joint_base;
+      if (joint_work.position.size() != 1)
+        joint_work.resize(1);
+      joint_work.position[0] = h;
+
+      diff.add_or_replace<JointComponent>(eid, c.fluid.liquid_level_joint_id, joint_work);
+
+      // ---------------- Patch dirty flags on relevant frames ----------------
+
+      if (!c.fluid.liquid_level_frame_id.empty())
+        mark_tf_dirty(diff, eid, c.fluid.liquid_level_frame_id);
+
+      // The joint's transform frame id is stored as the joint id in your data model
+      // (same string used to index TransformComponent).
+      mark_tf_dirty(diff, eid, c.fluid.liquid_level_joint_id);
     }
   });
 }

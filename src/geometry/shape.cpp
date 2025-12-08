@@ -330,6 +330,59 @@ bool isPrimitive3D(geometry::ShapeType t)
   }
 }
 
+bool is2DShape(const Shape& shape)
+{
+  using ST = ShapeType;
+
+  switch (shape.type)
+  {
+    // Explicit 2D primitives
+    case ST::Rectangle:
+    case ST::Circle:
+    case ST::Triangle:
+    case ST::Polygon:
+      return true;
+
+    // Line can be 2D or 3D
+    case ST::Line:
+    {
+      constexpr double eps = 1e-12;
+
+      // If vertices are provided, a 2D line is assumed to lie in the canonical YZ plane
+      // (i.e., all x ≈ 0).
+      if (!shape.vertices.empty())
+      {
+        bool all_x_near_zero = true;
+        for (const auto& p : shape.vertices)
+        {
+          if (std::abs(p.x()) > eps)
+          {
+            all_x_near_zero = false;
+            break;
+          }
+        }
+        if (all_x_near_zero)
+          return true;
+      }
+
+      // If no vertices, try a weak inference from the direction axis:
+      // A 2D line in the YZ plane would have direction with x ≈ 0.
+      if (!shape.axes.empty())
+      {
+        const auto& dir = shape.axes[0];
+        if (std::abs(dir.x()) <= eps)
+          return true;
+      }
+
+      return false;
+    }
+
+    // Everything else is treated as not-2D for this helper
+    default:
+      return false;
+  }
+}
+
 bool isPrimitive(const geometry::Shape& s)
 {
   return isPrimitive(s.type);

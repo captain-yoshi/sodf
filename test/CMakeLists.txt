@@ -6,6 +6,7 @@ set(SODF_TESTS
     test_xml_parser.cpp
     test_expression_parser.cpp
     test_patch_operations.cpp
+    test_database_diff.cpp
 )
 
 set(TEST_DEPENDECIES
@@ -21,14 +22,16 @@ if(ament_cmake_FOUND)
     ament_add_gtest(${SODF_LIBRARY}_test ${SODF_TESTS})
     target_link_libraries(${SODF_LIBRARY}_test
         ${TEST_DEPENDECIES}
-        ${ament_LIBRARIES})
+        ${ament_LIBRARIES}
+        GTest::gtest_main)
 
 elseif(catkin_FOUND AND CATKIN_ENABLE_TESTING)
     catkin_add_gtest(${SODF_LIBRARY}_test ${SODF_TESTS})
     target_link_libraries(${SODF_LIBRARY}_test
         ${TEST_DEPENDECIES}
         Threads::Threads
-        ${catkin_LIBRARIES})
+        ${catkin_LIBRARIES}
+        gtest_main)
 
 else()
 
@@ -48,7 +51,7 @@ else()
     target_link_libraries(${SODF_LIBRARY}_test
         ${TEST_DEPENDECIES}
         Threads::Threads
-        GTest::gtest)
+        GTest::gtest_main)
 
 endif()
 

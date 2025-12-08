@@ -1,29 +1,16 @@
 #pragma once
 #include <cstdint>
+#include <cstddef>
 #include <type_traits>
 #include <utility>
 #include <functional>
 #include <string>
 
 #include <sodf/components/data_type.h>
+#include <sodf/database/entity_id.h>
 
 namespace sodf {
 namespace database {
-
-// Opaque entity id that SODF uses everywhere
-struct EntityID
-{
-  std::size_t index{ 0 };
-  std::size_t generation{ 0 };
-  bool operator==(const EntityID& o) const
-  {
-    return index == o.index && generation == o.generation;
-  }
-  bool operator!=(const EntityID& o) const
-  {
-    return !(*this == o);
-  }
-};
 
 // Forward-declare a backend tag type. You’ll implement specializations elsewhere.
 template <class Backend>
@@ -105,6 +92,14 @@ public:
   void each(Fn&& fn)
   {
     traits::each_deduced(impl_, std::forward<Fn>(fn));
+  }
+
+  template <class Fn>
+  void each(Fn&& fn) const
+  {
+    // Backend iteration is logically const for callers.
+    // We reuse the backend iterator facilities.
+    traits::each_deduced(const_cast<Backend&>(impl_), std::forward<Fn>(fn));
   }
 
   Backend& impl()
