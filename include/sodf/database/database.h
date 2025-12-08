@@ -15,60 +15,195 @@
 #include <cstddef>
 #include <optional>
 #include <algorithm>
+#include <variant>
 
 namespace sodf {
+
 namespace database {
 
 class DatabaseDiff;  // forward declaration for multi-level diff bases
 
 /// ---------------------------------------------------------------------------
 /// ElementMap helpers
+///
+/// Public "get_element" is now DefOrRef-aware:
+///   - If V is std::variant<T, std::string>, returns (const) T*
+///     with LOCAL alias resolution (same container).
+///   - Otherwise returns (const) V*.
+///
+/// Internal code that needs the raw stored type should call:
+///   database::detail::get_element_storage(...)
 /// ---------------------------------------------------------------------------
+
+namespace detail {
+
+// ---------------------------------------------------------------------------
+// Raw storage lookup (always returns pointer to stored V, including variants)
+// ---------------------------------------------------------------------------
 template <class K, class V>
-inline V* get_element(std::vector<std::pair<K, V>>& elements, const K& key)
+inline V* get_element_storage(std::vector<std::pair<K, V>>& elements, const K& key)
 {
   for (auto& kv : elements)
   {
-    auto& k = kv.first;
-    if (k == key)
+    if (kv.first == key)
       return &kv.second;
   }
   return nullptr;
+}
+
+template <class K, class V>
+inline const V* get_element_storage(const std::vector<std::pair<K, V>>& elements, const K& key)
+{
+  for (const auto& kv : elements)
+  {
+    if (kv.first == key)
+      return &kv.second;
+  }
+  return nullptr;
+}
+
+template <class V>
+inline V* get_element_storage(std::vector<std::pair<std::string, V>>& elements, std::string_view key)
+{
+  for (auto& kv : elements)
+  {
+    if (kv.first == key)
+      return &kv.second;
+  }
+  return nullptr;
+}
+
+template <class V>
+inline const V* get_element_storage(const std::vector<std::pair<std::string, V>>& elements, std::string_view key)
+{
+  for (const auto& kv : elements)
+  {
+    if (kv.first == key)
+      return &kv.second;
+  }
+  return nullptr;
+}
+
+}  // namespace detail
+
+// ---------------------------------------------------------------------------
+// Public DefOrRef-aware overloads
+// ---------------------------------------------------------------------------
+
+// Generic (non-DefOrRef) versions:
+template <class K, class V>
+inline V* get_element(std::vector<std::pair<K, V>>& elements, const K& key)
+{
+  return detail::get_element_storage(elements, key);
 }
 
 template <class K, class V>
 inline const V* get_element(const std::vector<std::pair<K, V>>& elements, const K& key)
 {
-  for (const auto& kv : elements)
-  {
-    const auto& k = kv.first;
-    if (k == key)
-      return &kv.second;
-  }
-  return nullptr;
+  return detail::get_element_storage(elements, key);
 }
 
 template <class V>
 inline V* get_element(std::vector<std::pair<std::string, V>>& elements, std::string_view key)
 {
-  for (auto& kv : elements)
-  {
-    auto& k = kv.first;
-    if (k == key)
-      return &kv.second;
-  }
-  return nullptr;
+  return detail::get_element_storage(elements, key);
 }
 
 template <class V>
 inline const V* get_element(const std::vector<std::pair<std::string, V>>& elements, std::string_view key)
 {
-  for (const auto& kv : elements)
+  return detail::get_element_storage(elements, key);
+}
+
+// DefOrRef-specialized versions:
+// Return T* instead of variant*, with LOCAL alias resolution.
+template <class K, class T>
+inline T* get_element(std::vector<std::pair<K, std::variant<T, std::string>>>& elements, const K& key)
+{
+  using stored_t = std::variant<T, std::string>;
+
+  stored_t* entry = detail::get_element_storage(elements, key);
+  if (!entry)
+    return nullptr;
+
+  if (auto* def = std::get_if<T>(entry))
+    return def;
+
+  if (auto* ref_id = std::get_if<std::string>(entry))
   {
-    const auto& k = kv.first;
-    if (k == key)
-      return &kv.second;
+    stored_t* nested = detail::get_element_storage(elements, *ref_id);
+    if (nested)
+      return std::get_if<T>(nested);
   }
+
+  return nullptr;
+}
+
+template <class K, class T>
+inline const T* get_element(const std::vector<std::pair<K, std::variant<T, std::string>>>& elements, const K& key)
+{
+  using stored_t = std::variant<T, std::string>;
+
+  const stored_t* entry = detail::get_element_storage(elements, key);
+  if (!entry)
+    return nullptr;
+
+  if (auto* def = std::get_if<T>(entry))
+    return def;
+
+  if (auto* ref_id = std::get_if<std::string>(entry))
+  {
+    const stored_t* nested = detail::get_element_storage(elements, *ref_id);
+    if (nested)
+      return std::get_if<T>(nested);
+  }
+
+  return nullptr;
+}
+
+// Convenience for std::string-keyed containers with string_view lookup
+template <class T>
+inline T* get_element(std::vector<std::pair<std::string, std::variant<T, std::string>>>& elements, std::string_view key)
+{
+  using stored_t = std::variant<T, std::string>;
+
+  stored_t* entry = detail::get_element_storage(elements, key);
+  if (!entry)
+    return nullptr;
+
+  if (auto* def = std::get_if<T>(entry))
+    return def;
+
+  if (auto* ref_id = std::get_if<std::string>(entry))
+  {
+    stored_t* nested = detail::get_element_storage(elements, std::string_view(*ref_id));
+    if (nested)
+      return std::get_if<T>(nested);
+  }
+
+  return nullptr;
+}
+
+template <class T>
+inline const T* get_element(const std::vector<std::pair<std::string, std::variant<T, std::string>>>& elements,
+                            std::string_view key)
+{
+  using stored_t = std::variant<T, std::string>;
+
+  const stored_t* entry = detail::get_element_storage(elements, key);
+  if (!entry)
+    return nullptr;
+
+  if (auto* def = std::get_if<T>(entry))
+    return def;
+
+  if (auto* ref_id = std::get_if<std::string>(entry))
+  {
+    const stored_t* nested = detail::get_element_storage(elements, std::string_view(*ref_id));
+    if (nested)
+      return std::get_if<T>(nested);
+  }
+
   return nullptr;
 }
 
@@ -88,6 +223,55 @@ struct has_elements<T, std::void_t<decltype(std::declval<T&>().elements)>> : std
 };
 template <typename T>
 inline constexpr bool has_elements_v = has_elements<T>::value;
+
+// Detect DefOrRef<T> pattern: std::variant<T, std::string>
+template <typename T>
+struct is_def_or_ref : std::false_type
+{
+};
+template <typename T>
+struct is_def_or_ref<std::variant<T, std::string>> : std::true_type
+{
+};
+template <typename T>
+inline constexpr bool is_def_or_ref_v = is_def_or_ref<std::decay_t<T>>::value;
+
+// Extract definition type from DefOrRef<Def>
+template <typename V>
+struct def_or_ref_def;
+
+template <typename T>
+struct def_or_ref_def<std::variant<T, std::string>>
+{
+  using type = T;
+};
+
+template <typename V>
+using def_or_ref_def_t = typename def_or_ref_def<std::decay_t<V>>::type;
+
+// Helper: typed nullptr
+template <class T>
+inline T* typed_nullptr()
+{
+  return static_cast<T*>(nullptr);
+}
+template <class T>
+inline const T* typed_nullptr_const()
+{
+  return static_cast<const T*>(nullptr);
+}
+
+// Stored value type of a component's elements
+template <class C>
+struct component_stored_value
+{
+  using container_t = decltype(std::declval<C&>().elements);
+  using pair_t = typename container_t::value_type;
+  using type = typename pair_t::second_type;
+};
+
+template <class C>
+using component_stored_value_t = typename component_stored_value<C>::type;
 
 }  // namespace detail
 
@@ -114,43 +298,29 @@ public:
 
   // -------------------------------------------------------------------------
   // Element-level convenience getters (ONLY for components with .elements)
+  //
+  // Behavior:
+  //   - If C::elements stores DefOrRef<T> (variant<T,string>),
+  //     this returns (const) T* after resolving LOCAL inline defs or LOCAL aliases.
+  //
+  //   - Otherwise, returns pointer to stored element type as before.
+  //
+  // NOTE:
+  //   This intentionally does NOT use any default-geometry-library concept.
+  //   If an alias cannot be resolved locally, returns nullptr.
   // -------------------------------------------------------------------------
   template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
-  auto* get_element(entity_type e, const Key& key)
-  {
-    if (auto* c = this->template get<C>(e))
-      return database::get_element(c->elements, key);
-
-    using ElemContainer = decltype(std::declval<C&>().elements);
-    using ElemPair = typename ElemContainer::value_type;
-    using Elem = typename ElemPair::second_type;
-    return static_cast<Elem*>(nullptr);
-  }
+  auto get_element(entity_type e, const Key& key);
 
   template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
-  const auto* get_element(entity_type e, const Key& key) const
-  {
-    if (const auto* c = this->template get_const<C>(e))
-      return database::get_element(c->elements, key);
-
-    using ElemContainer = decltype(std::declval<const C&>().elements);
-    using ElemPair = typename ElemContainer::value_type;
-    using Elem = typename ElemPair::second_type;
-    return static_cast<const Elem*>(nullptr);
-  }
+  auto get_element(entity_type e, const Key& key) const;
 
   // Convenience overloads
   template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
-  auto* get_element(entity_type e, const char* key)
-  {
-    return get_element<C>(e, std::string_view(key));
-  }
+  auto get_element(entity_type e, const char* key);
 
   template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
-  const auto* get_element(entity_type e, const char* key) const
-  {
-    return get_element<C>(e, std::string_view(key));
-  }
+  auto get_element(entity_type e, const char* key) const;
 
 private:
   GinsengBackend backend_;
@@ -180,8 +350,6 @@ struct element_traits
 };
 
 // Normalize keys for patch storage / lookup.
-// Needed because GCC9/C++17 std::unordered_map doesn't support heterogeneous
-// lookup for std::string keys with std::string_view.
 template <class KeyT, class Key>
 inline KeyT normalize_key(const Key& key)
 {
@@ -223,7 +391,7 @@ struct IComponentPatch
 
 // ---------------------------------------------------------------------------
 // Element-level patch (components with .elements)
-// NOW ALSO supports whole-component ops for these components.
+// Supports per-element ops + whole-component ops.
 // ---------------------------------------------------------------------------
 template <class C, typename std::enable_if<has_elements_v<C>, int>::type = 0>
 struct ComponentPatchElements : IComponentPatch
@@ -232,7 +400,7 @@ struct ComponentPatchElements : IComponentPatch
   using key_storage_t = typename element_traits<C>::key_storage_t;
   using value_t = typename element_traits<C>::value_t;
 
-  // Per entity → per key → op (element-level ops)
+  // Per entity → per key → op
   std::unordered_map<EntityID, std::unordered_map<key_storage_t, PatchOp<value_t>>> element_ops;
 
   // Per entity → op (whole-component override/remove)
@@ -245,7 +413,6 @@ struct ComponentPatchElements : IComponentPatch
 template <class C, typename std::enable_if<!has_elements_v<C>, int>::type = 0>
 struct ComponentPatchWhole : IComponentPatch
 {
-  // Per entity → op
   std::unordered_map<EntityID, PatchOp<C>> ops;
 };
 
@@ -424,8 +591,9 @@ public:
   template <class C>
   const C* get_const(entity_type e) const;
 
+  // Raw storage access (returns C::elements value pointer)
   template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type = 0>
-  const typename element_traits<C>::value_t* get_element(entity_type e, const Key& key) const;
+  const typename element_traits<C>::value_t* get_element_storage(entity_type e, const Key& key) const;
 
 private:
   const Database* db_;
@@ -450,7 +618,6 @@ public:
   template <class C>
   const C* get_const(entity_type e) const
   {
-    // Elements components: check whole override/remove first
     if constexpr (has_elements_v<C>)
     {
       if (const auto* cp = patch_.template get<C>())
@@ -464,12 +631,10 @@ public:
             return &(*it->second.value);
         }
       }
-      // No whole op -> fall through to base
       return base_.template get_const<C>(e);
     }
     else
     {
-      // Non-elements components: existing whole patch channel
       if (const auto* cp = patch_.template get<C>())
       {
         auto it = cp->ops.find(e);
@@ -486,10 +651,13 @@ public:
   }
 
   // -------------------------------------------------------------------------
-  // Element-level get_element with patch overlay
+  // Element-level STORAGE getter with patch overlay
+  //
+  // Returns pointer to stored value_t (which may be DefOrRef variant).
+  // Resolution to definitions happens in public get_element.
   // -------------------------------------------------------------------------
   template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type = 0>
-  const typename element_traits<C>::value_t* get_element(entity_type e, const Key& key) const
+  const typename element_traits<C>::value_t* get_element_storage(entity_type e, const Key& key) const
   {
     using value_t = typename element_traits<C>::value_t;
     using key_storage_t = typename element_traits<C>::key_storage_t;
@@ -503,10 +671,7 @@ public:
         if (itW->second.kind == PatchOpKind::Remove)
           return static_cast<const value_t*>(nullptr);
         if (itW->second.value)
-        {
-          // Look up inside the overridden component's elements
-          return database::get_element(itW->second.value->elements, key);
-        }
+          return database::detail::get_element_storage(itW->second.value->elements, key);
       }
 
       // 2) Element-level op overlay
@@ -526,19 +691,77 @@ public:
       }
     }
 
-    return base_.template get_element<C>(e, key);
-  }
-
-  template <class C, typename std::enable_if<has_elements_v<C>, int>::type = 0>
-  const typename element_traits<C>::value_t* get_element(entity_type e, const char* key) const
-  {
-    return get_element<C>(e, std::string_view(key));
+    return base_.template get_element_storage<C>(e, key);
   }
 
 private:
   const DiffBase& base_;
   const DatabasePatch& patch_;
 };
+
+// ---------------------------------------------------------------------------
+// DefOrRef resolution helpers (LOCAL ONLY) for component-based APIs
+// ---------------------------------------------------------------------------
+
+// Resolve for DefOrRef-storing components on a Database (local-only).
+template <class C, class Key>
+inline const def_or_ref_def_t<component_stored_value_t<C>>* resolve_def_or_ref(const Database& db, EntityID local_eid,
+                                                                               const Key& key)
+{
+  using stored_t = component_stored_value_t<C>;
+  using def_t = def_or_ref_def_t<stored_t>;
+
+  const C* c = db.template get<C>(local_eid);
+  if (!c)
+    return typed_nullptr_const<def_t>();
+
+  const stored_t* entry = database::detail::get_element_storage(c->elements, key);
+  if (!entry)
+    return typed_nullptr_const<def_t>();
+
+  if (auto* def = std::get_if<def_t>(entry))
+    return def;
+
+  if (auto* ref_id = std::get_if<std::string>(entry))
+  {
+    const stored_t* nested = database::detail::get_element_storage(c->elements, *ref_id);
+    if (nested)
+    {
+      if (auto* def2 = std::get_if<def_t>(nested))
+        return def2;
+    }
+  }
+
+  return typed_nullptr_const<def_t>();
+}
+
+// Resolve for DefOrRef-storing components on a DiffBase (local-only).
+template <class C, class Key>
+inline const def_or_ref_def_t<component_stored_value_t<C>>* resolve_def_or_ref(const DiffBase& base, EntityID local_eid,
+                                                                               const Key& key)
+{
+  using stored_t = component_stored_value_t<C>;
+  using def_t = def_or_ref_def_t<stored_t>;
+
+  const stored_t* entry = base.template get_element_storage<C>(local_eid, key);
+  if (!entry)
+    return typed_nullptr_const<def_t>();
+
+  if (auto* def = std::get_if<def_t>(entry))
+    return def;
+
+  if (auto* ref_id = std::get_if<std::string>(entry))
+  {
+    const stored_t* nested = base.template get_element_storage<C>(local_eid, *ref_id);
+    if (nested)
+    {
+      if (auto* def2 = std::get_if<def_t>(nested))
+        return def2;
+    }
+  }
+
+  return typed_nullptr_const<def_t>();
+}
 
 }  // namespace detail
 
@@ -547,8 +770,6 @@ private:
 /// ---------------------------------------------------------------------------
 /// DatabaseDiff owns internal patch state and exposes a small authoring + read API.
 /// It can be layered over either a Database or another DatabaseDiff.
-///
-/// NOTE: A child DatabaseDiff must not outlive its parent diff (layered lifetime).
 class DatabaseDiff
 {
 public:
@@ -578,7 +799,6 @@ public:
     return revision_;
   }
 
-  // Read-only iteration view (for generic helpers)
   template <class Fn>
   void each(Fn&& fn) const
   {
@@ -594,17 +814,33 @@ public:
     return view_.template get_const<C>(e);
   }
 
-  // Element-level only
+  // -------------------------------------------------------------------------
+  // Public get_element:
+  //   - If C stores DefOrRef<T>, returns const T* (resolved locally)
+  //   - Else returns pointer to stored element as before
+  // -------------------------------------------------------------------------
   template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
-  const typename detail::element_traits<C>::value_t* get_element(entity_type e, const Key& key) const
+  auto get_element(entity_type e, const Key& key) const
   {
-    return view_.template get_element<C>(e, key);
+    using ElemContainer = decltype(std::declval<const C&>().elements);
+    using ElemPair = typename ElemContainer::value_type;
+    using stored_value_t = typename ElemPair::second_type;
+
+    if constexpr (detail::is_def_or_ref_v<stored_value_t>)
+    {
+      detail::DiffBase base(*this);
+      return detail::resolve_def_or_ref<C>(base, e, key);
+    }
+    else
+    {
+      return get_element_storage<C>(e, key);
+    }
   }
 
   template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
-  const typename detail::element_traits<C>::value_t* get_element(entity_type e, const char* key) const
+  auto get_element(entity_type e, const char* key) const
   {
-    return view_.template get_element<C>(e, key);
+    return get_element<C>(e, std::string_view(key));
   }
 
   // -------------------------------------------------------------------------
@@ -670,12 +906,24 @@ public:
   }
 
   // -------------------------------------------------------------------------
+  // INTERNAL STORAGE access used by DiffBase and resolution
+  // -------------------------------------------------------------------------
+  template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
+  const typename detail::element_traits<C>::value_t* get_element_storage(entity_type e, const Key& key) const
+  {
+    return view_.template get_element_storage<C>(e, key);
+  }
+
+  template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
+  const typename detail::element_traits<C>::value_t* get_element_storage(entity_type e, const char* key) const
+  {
+    return get_element_storage<C>(e, std::string_view(key));
+  }
+
+  // -------------------------------------------------------------------------
   // Internal-ish helpers (needed for materialization)
   // -------------------------------------------------------------------------
 
-  // Enumerate ELEMENT patch ops for a specific ELEMENT component type on one entity.
-  // Fn signature:
-  //   void(const key_t& key, detail::PatchOpKind kind, const value_t* value_or_null)
   template <class C, class Fn, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
   void for_each_patch_op(entity_type e, Fn&& fn) const
   {
@@ -693,13 +941,9 @@ public:
 
     auto to_key_t = [](const key_storage_t& ks) -> key_t {
       if constexpr (std::is_same_v<key_t, std::string_view>)
-      {
         return std::string_view(ks);
-      }
       else
-      {
         return ks;
-      }
     };
 
     for (const auto& kv : itE->second)
@@ -721,21 +965,11 @@ public:
     }
   }
 
-  // Materialize an ELEMENT component by:
-  //  1) If whole patch exists:
-  //       - Remove -> false
-  //       - Replace -> copy patched value
-  //     else:
-  //       - copy base if present, otherwise default-construct (create-if-missing)
-  //  2) Apply element-level ops on top.
-  //
-  // This ENABLES create-if-missing semantics for elements-based components.
   template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type = 0>
   bool materialize_component(entity_type e, C& out) const
   {
     const auto* cp = patch_.template get<C>();
 
-    // 1) Whole override/remove
     if (cp)
     {
       auto itW = cp->whole_ops.find(e);
@@ -787,18 +1021,12 @@ public:
     {
       for_each_patch_op<C>(e, [&](const key_t& k, detail::PatchOpKind kind, const value_t* vptr) {
         if (kind == detail::PatchOpKind::Remove)
-        {
           erase_key(k);
-        }
         else if (vptr)
-        {
           upsert_key(k, *vptr);
-        }
       });
     }
 
-    // Decide truthiness:
-    // True if we have a base component OR any patch exists for this entity (whole or element).
     const bool has_base = (base_.template get_const<C>(e) != nullptr);
     bool has_any_patch = false;
 
@@ -817,10 +1045,6 @@ public:
     return has_base || has_any_patch;
   }
 
-  // Materialize a WHOLE component WITHOUT .elements:
-  // - If patch removes -> return false
-  // - If patch replaces -> out = patched
-  // - Else -> out = base
   template <class C, typename std::enable_if<!detail::has_elements_v<C>, int>::type = 0>
   bool materialize_component(entity_type e, C& out) const
   {
@@ -870,21 +1094,85 @@ template <class C>
 inline const C* DiffBase::get_const(entity_type e) const
 {
   if (db_)
-    return db_->template get_const<C>(e);
+    return db_->template get<C>(e);
   return diff_->template get_const<C>(e);
 }
 
 template <class C, class Key, typename std::enable_if<has_elements_v<C>, int>::type>
-inline const typename element_traits<C>::value_t* DiffBase::get_element(entity_type e, const Key& key) const
+inline const typename element_traits<C>::value_t* DiffBase::get_element_storage(entity_type e, const Key& key) const
 {
   if (db_)
-    return db_->template get_element<C>(e, key);
+  {
+    if (const auto* c = db_->template get<C>(e))
+      return database::detail::get_element_storage(c->elements, key);
 
-  // IMPORTANT: explicit return type avoids GCC auto deduction bug
-  return diff_->template get_element<C>(e, key);
+    return static_cast<const typename element_traits<C>::value_t*>(nullptr);
+  }
+
+  return diff_->template get_element_storage<C>(e, key);
 }
 
 }  // namespace detail
+
+/// ---------------------------------------------------------------------------
+/// Database::get_element definitions
+/// (Placed AFTER resolve_def_or_ref)
+/// ---------------------------------------------------------------------------
+template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type>
+inline auto Database::get_element(entity_type e, const Key& key)
+{
+  using ElemContainer = decltype(std::declval<C&>().elements);
+  using ElemPair = typename ElemContainer::value_type;
+  using stored_value_t = typename ElemPair::second_type;
+
+  if constexpr (detail::is_def_or_ref_v<stored_value_t>)
+  {
+    using def_t = detail::def_or_ref_def_t<stored_value_t>;
+    const def_t* out = detail::resolve_def_or_ref<C>(*this, e, key);
+    return const_cast<def_t*>(out);
+  }
+  else
+  {
+    if (auto* c = this->template get<C>(e))
+      return database::detail::get_element_storage(c->elements, key);
+
+    using Elem = typename ElemPair::second_type;
+    return detail::typed_nullptr<Elem>();
+  }
+}
+
+template <class C, class Key, typename std::enable_if<detail::has_elements_v<C>, int>::type>
+inline auto Database::get_element(entity_type e, const Key& key) const
+{
+  using ElemContainer = decltype(std::declval<const C&>().elements);
+  using ElemPair = typename ElemContainer::value_type;
+  using stored_value_t = typename ElemPair::second_type;
+
+  if constexpr (detail::is_def_or_ref_v<stored_value_t>)
+  {
+    return detail::resolve_def_or_ref<C>(*this, e, key);
+  }
+  else
+  {
+    if (const auto* c = this->template get<C>(e))
+      return database::detail::get_element_storage(c->elements, key);
+
+    using Elem = typename ElemPair::second_type;
+    return detail::typed_nullptr_const<Elem>();
+  }
+}
+
+template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type>
+inline auto Database::get_element(entity_type e, const char* key)
+{
+  return get_element<C>(e, std::string_view(key));
+}
+
+template <class C, typename std::enable_if<detail::has_elements_v<C>, int>::type>
+inline auto Database::get_element(entity_type e, const char* key) const
+{
+  return get_element<C>(e, std::string_view(key));
+}
 
 }  // namespace database
 }  // namespace sodf

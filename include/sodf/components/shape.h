@@ -2,28 +2,42 @@
 #define SODF_COMPONENTS_SHAPE_H_
 
 #include <sodf/components/data_type.h>
+#include <sodf/components/def_or_ref.h>
 #include <sodf/geometry/shape.h>
-
-#include <vector>
-#include <utility>
-
-#include <Eigen/Geometry>
 
 namespace sodf {
 namespace components {
 
-// Forward declaration
+/// Stores reusable Shape definitions OR aliases to them.
+///
+/// Element key conventions:
+///   - Keys may represent either:
+///       (a) definition IDs  (e.g. "shape/well")
+///       (b) instance IDs    (e.g. "shape/well/A1")
+///
+/// Value meaning:
+///   - DefOrRef<Shape> holds:
+///       - geometry::Shape         → inline definition
+///       - std::string (id)        → alias to definition ID
+///
+/// Placement:
+///   - For instance keys, placement is found in TransformComponent
+///     element with the same key (your global convention).
 struct ShapeComponent
 {
-  ElementMap<std::string, geometry::Shape> elements;
+  using definition_type = geometry::Shape;
+  ElementMap<std::string, DefOrRef<definition_type>> elements;
 };
 
+/// Stores reusable StackedShape definitions OR aliases to them.
+/// Same conventions as ShapeComponent.
 struct StackedShapeComponent
 {
-  ElementMap<std::string, geometry::StackedShape> elements;
+  using definition_type = geometry::StackedShape;
+  ElementMap<std::string, DefOrRef<definition_type>> elements;
 };
 
 }  // namespace components
 }  // namespace sodf
 
-#endif
+#endif  // SODF_COMPONENTS_SHAPE_H_
