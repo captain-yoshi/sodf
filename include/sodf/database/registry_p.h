@@ -64,15 +64,29 @@ public:
     return traits::template has<C>(impl_, e);
   }
   template <class C>
+  bool has(entity_type e) const
+  {
+    return traits::template has<C>(const_cast<Backend&>(impl_), e);
+  }
+
+  template <class C>
   C* get(entity_type e)
   {
     return traits::template get<C>(impl_, e);
   }
   template <class C>
-  const C* get_const(entity_type e) const
+  const C* get(entity_type e) const
   {
     return traits::template get<C>(const_cast<Backend&>(impl_), e);
   }
+
+  // You can keep get_const if you like, but it's now redundant.
+  template <class C>
+  const C* get_const(entity_type e) const
+  {
+    return get<C>(e);
+  }
+
   template <class C>
   C* get_or_add(entity_type e)
   {

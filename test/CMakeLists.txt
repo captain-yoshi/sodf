@@ -1,12 +1,12 @@
 set(SODF_TESTS
     test_database.cpp
+    test_database_diff.cpp
     test_fluid_domain_shape.cpp
     test_fluid_domain_convex_mesh_shape.cpp
     test_uri_resolver.cpp
     test_xml_parser.cpp
     test_expression_parser.cpp
     test_patch_operations.cpp
-    test_database_diff.cpp
 )
 
 set(TEST_DEPENDECIES
