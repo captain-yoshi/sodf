@@ -15,10 +15,6 @@ struct PayloadDomain
   // you can turn into a mesh / volume curve (e.g. StackedShape).
   std::string domain_shape_id;  // e.g. "fluid/well_200ul"
 
-  // Frame in TransformComponent where this payload volume lives for THIS container.
-  // e.g. "container/A1/payload"
-  std::string frame_id;
-
   // How much is present.
   // Fluid:       volume [m^3]
   // BulkSolid:   bulk volume [m^3]
@@ -47,7 +43,7 @@ struct Container
   // Fluid-only runtime info (valid if payload_type == Fluid).
   FluidDomain fluid;
 
-  std::string insertion_id;
+  std::string stacked_shape_id;
 
   // Semantic / UI / planning info.
   // e.g. "PBS", "lysis_buffer", "M3x8_screw", "p20_tip_rack"

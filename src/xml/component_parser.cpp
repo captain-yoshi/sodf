@@ -537,11 +537,18 @@ void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
   if (!elem)
     throw std::runtime_error("parseContainerComponent: null <Container> element");
 
+  using namespace sodf;
+  using namespace sodf::components;
+
   Container container;
 
   const std::string id = evalElementIdRequired(elem);
   if (id.empty())
     throw std::runtime_error("Container missing id at line " + std::to_string(elem->GetLineNum()));
+
+  // Optional direct attributes
+  container.stacked_shape_id = evalTextAttribute(elem, "stacked_shape", "");
+  container.material_id = evalTextAttribute(elem, "material", "");
 
   auto* tfc = db.get_or_add<TransformComponent>(eid);
   if (!tfc)
@@ -556,71 +563,104 @@ void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
     container.payload.volume = convertVolumeToSI(vol_raw, units.c_str());
   }
 
-  // <InsertionRef> (REQUIRED)
-  const auto* ins_elem = elem->FirstChildElement("InsertionRef");
-  if (!ins_elem)
-    throw std::runtime_error("Container '" + id + "' missing required <InsertionRef> at line " +
-                             std::to_string(elem->GetLineNum()));
-  container.insertion_id = evalTextAttributeRequired(ins_elem, "id");
-  if (container.insertion_id.empty())
-    throw std::runtime_error("Empty 'id' in <InsertionRef> for Container '" + id + "' at line " +
-                             std::to_string(ins_elem->GetLineNum()));
-
-  // <PayloadDomain> (first only)
-  if (const auto* pd = elem->FirstChildElement("PayloadDomain"))
+  // <StackedShapeID> (optional usage-site reference)
+  if (const auto* ssid = elem->FirstChildElement("StackedShapeID"))
   {
-    if (const auto* shape_ref = pd->FirstChildElement("DomainShapeRef"))
-    {
-      container.payload.domain_shape_id = evalTextAttributeRequired(shape_ref, "id");
-
-      // Optional payload-local frame (preferred base for rendering the domain)
-      if (const auto* tf_elem = shape_ref->FirstChildElement("Transform"))
-      {
-        const std::string frame_id = evalTextAttributeRequired(tf_elem, "id");
-        const std::string parent = evalTextAttributeRequired(tf_elem, "parent");
-
-        geometry::TransformNode node;
-        node.parent = parent;
-        node.local = parseIsometry3D(tf_elem);
-        node.is_static = true;
-
-        // Register this frame in the entity's TransformComponent
-        tfc->elements.emplace_back(frame_id, std::move(node));
-
-        // Wire payload to this frame
-        container.payload.frame_id = frame_id;
-      }
-    }
-
-    // Optional live liquid-level frame
-    if (const auto* lvl = pd->FirstChildElement("LiquidLevelFrame"))
-      container.fluid.liquid_level_frame_id = evalTextAttributeRequired(lvl, "id");
+    container.stacked_shape_id = evalTextAttributeRequired(ssid, "id");
   }
 
-  // --- resolve required Insertion and create PRISMATIC(VIRTUAL) joint ---
-  auto* insertion_ptr = db.get_element<InsertionComponent>(eid, container.insertion_id);
-  if (!insertion_ptr)
-    throw std::runtime_error("Insertion '" + container.insertion_id + "' not found for Container '" + id +
-                             "' (Insertion is required)");
-  const Insertion& ins = *insertion_ptr;
+  // <MaterialID> (optional usage-site reference)
+  if (const auto* mid = elem->FirstChildElement("MaterialID"))
+  {
+    container.material_id = evalTextAttributeRequired(mid, "id");
+  }
 
-  // build a stable frame from insertion axes and use its +Z as a unit prismatic axis
-  const Eigen::Matrix3d R_ins = geometry::computeOrientationFromZ(ins.axis_insertion, ins.axis_reference);
-  const Eigen::Vector3d z_hat = R_ins.col(2);  // guaranteed unit & robust
+  // <PayloadDomain>
+  const auto* pd = elem->FirstChildElement("PayloadDomain");
+  if (pd)
+  {
+    // Optional override of volume at payload level
+    if (pd->Attribute("volume"))
+    {
+      const double vol_raw = evalNumberAttribute(pd, "volume", container.payload.volume);
+      const std::string units = evalTextAttribute(pd, "units", "m^3");
+      container.payload.volume = convertVolumeToSI(vol_raw, units.c_str());
+    }
+
+    // REQUIRED for fluid logic: <DomainShapeID id="..."/>
+    if (const auto* dsid = pd->FirstChildElement("DomainShapeID"))
+    {
+      container.payload.domain_shape_id = evalTextAttributeRequired(dsid, "id");
+    }
+
+    // Optional live liquid-level frame id (authored frame name)
+    if (const auto* lvl = pd->FirstChildElement("LiquidLevelFrame"))
+    {
+      container.fluid.liquid_level_frame_id = evalTextAttributeRequired(lvl, "id");
+    }
+  }
+
+  // Without a domain id we can't build a fluid joint.
+  // Still allow the container to exist as a pure logical/static container.
+  if (container.payload.domain_shape_id.empty())
+  {
+    auto* cc = db.get_or_add<ContainerComponent>(eid);
+    if (!cc)
+      throw std::runtime_error("get_or_add<ContainerComponent> failed for Container '" + id + "'");
+    cc->elements.emplace_back(id, std::move(container));
+    return;
+  }
+
+  // --- Use the DomainShape instance to build a PRISMATIC(VIRTUAL) joint ---
+
+  auto* dsc = db.get_element<DomainShapeComponent>(eid, container.payload.domain_shape_id);
+  if (!dsc)
+  {
+    throw std::runtime_error("DomainShape '" + container.payload.domain_shape_id + "' not found for Container '" + id +
+                             "'");
+  }
+
+  // If this domain shape references a stacked shape, compute total height from it.
+  double q_max = 0.0;
+
+  if (!dsc->stacked_shape_id.empty())
+  {
+    auto* stack = db.get_element<StackedShapeComponent>(eid, dsc->stacked_shape_id);
+    if (!stack)
+    {
+      throw std::runtime_error("StackedShape '" + dsc->stacked_shape_id + "' not found for DomainShape '" +
+                               container.payload.domain_shape_id + "'");
+    }
+
+    double H = 0.0;
+    for (const auto& e : stack->shapes)
+    {
+      H += sodf::geometry::getShapeHeight(e.shape);
+    }
+    q_max = H;
+  }
 
   Joint joint;
   joint.type = JointType::PRISMATIC;
   joint.actuation = JointActuation::VIRTUAL;
   joint.initialize_for_type();  // 1 DOF
-  joint.axes.col(0) = -z_hat;
 
-  const double q_min = 0;
-  const double q_max = ins.max_depth;
+  // Canonical convention: Domain height axis is +X in the domain local frame.
+  // We store the prismatic axis in joint local frame.
+  joint.axes.col(0) = Eigen::Vector3d(-1.0, 0.0, 0.0);
+
+  const double q_min = 0.0;
   joint.position[0] = q_min;
   joint.limit.min_position[0] = q_min;
   joint.limit.max_position[0] = q_max;
 
-  const std::string joint_id = "joint/" + container.fluid.liquid_level_frame_id;
+  // Build a stable joint id.
+  std::string joint_id;
+  if (!container.fluid.liquid_level_frame_id.empty())
+    joint_id = "joint/" + container.fluid.liquid_level_frame_id;
+  else
+    joint_id = "joint/" + id + "/liquid_level";
+
   container.fluid.liquid_level_joint_id = joint_id;
 
   auto* jc = db.get_or_add<JointComponent>(eid);
@@ -628,7 +668,7 @@ void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
     throw std::runtime_error("get_or_add<JointComponent> failed for Container '" + id + "'");
   jc->elements.emplace_back(joint_id, std::move(joint));
 
-  // joint frame under container
+  // Joint frame under the DOMAIN frame (not under the container)
   {
     geometry::TransformNode jtf;
     jtf.parent = id;
@@ -637,7 +677,7 @@ void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
     tfc->elements.emplace_back(joint_id, std::move(jtf));
   }
 
-  // liquid level frame under joint (if authored)
+  // Liquid level frame under joint (if authored)
   if (!container.fluid.liquid_level_frame_id.empty())
   {
     geometry::TransformNode ltf;
@@ -647,7 +687,7 @@ void parseContainerComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
     tfc->elements.emplace_back(container.fluid.liquid_level_frame_id, std::move(ltf));
   }
 
-  // persist container
+  // Persist container
   auto* cc = db.get_or_add<ContainerComponent>(eid);
   if (!cc)
     throw std::runtime_error("get_or_add<ContainerComponent> failed for Container '" + id + "'");

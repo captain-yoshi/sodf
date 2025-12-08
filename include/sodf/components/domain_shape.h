@@ -2,6 +2,7 @@
 #define SODF_COMPONENTS_DOMAIN_SHAPE_H_
 
 #include <sodf/components/data_type.h>
+#include <sodf/components/def_or_ref.h>
 #include <sodf/physics/domain_shape.h>
 
 #include <vector>
@@ -14,7 +15,8 @@ namespace components {
 
 struct DomainShapeComponent
 {
-  ElementMap<std::string, physics::DomainShape> elements;
+  using definition_type = physics::DomainShape;
+  ElementMap<std::string, DefOrRef<definition_type>> elements;
 };
 
 }  // namespace components

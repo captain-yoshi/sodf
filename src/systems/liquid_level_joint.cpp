@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <sstream>
-#include <iostream>
 #include <stdexcept>
 
 #include <sodf/components/container.h>
@@ -18,7 +17,9 @@ namespace {
 
 using EntityID = database::EntityID;
 
-// Utility: fetch an element value via diff, failing with a good error
+// Utility: fetch an element value via diff, failing with a good error.
+// Assumes DatabaseDiff::get_element<C>(eid, key) returns the RESOLVED definition
+// type for DefOrRef-backed components (per your refactor).
 template <class C, class Key>
 static const auto& require_elem_const(const database::DatabaseDiff& diff, EntityID eid, const Key& key,
                                       const std::string& what)
@@ -56,21 +57,30 @@ static void mark_tf_dirty(database::DatabaseDiff& diff, EntityID eid, const std:
 }  // namespace
 
 // -----------------------------------------------------------------------------
-// Existing base-db version (unchanged)
+// Base-db version
+//
+// Updated for new Container schema + new XML convention:
+//
+// 1) PayloadDomain no longer has frame_id.
+// 2) The Transform frame for the payload domain is keyed by
+//    c.payload.domain_shape_id (your DomainShapeRef instance id).
+//
+// Assumes Database::get_element<StackedShapeComponent>(eid, id) returns a
+// RESOLVED geometry::StackedShape* even though storage is DefOrRef.
 // -----------------------------------------------------------------------------
 void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vector3d& gravity_world)
 {
   db.each([&](database::EntityID eid, components::ContainerComponent& containers, components::TransformComponent& tcomp,
               components::JointComponent& jcomp, components::DomainShapeComponent& dcomp,
-              components::StackedShapeComponent& scomp) {
+              components::StackedShapeComponent& /*scomp*/) {
     for (auto& [name, c] : containers.elements)
     {
-      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty() ||
-          c.payload.frame_id.empty())
+      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty())
       {
         continue;
       }
 
+      // DomainShape (instance id)
       physics::DomainShape* dom = database::get_element(dcomp.elements, c.payload.domain_shape_id);
       if (!dom)
       {
@@ -80,6 +90,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         throw std::runtime_error(os.str());
       }
 
+      // Joint
       auto* joint = database::get_element(jcomp.elements, c.fluid.liquid_level_joint_id);
       if (!joint)
       {
@@ -102,11 +113,13 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         throw std::runtime_error(os.str());
       }
 
-      auto* tf_payload = database::get_element(tcomp.elements, c.payload.frame_id);
+      // NEW: payload/domain frame is keyed by domain_shape_id
+      auto* tf_payload = database::get_element(tcomp.elements, c.payload.domain_shape_id);
       if (!tf_payload)
       {
         std::ostringstream os;
-        os << "[liquid_level] Payload frame '" << c.payload.frame_id << "' not found for container '" << name << "'.";
+        os << "[liquid_level] DomainShape frame '" << c.payload.domain_shape_id << "' not found for container '" << name
+           << "'. (Expected Transform element with the same id as payload.domain_shape_id)";
         throw std::runtime_error(os.str());
       }
 
@@ -121,6 +134,8 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
       double h = 0.0;
 
       const bool tilted = !dom->canUseAnalyticNow(env);
+
+      // Build mesh cache if needed
       if (tilted && !dom->hasMesh())
       {
         if (dom->stacked_shape_id.empty())
@@ -130,7 +145,9 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
              << "' requires mesh but has no stacked_shape_id.";
           throw std::runtime_error(os.str());
         }
-        auto* stack = database::get_element(scomp.elements, dom->stacked_shape_id);
+
+        // IMPORTANT: use database API (resolved DefOrRef)
+        auto* stack = db.get_element<components::StackedShapeComponent>(eid, dom->stacked_shape_id);
         if (!stack)
         {
           std::ostringstream os;
@@ -138,6 +155,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
              << c.payload.domain_shape_id << "'.";
           throw std::runtime_error(os.str());
         }
+
         dom->setMeshCacheFromStack(*stack, /*radial_res=*/64, /*axial_res_spherical=*/16, /*weld_tol=*/1e-9);
       }
 
@@ -171,6 +189,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         const Eigen::Vector3d axis_world = dom->heightAxisWorld(env);
         const double cos_theta = axis_world.dot(g_up);
         const double eps = 1e-12;
+
         if (std::abs(cos_theta) < eps)
         {
           std::ostringstream os;
@@ -189,6 +208,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         catch (...)
         {
         }
+
         if (hmax_world > 0.0)
         {
           const double hmax_axis = hmax_world / cos_theta;
@@ -201,6 +221,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         h = h_axis;
       }
 
+      // Clamp to joint hard limits
       if (joint->limit.min_position.size() == 1 && joint->limit.max_position.size() == 1)
       {
         const double jmin = joint->limit.min_position[0];
@@ -213,6 +234,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
         joint->resize(1);
       joint->position[0] = h;
 
+      // Mark dependent frames dirty
       if (!c.fluid.liquid_level_frame_id.empty())
       {
         if (auto* tf_ll = database::get_element(tcomp.elements, c.fluid.liquid_level_frame_id))
@@ -225,6 +247,7 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
           throw std::runtime_error(os.str());
         }
       }
+
       if (auto* tf_joint = database::get_element(tcomp.elements, c.fluid.liquid_level_joint_id))
         tf_joint->dirty = true;
       else
@@ -239,7 +262,12 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
 }
 
 // -----------------------------------------------------------------------------
-// NEW diff-safe version
+// Diff-safe version
+//
+// Updated for new Container schema + new XML convention.
+//
+// Assumes DatabaseDiff::get_element<StackedShapeComponent>(eid, id) returns a
+// RESOLVED geometry::StackedShape* even though storage is DefOrRef.
 // -----------------------------------------------------------------------------
 void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen::Vector3d& gravity_world)
 {
@@ -249,7 +277,6 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
   using components::StackedShapeComponent;
   using components::TransformComponent;
 
-  // Iterate safely: request const refs so we don't mutate base storage.
   diff.each([&](EntityID eid, const ContainerComponent& containers, const TransformComponent& /*tcomp*/,
                 const JointComponent& /*jcomp*/, const DomainShapeComponent& /*dcomp*/,
                 const StackedShapeComponent& /*scomp*/) {
@@ -258,8 +285,7 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
       const std::string& name = kv.first;
       const auto& c = kv.second;
 
-      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty() ||
-          c.payload.frame_id.empty())
+      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty())
       {
         continue;
       }
@@ -285,7 +311,9 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
         throw std::runtime_error(os.str());
       }
 
-      const auto& tf_payload = require_elem_const<TransformComponent>(diff, eid, c.payload.frame_id, "Payload frame");
+      // NEW: payload/domain frame is keyed by domain_shape_id
+      const auto& tf_payload =
+          require_elem_const<TransformComponent>(diff, eid, c.payload.domain_shape_id, "DomainShape frame");
 
       Eigen::Vector3d p_base_world = tf_payload.global.translation();
 
@@ -296,8 +324,7 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
 
       const double tol = 1e-15;
 
-      // We'll compute against a working DomainShape (copy),
-      // and only patch it back if we need to build mesh cache.
+      // Work on a copy of DomainShape
       auto dom_work = dom_base;
 
       const bool tilted = !dom_work.canUseAnalyticNow(env);
@@ -312,10 +339,17 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
           throw std::runtime_error(os.str());
         }
 
-        const auto& stack =
-            require_elem_const<StackedShapeComponent>(diff, eid, dom_work.stacked_shape_id, "StackedShape");
+        // IMPORTANT: rely on diff API (resolved DefOrRef)
+        const auto* stack = diff.get_element<StackedShapeComponent>(eid, dom_work.stacked_shape_id);
+        if (!stack)
+        {
+          std::ostringstream os;
+          os << "[liquid_level/diff] StackedShape '" << dom_work.stacked_shape_id << "' not found for DomainShape '"
+             << c.payload.domain_shape_id << "'.";
+          throw std::runtime_error(os.str());
+        }
 
-        dom_work.setMeshCacheFromStack(stack, /*radial_res=*/64, /*axial_res_spherical=*/16, /*weld_tol=*/1e-9);
+        dom_work.setMeshCacheFromStack(*stack, /*radial_res=*/64, /*axial_res_spherical=*/16, /*weld_tol=*/1e-9);
 
         // Patch updated DomainShape (mesh cache) into the diff
         diff.add_or_replace<DomainShapeComponent>(eid, c.payload.domain_shape_id, dom_work);
@@ -386,7 +420,7 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
         h = h_axis;
       }
 
-      // Joint hard limits (axis units)
+      // Joint hard limits
       if (joint_base.limit.min_position.size() == 1 && joint_base.limit.max_position.size() == 1)
       {
         const double jmin = joint_base.limit.min_position[0];
@@ -409,8 +443,6 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
       if (!c.fluid.liquid_level_frame_id.empty())
         mark_tf_dirty(diff, eid, c.fluid.liquid_level_frame_id);
 
-      // The joint's transform frame id is stored as the joint id in your data model
-      // (same string used to index TransformComponent).
       mark_tf_dirty(diff, eid, c.fluid.liquid_level_joint_id);
     }
   });
