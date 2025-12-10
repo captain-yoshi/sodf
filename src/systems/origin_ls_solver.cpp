@@ -325,7 +325,7 @@ static inline void fill_concentric_entry(sodf::systems::ResidualEntry& e, const 
   {
     auto aH = sodf::assembly::resolveAxis(H, ctx);
     auto aG = sodf::assembly::resolveAxis(G, ctx);
-    auto R = concentric_residual(aH, aG);
+    auto R = concentric_residual_unsigned(aH, aG);
     e.ang_rad = R.angle_rad;
     e.dist_m = R.dist_m;
   }
