@@ -656,6 +656,27 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
     }
   }
 
+  // ---------------- Summary of non-cycle failures -----------------------
+  if (!last_error.empty())
+  {
+    std::ostringstream oss;
+    oss << "[Origin] One or more Origin components failed to solve.\n";
+
+    for (const auto& [eid, node] : nodes)
+    {
+      auto it_err = last_error.find(eid);
+      if (it_err == last_error.end())
+        continue;
+
+      oss << " - object='" << node.object_id << "'";
+      if (!node.host_object.empty())
+        oss << " host='" << node.host_object << "'";
+      oss << " error=\"" << it_err->second << "\"\n";
+    }
+
+    throw std::runtime_error(oss.str());
+  }
+
   // ---------------- Detect cycles / unresolved dependencies -----------------
   if (processed != nodes.size())
   {
