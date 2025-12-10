@@ -36,6 +36,7 @@ Point resolvePoint(const Ref& r, const SelectorContext& ctx);
 
 // ===== Core (Ref-based) constraint functions =====
 Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorContext& ctx);
+Eigen::Isometry3d CoincidentPoint(const Ref& host, const Ref& guest, const SelectorContext& ctx);
 Eigen::Isometry3d Concentric(const Ref& host_axis, const Ref& guest_axis, const SelectorContext& ctx);
 Eigen::Isometry3d Parallel(const Ref& host_axis, const Ref& guest_axis, const SelectorContext& ctx);
 Eigen::Isometry3d Angle(const Ref& host_axis, const Ref& guest_axis, double radians, const SelectorContext& ctx);

@@ -215,12 +215,30 @@ Pose resolvePose(const Ref& r, const SelectorContext& ctx)
 
 Point resolvePoint(const Ref& r, const SelectorContext& ctx)
 {
-  if (r.kind == NamespaceKind::Frame || r.kind == NamespaceKind::Link || r.kind == NamespaceKind::Origin)
+  switch (r.kind)
   {
-    Pose F;
-    if (!ctx.getFrame(r, F))
-      throw std::runtime_error("resolvePoint: frame not found for '" + r.raw + "'");
-    return F.translation();
+    case NamespaceKind::Frame:
+    case NamespaceKind::Link:
+    case NamespaceKind::Origin:
+    case NamespaceKind::Shape:
+    case NamespaceKind::StackedShape:
+    {
+      Pose F;
+      if (!ctx.getFrame(r, F))
+        throw std::runtime_error("resolvePoint: frame not found for '" + r.raw + "'");
+      return F.translation();
+    }
+
+    case NamespaceKind::Insertion:
+    {
+      SelectorContext::InsertionData ins;
+      if (!ctx.getInsertion(r, ins))
+        throw std::runtime_error("resolvePoint: insertion not found for '" + r.raw + "'");
+      return ins.mouth.translation();
+    }
+
+    default:
+      break;
   }
 
   throw std::runtime_error("resolvePoint: not implemented for '" + r.raw + "'");
@@ -303,6 +321,44 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
   }
 
   throw std::runtime_error("Coincident: unsupported operands '" + host.raw + "' , '" + guest.raw + "'");
+}
+
+Eigen::Isometry3d CoincidentPoint(const Ref& host, const Ref& guest, const SelectorContext& ctx)
+{
+  Pose H_w;
+  if (!ctx.getFrame(host, H_w))
+    throw std::runtime_error("CoincidentPoint: cannot fetch host pose for '" + host.raw + "'");
+
+  // Resolve points in world (fallback to pose translation if needed)
+  Point Hp_w;
+  Point Gp_w;
+
+  try
+  {
+    Hp_w = resolvePoint(host, ctx);
+  }
+  catch (...)
+  {
+    Pose Fh_w = resolvePose(host, ctx);
+    Hp_w = Fh_w.translation();
+  }
+
+  try
+  {
+    Gp_w = resolvePoint(guest, ctx);
+  }
+  catch (...)
+  {
+    Pose Fg_w = resolvePose(guest, ctx);
+    Gp_w = Fg_w.translation();
+  }
+
+  // Convert to host frame
+  Point Hp_h = to_host_point(H_w, Hp_w);
+  Point Gp_h = to_host_point(H_w, Gp_w);
+
+  Pose dH = solveCoincidentPointPoint(Hp_h, Gp_h);
+  return delta_host_to_world(H_w, dH);
 }
 
 Eigen::Isometry3d Concentric(const Ref& host_axis, const Ref& guest_axis, const SelectorContext& ctx)

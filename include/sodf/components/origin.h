@@ -11,6 +11,7 @@ namespace components {
 /// One operation in the origin “program”
 using OriginConstraint = std::variant<geometry::Transform,  // absolute pose
                                       Coincident,           //
+                                      CoincidentPoint,      //
                                       Concentric,           //
                                       Parallel,             //
                                       Angle,                //

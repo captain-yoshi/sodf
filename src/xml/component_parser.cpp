@@ -802,8 +802,8 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
 
   // Helpers -------------------------------------------------------------------
 
-  auto getEither = [&](const tinyxml2::XMLElement* node, const char* a, const char* b,
-                       const char* fallback_name) -> std::string {
+  auto getEither = [&](const tinyxml2::XMLElement* node, const char* a, const char* b, const char *
+                       /*fallback_name*/) -> std::string {
     // Try 'a' first, then 'b'. If neither present, throw with helpful name.
     if (const char* v = node->Attribute(a))
       return std::string(v);
@@ -844,6 +844,13 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
 
   auto pushCoincident = [&](const tinyxml2::XMLElement* node) {
     Coincident c;
+    c.host = evalTextAttributeRequired(node, "host");
+    c.guest = evalTextAttributeRequired(node, "guest");
+    program.emplace_back(c);
+  };
+
+  auto pushCoincidentPoint = [&](const tinyxml2::XMLElement* node) {
+    CoincidentPoint c;
     c.host = evalTextAttributeRequired(node, "host");
     c.guest = evalTextAttributeRequired(node, "guest");
     program.emplace_back(c);
@@ -907,6 +914,10 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     {
       pushCoincident(child);
     }
+    else if (tag == "CoincidentPoint")
+    {
+      pushCoincidentPoint(child);
+    }
     else if (tag == "Concentric")
     {
       pushConcentric(child);
@@ -927,7 +938,6 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     {
       pushSeatConeOnCylinder(child);
     }
-
     else
     {
       throw std::runtime_error("Unknown element <" + tag + "> in <Origin> at line " +

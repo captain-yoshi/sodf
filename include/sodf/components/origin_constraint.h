@@ -1,6 +1,7 @@
 #ifndef SODF_COMPONENTS_ORIGIN_CONSTRAINT_H_
 #define SODF_COMPONENTS_ORIGIN_CONSTRAINT_H_
 
+#include <string>
 #include <variant>
 #include <sodf/geometry/transform.h>
 
@@ -11,6 +12,12 @@ struct Coincident
 {
   std::string host, guest;
 };
+
+struct CoincidentPoint
+{
+  std::string host, guest;
+};
+
 struct Concentric
 {
   std::string host, guest;

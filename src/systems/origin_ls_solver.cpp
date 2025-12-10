@@ -194,6 +194,31 @@ static void add_coincident_ls(const sodf::assembly::Ref& H, const sodf::assembly
 }
 
 template <typename Accum>
+static void add_coincident_point_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G,
+                                    const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P,
+                                    Accum&& accum)
+{
+  using namespace sodf::assembly;
+  using namespace sodf::geometry;
+
+  Pose Fh = resolvePose(H, ctx);
+  Pose Fg = resolvePose(G, ctx);
+
+  const Eigen::Vector3d Ph = Fh.translation();
+  const Eigen::Vector3d Pg = Fg.translation();
+
+  // residual: match points
+  Eigen::Vector3d r_pos = (Pg - Ph);
+
+  // Jacobian for point residual in SE3 (same pattern as your concentric lateral term)
+  Eigen::Matrix<double, 3, 6> J = Eigen::Matrix<double, 3, 6>::Zero();
+  J.block<3, 3>(0, 0) = skew(Pg);
+  J.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity();
+
+  accum(J, Eigen::Map<Eigen::Vector3d>(r_pos.data()), P.w_pos);
+}
+
+template <typename Accum>
 static void add_concentric_axis_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G,
                                    const sodf::components::OriginComponent& origin,
                                    const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P,
@@ -508,6 +533,34 @@ static inline void fill_coincident_entry(sodf::systems::ResidualEntry& e, const 
   }
 }
 
+static inline void fill_coincident_point_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                               const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
+{
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
+  try
+  {
+    auto Fh = sodf::assembly::resolvePose(H, ctx);
+    auto Fg = sodf::assembly::resolvePose(G, ctx);
+
+    e.ang_rad = 0.0;
+    e.dist_m = (Fg.translation() - Fh.translation()).norm();
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = std::string("coincident_point_residual: ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = "coincident_point_residual: unknown exception";
+  }
+}
+
 static inline void fill_angle_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
                                     const sodf::assembly::Ref& G, double target_radians,
                                     const sodf::assembly::SelectorContext& ctx)
@@ -696,7 +749,12 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
             Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
             add_coincident_ls(H, G, origin, ctx, P, accum);
           }
-
+          else if constexpr (std::is_same_v<TStep, components::CoincidentPoint>)
+          {
+            Ref H = sodf::assembly::make_host_ref(step.host, origin);
+            Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
+            add_coincident_point_ls(H, G, ctx, P, accum);
+          }
           else if constexpr (std::is_same_v<TStep, components::Distance>)
           {
             Ref H = sodf::assembly::make_host_ref(step.host, origin);
@@ -804,6 +862,14 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Coincident", to_ref_str(H), to_ref_str(G) };
             fill_coincident_entry(e, H, G, ctx);
+            out.push_back(std::move(e));
+          }
+          else if constexpr (std::is_same_v<TStep, components::CoincidentPoint>)
+          {
+            Ref H = assembly::make_host_ref(step.host, origin);
+            Ref G = assembly::make_guest_ref(step.guest, origin);
+            ResidualEntry e{ "CoincidentPoint", to_ref_str(H), to_ref_str(G) };
+            fill_coincident_point_entry(e, H, G, ctx);
             out.push_back(std::move(e));
           }
           else if constexpr (std::is_same_v<TStep, components::Distance>)
