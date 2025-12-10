@@ -1,15 +1,14 @@
 #ifndef SODF_ASSEMBLY_NAMESPACE_H_
 #define SODF_ASSEMBLY_NAMESPACE_H_
 
-#pragma once
 #include <string>
 #include <string_view>
 #include <optional>
 #include <stdexcept>
-#include <sstream>         // to_string_ref / error messages
-#include <iostream>        // printTF
-#include <iomanip>         // printTF
-#include <Eigen/Geometry>  // printTF
+#include <sstream>
+#include <iostream>
+#include <iomanip>
+#include <Eigen/Geometry>
 
 namespace sodf {
 namespace assembly {
@@ -30,7 +29,7 @@ struct Ref
 {
   std::string entity;    // object id (e.g., "table", "spreader-dock")
   NamespaceKind kind;    // kind determined by namespace segment
-  std::string ns;        // raw namespace token (e.g., "insert")
+  std::string ns;        // raw namespace token (e.g., "insertion")
   std::string id;        // local id inside the namespace (may contain '/')
   std::string selector;  // optional "#selector" (e.g., "axis", "frame", "plane")
   std::string raw;       // original raw string for diagnostics
@@ -103,12 +102,14 @@ inline Ref parse_global_ref(std::string_view s)
   r.ns = std::string(main.substr(p1 + 1, p2 - (p1 + 1)));
   r.id = std::string(main.substr(p2 + 1));
   r.kind = ns_to_kind(r.ns);
+
   if (r.kind == NamespaceKind::Unknown)
     throw std::runtime_error("parse_global_ref: unknown namespace '" + r.ns + "' in '" + std::string(s) + "'");
+
   return r;
 }
 
-// Parse "ns/id[#selector]" with a default entity  (LOCAL)
+// Parse "ns/id[#selector]" with a default entity (LOCAL)
 inline Ref parse_local_ref(std::string_view s, std::string_view default_entity)
 {
   Ref r;
@@ -126,31 +127,56 @@ inline Ref parse_local_ref(std::string_view s, std::string_view default_entity)
   r.ns = std::string(main.substr(0, p));
   r.id = std::string(main.substr(p + 1));
   r.kind = ns_to_kind(r.ns);
+
   if (r.kind == NamespaceKind::Unknown)
     throw std::runtime_error("parse_local_ref: unknown namespace '" + r.ns + "' in '" + std::string(s) + "'");
+
   return r;
 }
 
-// ------------------ scope enforcement + scoped helpers -----------------------
+// ------------------ scope enforcement helpers --------------------------------
 
-inline void ensure_scope_for_local(const char* op_name,
-                                   const char* side_name,  // "host" / "guest"
-                                   std::string_view ref_str,
-                                   std::string_view object_id)  // host_object or guest_object
+inline const char* side_field_name(const char* side_name)
+{
+  return (std::string(side_name) == "host") ? "host_object" : "guest_object";
+}
+
+// Local refs require scope to exist.
+inline void ensure_scope_for_local(const char* op_name, const char* side_name, std::string_view ref_str,
+                                   std::string_view object_id)
 {
   if (looks_local_ref(ref_str) && object_id.empty())
   {
     std::ostringstream oss;
     oss << op_name << ": '" << side_name << "' reference '" << ref_str
-        << "' is local (e.g., 'insert/A1#axis'), but OriginComponent."
-        << (std::string(side_name) == "host" ? "host_object" : "guest_object") << " is empty.\n"
-        << "Add host_object=\"<host object id>\" and guest_object=\"<guest object id>\" "
-        << "on <Origin>, or include <Scope host=\"...\" guest=\"...\"/>.";
+        << "' is local (e.g., 'insertion/A1#axis'), but OriginComponent." << side_field_name(side_name)
+        << " is empty.\n"
+        << "Add " << side_field_name("host") << "=\"...\" and " << side_field_name("guest")
+        << "=\"...\" on <Origin>, or include <Scope host=\"...\" guest=\"...\"/>.";
     throw std::runtime_error(oss.str());
   }
 }
 
-// Core: parse host ref with scoping (global stays global; local uses host_object)
+// Global refs must match the declared host/guest object if provided.
+inline void ensure_scope_for_global(const char* op_name, const char* side_name, const Ref& r, std::string_view object_id)
+{
+  // If the Origin side isn't set, we don't have a contract to validate against.
+  if (object_id.empty())
+    return;
+
+  if (!r.entity.empty() && r.entity != object_id)
+  {
+    std::ostringstream oss;
+    oss << op_name << ": '" << side_name << "' reference '" << r.raw << "' points to object '" << r.entity
+        << "', but OriginComponent." << side_field_name(side_name) << "='" << object_id << "'.\n"
+        << "This constraint mixes objects across scopes. Fix the ref or adjust the Origin scope.";
+    throw std::runtime_error(oss.str());
+  }
+}
+
+// ------------------ scoped ref builders --------------------------------------
+
+// Core: parse host ref with scoping (global stays global but must match host_object if set)
 template <class OriginComponentLike>
 inline Ref make_host_ref(std::string_view ref, const OriginComponentLike& origin)
 {
@@ -158,13 +184,17 @@ inline Ref make_host_ref(std::string_view ref, const OriginComponentLike& origin
     throw std::runtime_error("make_host_ref: empty reference string");
 
   if (is_global_ref(ref))
-    return parse_global_ref(ref);
+  {
+    Ref r = parse_global_ref(ref);
+    ensure_scope_for_global("Origin constraint", "host", r, origin.host_object);
+    return r;
+  }
 
   ensure_scope_for_local("Origin constraint", "host", ref, origin.host_object);
   return parse_local_ref(ref, origin.host_object);
 }
 
-// Core: parse guest ref with scoping (global stays global; local uses guest_object)
+// Core: parse guest ref with scoping (global stays global but must match guest_object if set)
 template <class OriginComponentLike>
 inline Ref make_guest_ref(std::string_view ref, const OriginComponentLike& origin)
 {
@@ -172,7 +202,11 @@ inline Ref make_guest_ref(std::string_view ref, const OriginComponentLike& origi
     throw std::runtime_error("make_guest_ref: empty reference string");
 
   if (is_global_ref(ref))
-    return parse_global_ref(ref);
+  {
+    Ref r = parse_global_ref(ref);
+    ensure_scope_for_global("Origin constraint", "guest", r, origin.guest_object);
+    return r;
+  }
 
   ensure_scope_for_local("Origin constraint", "guest", ref, origin.guest_object);
   return parse_local_ref(ref, origin.guest_object);
