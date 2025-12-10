@@ -189,6 +189,8 @@ Pose resolvePose(const Ref& r, const SelectorContext& ctx)
     case NamespaceKind::Link:
     case NamespaceKind::Origin:
     case NamespaceKind::Frame:
+    case NamespaceKind::Shape:
+    case NamespaceKind::StackedShape:
     {
       Pose F;
       if (!ctx.getFrame(r, F))
