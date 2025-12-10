@@ -188,7 +188,7 @@ void parseDomainShapeComponent(const tinyxml2::XMLDocument* doc, const tinyxml2:
 
   stacked_shape_id = evalTextAttributeRequired(ssr, "id");
   if (stacked_shape_id.empty())
-    throw std::runtime_error("Empty 'id' in <StackedShapeRef> for DomainShape '" + id + "' at line " +
+    throw std::runtime_error("Empty 'id' in <StackedShapeID> for DomainShape '" + id + "' at line " +
                              std::to_string(ssr->GetLineNum()));
 
   auto* stacked_shape = db.get_element<StackedShapeComponent>(eid, stacked_shape_id);
@@ -386,29 +386,9 @@ void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
   }
   insertion.max_depth = evalNumberAttributeRequired(max_depth, "value");
 
-  if (const auto* shape_ref = elem->FirstChildElement("StackedShapeRef"))
+  if (const auto* shape_ref = elem->FirstChildElement("StackedShapeID"))
   {
     insertion.stacked_shape_id = evalTextAttributeRequired(shape_ref, "id");
-
-    // Optional payload-local frame (preferred base for rendering the domain)
-    if (const auto* tf_elem = shape_ref->FirstChildElement("Transform"))
-    {
-      const std::string frame_id = evalTextAttributeRequired(tf_elem, "id");
-      const std::string parent = evalTextAttributeRequired(tf_elem, "parent");
-
-      geometry::TransformNode node;
-      node.parent = parent;
-      node.local = parseIsometry3D(tf_elem);
-      node.is_static = true;
-
-      // Register this frame in the entity's TransformComponent
-      auto* tfc = db.get_or_add<TransformComponent>(eid);
-      if (!tfc)
-        throw std::runtime_error("get_or_add<TransformComponent> failed for Insertion '" + id + "'");
-      tfc->elements.emplace_back(frame_id, std::move(node));
-
-      insertion.stacked_shape_frame_id = frame_id;
-    }
   }
 
   // Store to component

@@ -29,7 +29,6 @@ struct Insertion
                                      // 0 = infinite, 1 = unique, 2 = 0 and 180 degrees, etc...
 
   std::string stacked_shape_id;
-  std::string stacked_shape_frame_id;
 
   // Receptacle: max allowed travel along +axis_insertion from mouth/opening
   //             sockets don't usally have a max depth
