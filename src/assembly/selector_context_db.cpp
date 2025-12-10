@@ -15,6 +15,9 @@
 
 #include <stdexcept>
 #include <cmath>
+#include <string>
+#include <string_view>
+#include <algorithm>
 
 using sodf::database::Database;
 
@@ -27,7 +30,7 @@ namespace assembly {
 
 static inline std::string ref_key(const Ref& r)
 {
-  return r.ns.empty() ? r.id : (r.ns + "/" + r.id);  // "insert/M24"
+  return r.ns.empty() ? r.id : (r.ns + "/" + r.id);
 }
 
 // Local → world transforms for vectors/points (vectors rotate only)
@@ -38,11 +41,6 @@ static inline Eigen::Vector3d rot_vec(const Eigen::Isometry3d& T, const Eigen::V
   if (n2 == 0.0 || !std::isfinite(n2))
     return Eigen::Vector3d::UnitX();  // safe fallback
   return v / std::sqrt(n2);
-}
-
-static inline Eigen::Vector3d xform_point(const Eigen::Isometry3d& T, const Eigen::Vector3d& p_local)
-{
-  return T.translation() + T.linear() * p_local;
 }
 
 // Rotate a canonical (local) axis into the frame (and normalize)
@@ -70,6 +68,20 @@ static database::Database::entity_type must_entity(const database::ObjectEntityM
   return it->second;
 }
 
+// STRICT transform accessor with contextual error
+static inline Eigen::Isometry3d must_global_transform(Database& db, database::Database::entity_type e,
+                                                      const std::string& key, const std::string& what)
+{
+  try
+  {
+    return sodf::systems::get_global_transform(db, e, key);
+  }
+  catch (const std::exception& ex)
+  {
+    throw std::runtime_error("[assembly] Missing transform for " + what + " frame '" + key + "': " + ex.what());
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Shape readers (prefer actual ShapeComponent; fallback to DomainShapeComponent)
 // -----------------------------------------------------------------------------
@@ -78,11 +90,12 @@ static bool read_cylinder_from_shape(Database& db, database::Database::entity_ty
                                      Axis& out_axis, double& out_radius, double& out_height)
 {
   using components::ShapeComponent;
+
   if (auto* s = db.get_element<ShapeComponent>(e, key))
   {
     if (s->type == geometry::ShapeType::Cylinder)
     {
-      const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
+      const Eigen::Isometry3d T = must_global_transform(db, e, key, "cylinder(shape)");
       out_axis.point = T.translation();
       out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(*s));
       out_radius = geometry::getShapeBaseRadius(*s);  // cyl: base==top
@@ -97,11 +110,12 @@ static bool read_cone_from_shape(Database& db, database::Database::entity_type e
                                  Axis& out_axis, double& r0, double& r1, double& H)
 {
   using components::ShapeComponent;
+
   if (auto* s = db.get_element<ShapeComponent>(e, key))
   {
     if (s->type == geometry::ShapeType::Cone)
     {
-      const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
+      const Eigen::Isometry3d T = must_global_transform(db, e, key, "cone(shape)");
       out_axis.point = T.translation();
       out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(*s));
       r0 = geometry::getShapeBaseRadius(*s);
@@ -117,14 +131,14 @@ static bool read_plane_from_shape(Database& db, database::Database::entity_type 
                                   Plane& out_plane)
 {
   using components::ShapeComponent;
+
   if (auto* s = db.get_element<ShapeComponent>(e, key))
   {
     if (s->type == geometry::ShapeType::Plane ||
         s->type == geometry::ShapeType::Rectangle)  // treat bounded rectangle as plane, too
     {
-      const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
+      const Eigen::Isometry3d T = must_global_transform(db, e, key, "plane(shape)");
       out_plane.point = T.translation();
-      // For 2D shapes, Primary is the plane normal by your convention.
       out_plane.normal = transformAxis(T, geometry::getShapePrimaryAxis(*s));
       return true;
     }
@@ -137,24 +151,20 @@ static bool read_plane_from_shape(Database& db, database::Database::entity_type 
 static bool read_cylinder_from_domain(Database& db, database::Database::entity_type e, const std::string& key,
                                       Axis& out_axis, double& out_radius, double& out_height)
 {
-  using components::DomainShapeComponent;   // returns physics::DomainShape*
-  using components::ShapeComponent;         // geometry::Shape
-  using components::StackedShapeComponent;  // geometry::StackedShape
+  using components::DomainShapeComponent;
+  using components::ShapeComponent;
+  using components::StackedShapeComponent;
 
-  // 1) Pose from the domain's own frame
-  const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
+  const Eigen::Isometry3d T = must_global_transform(db, e, key, "domain(cylinder)");
   out_axis.point = T.translation();
 
-  // 2) The domain instance itself
   const auto* dsc = db.get_element<DomainShapeComponent>(e, key);
   if (!dsc)
     return false;
 
-  // 3) Follow provenance to stacked/shape geometry (preferred source of dims)
-  const std::string& src_id = dsc->stacked_shape_id;  // may be empty
+  const std::string& src_id = dsc->stacked_shape_id;
   if (!src_id.empty())
   {
-    // 3a) Try a stacked shape first
     if (const auto* ss = db.get_element<StackedShapeComponent>(e, src_id))
     {
       for (const auto& entry : ss->shapes)
@@ -163,13 +173,13 @@ static bool read_cylinder_from_domain(Database& db, database::Database::entity_t
         if (s.type == geometry::ShapeType::Cylinder)
         {
           out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(s));
-          out_radius = geometry::getShapeBaseRadius(s);  // cyl: base==top
+          out_radius = geometry::getShapeBaseRadius(s);
           out_height = geometry::getShapeHeight(s);
           return true;
         }
       }
     }
-    // 3b) Or a single analytic shape
+
     if (const auto* s = db.get_element<ShapeComponent>(e, src_id))
     {
       if (s->type == geometry::ShapeType::Cylinder)
@@ -182,7 +192,6 @@ static bool read_cylinder_from_domain(Database& db, database::Database::entity_t
     }
   }
 
-  // 4) Last-chance: some projects co-locate the analytic shape under the same `key`
   if (const auto* s = db.get_element<ShapeComponent>(e, key))
   {
     if (s->type == geometry::ShapeType::Cylinder)
@@ -196,6 +205,10 @@ static bool read_cylinder_from_domain(Database& db, database::Database::entity_t
 
   return false;
 }
+
+// -----------------------------------------------------------------------------
+// StackedShape dimension helpers
+// -----------------------------------------------------------------------------
 
 static bool stacked_cone_profile(const geometry::StackedShape& stack, double& out_r0, double& out_r1, double& out_H)
 {
@@ -219,15 +232,15 @@ static bool stacked_cone_profile(const geometry::StackedShape& stack, double& ou
     {
       case ShapeType::Cylinder:
       {
-        const double r = getShapeBaseRadius(s);  // base == top
+        const double r = getShapeBaseRadius(s);
         if (!have_any)
         {
-          r_top = r;  // first segment top
+          r_top = r;
           r_bottom = r;
         }
         else
         {
-          r_bottom = r;  // last radius wins
+          r_bottom = r;
         }
         have_any = true;
         break;
@@ -235,24 +248,23 @@ static bool stacked_cone_profile(const geometry::StackedShape& stack, double& ou
 
       case ShapeType::Cone:
       {
-        const double r0 = getShapeBaseRadius(s);  // at top of this segment
-        const double r1 = getShapeTopRadius(s);   // at bottom of this segment
+        const double rr0 = getShapeBaseRadius(s);
+        const double rr1 = getShapeTopRadius(s);
         if (!have_any)
         {
-          r_top = r0;  // very first segment’s top radius
-          r_bottom = r1;
+          r_top = rr0;
+          r_bottom = rr1;
         }
         else
         {
-          // segments are stacked, so we continue from previous bottom
-          r_bottom = r1;
+          r_bottom = rr1;
         }
         have_any = true;
         break;
       }
 
       default:
-        break;  // ignore non-relevant shapes
+        break;
     }
   }
 
@@ -265,6 +277,91 @@ static bool stacked_cone_profile(const geometry::StackedShape& stack, double& ou
   return true;
 }
 
+// Heuristic: interpret a stacked shape as "cylinder-like".
+static bool read_cylinder_from_stacked(Database& db, database::Database::entity_type e, const std::string& key,
+                                       Axis& out_axis, double& out_radius, double& out_height)
+{
+  using components::StackedShapeComponent;
+  using geometry::ShapeType;
+
+  const auto* ss = db.get_element<StackedShapeComponent>(e, key);
+  if (!ss || ss->shapes.empty())
+    return false;
+
+  const Eigen::Isometry3d T = must_global_transform(db, e, key, "stacked_shape(cylinder)");
+
+  // Look for cylinder segments; choose max radius; height = sum of cylinder heights if any,
+  // otherwise sum of all segments as a fallback.
+  bool have_cyl = false;
+  double Rmax = 0.0;
+  double Hcyl = 0.0;
+  double Hall = 0.0;
+
+  for (const auto& entry : ss->shapes)
+  {
+    const geometry::Shape& s = entry.shape;
+    const double h = geometry::getShapeHeight(s);
+    Hall += h;
+
+    if (s.type == ShapeType::Cylinder)
+    {
+      have_cyl = true;
+      Hcyl += h;
+      Rmax = std::max(Rmax, geometry::getShapeBaseRadius(s));
+    }
+  }
+
+  if (!have_cyl)
+    return false;
+
+  // Axis direction based on first cylinder segment we find
+  for (const auto& entry : ss->shapes)
+  {
+    const geometry::Shape& s = entry.shape;
+    if (s.type == ShapeType::Cylinder)
+    {
+      out_axis.point = T.translation();
+      out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(s));
+      break;
+    }
+  }
+
+  out_radius = Rmax;
+  out_height = (Hcyl > 0.0) ? Hcyl : Hall;
+  if (out_height <= 0.0)
+    out_height = 1e-6;
+
+  return true;
+}
+
+// Heuristic: interpret a stacked shape as "cone-like" using the stacked profile
+// across Cylinder/Cone segments.
+static bool read_cone_from_stacked(Database& db, database::Database::entity_type e, const std::string& key,
+                                   Axis& out_axis, double& r0, double& r1, double& H)
+{
+  using components::StackedShapeComponent;
+
+  const auto* ss = db.get_element<StackedShapeComponent>(e, key);
+  if (!ss || ss->shapes.empty())
+    return false;
+
+  double rr0 = 0.0, rr1 = 0.0, HH = 0.0;
+  if (!stacked_cone_profile(*ss, rr0, rr1, HH))
+    return false;
+
+  const Eigen::Isometry3d T = must_global_transform(db, e, key, "stacked_shape(cone)");
+  out_axis.point = T.translation();
+
+  // Use primary axis of the first segment as canonical direction
+  out_axis.direction = transformAxis(T, geometry::getShapePrimaryAxis(ss->shapes.front().shape));
+
+  r0 = rr0;
+  r1 = rr1;
+  H = (HH > 0.0) ? HH : 1e-6;
+
+  return true;
+}
+
 // Resolve cone dims from a DomainShape by following its stacked_shape_id.
 // Pose (axis point/dir) comes from the DOMAIN frame at `key`.
 static bool read_cone_from_domain(Database& db, database::Database::entity_type e, const std::string& key,
@@ -274,7 +371,7 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
   using components::ShapeComponent;
   using components::StackedShapeComponent;
 
-  const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
+  const Eigen::Isometry3d T = must_global_transform(db, e, key, "domain(cone)");
   out_axis.point = T.translation();
 
   const auto* dsc = db.get_element<DomainShapeComponent>(e, key);
@@ -286,7 +383,6 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
   {
     if (const auto* ss = db.get_element<StackedShapeComponent>(e, src_id))
     {
-      // Use stacked profile to accumulate height across all segments
       double rr0 = 0.0, rr1 = 0.0, HH = 0.0;
       if (!stacked_cone_profile(*ss, rr0, rr1, HH))
         return false;
@@ -311,7 +407,6 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
     }
   }
 
-  // Fallback: analytic cone directly under `key`
   if (const auto* s = db.get_element<ShapeComponent>(e, key))
   {
     if (s->type == geometry::ShapeType::Cone)
@@ -330,10 +425,9 @@ static bool read_cone_from_domain(Database& db, database::Database::entity_type 
 static bool read_plane_from_frame(Database& db, database::Database::entity_type e, const std::string& key,
                                   Plane& out_plane)
 {
-  // Fallback: any frame is a plane with +Z normal (frame convention)
-  Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
+  const Eigen::Isometry3d T = must_global_transform(db, e, key, "frame(plane)");
   out_plane.point = T.translation();
-  out_plane.normal = T.linear().col(2).normalized();  // +Z
+  out_plane.normal = T.linear().col(2).normalized();
   return true;
 }
 
@@ -350,118 +444,107 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
 
   SelectorContext::InsertionData out;
 
-  // 1) Base pose (the "mouth" of the insertion) comes from the insertion frame itself.
-  const Eigen::Isometry3d T_ins = sodf::systems::get_global_transform(db, e, key);
+  // 1) Base pose comes from the insertion frame itself (STRICT)
+  const Eigen::Isometry3d T_ins = must_global_transform(db, e, key, "insertion");
   out.mouth = T_ins;
 
-  // Defaults from the frame (already in world)
-  out.axis = T_ins.linear().col(2).normalized();  // +Z as insertion axis by frame convention
-  out.ref = T_ins.linear().col(0).normalized();   // +X as reference
+  // Defaults from the frame
+  out.axis = T_ins.linear().col(2).normalized();
+  out.ref = T_ins.linear().col(0).normalized();
 
-  // 2) Fetch the Insertion struct (DB returns the element directly).
+  // 2) Fetch the Insertion metadata
   const auto* ins = db.get_element<InsertionComponent>(e, key);
+
   if (!ins)
   {
-    // No metadata; we still have a valid mouth/axis/ref from the frame.
-    return out;
+    // Legacy fallback for metadata only
+    constexpr std::string_view prefix = "insertion/";
+    if (key.rfind(prefix, 0) == 0 && key.size() > prefix.size())
+    {
+      const std::string short_key = key.substr(prefix.size());
+      ins = db.get_element<InsertionComponent>(e, short_key);
+    }
   }
 
-  // 2a) If author provided explicit LOCAL axes, rotate them into world
+  if (!ins)
+    return out;
+
+  // 2a) Author provided explicit LOCAL axes
   if (ins->axis_insertion.squaredNorm() > 0.0)
-  {
     out.axis = rot_vec(T_ins, ins->axis_insertion);
-  }
+
   if (ins->axis_reference.squaredNorm() > 0.0)
-  {
     out.ref = rot_vec(T_ins, ins->axis_reference);
-  }
 
   // Keep ref ⟂ axis (defensive)
   out.ref = (out.ref - out.axis * out.axis.dot(out.ref)).normalized();
   if (!std::isfinite(out.ref.squaredNorm()) || out.ref.squaredNorm() < 1e-12)
   {
-    // choose any perpendicular
     Eigen::Vector3d tmp = std::abs(out.axis.z()) < 0.9 ? Eigen::Vector3d::UnitZ() : Eigen::Vector3d::UnitX();
     out.ref = (tmp - out.axis * out.axis.dot(tmp)).normalized();
   }
 
-  // 3) Try to derive seat profile & axes from the referenced stacked shape.
-  //    NOTE: we read dims from geometry::Shape (intrinsic), not from transforms.
-  const std::string& stack_id = ins->stacked_shape_id;           // e.g. "stacked_shape/hole.1_4-20"
-  const std::string& stack_frame = ins->stacked_shape_frame_id;  // e.g. "insertion/container/fit1" (optional pose)
-
-  if (!stack_frame.empty())
-  {
-    // If a specific frame for the stacked shape is provided, we can optionally
-    // use its axes if author didn't set custom axes.
-    try
-    {
-      const Eigen::Isometry3d T_stack = sodf::systems::get_global_transform(db, e, stack_frame);
-
-      // If user didn't provide custom local axes, try to fetch from stacked shape geometry:
-      if (ins->axis_insertion.squaredNorm() == 0.0 || ins->axis_reference.squaredNorm() == 0.0)
-      {
-        if (const auto* ss = db.get_element<StackedShapeComponent>(e, stack_id))
-        {
-          // take the first shape as reference for canonical axes
-          for (const auto& entry : ss->shapes)
-          {
-            const geometry::Shape& s = entry.shape;
-
-            if (ins->axis_insertion.squaredNorm() == 0.0)
-              out.axis = transformAxis(T_stack, geometry::getShapePrimaryAxis(s));
-
-            if (ins->axis_reference.squaredNorm() == 0.0)
-              out.ref = transformAxis(T_stack, geometry::getShapeUAxis(s));
-
-            break;
-          }
-        }
-        else if (const auto* sc = db.get_element<ShapeComponent>(e, stack_id))
-        {
-          if (ins->axis_insertion.squaredNorm() == 0.0)
-            out.axis = transformAxis(T_stack, geometry::getShapePrimaryAxis(*sc));
-          if (ins->axis_reference.squaredNorm() == 0.0)
-            out.ref = transformAxis(T_stack, geometry::getShapeUAxis(*sc));
-        }
-      }
-      // If no geometry available, fall back to frame axes (already set earlier)
-    }
-    catch (...)
-    { /* ignore if missing */
-    }
-  }
-
-  // Wire optional radius/cone providers (if geometry present)
-  auto wire_cylinder = [&](double R) {
-    out.getCylinderRadius = [R](double& r) {
-      r = R;
-      return true;
-    };
-  };
-  auto wire_cone = [&](double r0, double r1, double H) {
-    out.getConeDims = [r0, r1, H](double& o0, double& o1, double& oH) {
-      o0 = r0;
-      o1 = r1;
-      oH = H;
-      return true;
-    };
-  };
+  // 3) Derive seat profile & axes from referenced stacked shape
+  const std::string& stack_id = ins->stacked_shape_id;
 
   if (!stack_id.empty())
   {
+    // STRICT if metadata references a stacked shape frame
+    const Eigen::Isometry3d T_stack = must_global_transform(db, e, stack_id, "stacked_shape(insertion)");
+
+    if (ins->axis_insertion.squaredNorm() == 0.0 || ins->axis_reference.squaredNorm() == 0.0)
+    {
+      if (const auto* ss = db.get_element<StackedShapeComponent>(e, stack_id))
+      {
+        if (!ss->shapes.empty())
+        {
+          const geometry::Shape& s = ss->shapes.front().shape;
+
+          if (ins->axis_insertion.squaredNorm() == 0.0)
+            out.axis = transformAxis(T_stack, geometry::getShapePrimaryAxis(s));
+
+          if (ins->axis_reference.squaredNorm() == 0.0)
+            out.ref = transformAxis(T_stack, geometry::getShapeUAxis(s));
+        }
+      }
+      else if (const auto* sc = db.get_element<ShapeComponent>(e, stack_id))
+      {
+        if (ins->axis_insertion.squaredNorm() == 0.0)
+          out.axis = transformAxis(T_stack, geometry::getShapePrimaryAxis(*sc));
+
+        if (ins->axis_reference.squaredNorm() == 0.0)
+          out.ref = transformAxis(T_stack, geometry::getShapeUAxis(*sc));
+      }
+    }
+
+    // Wire optional profile providers
+    auto wire_cylinder = [&](double R) {
+      out.getCylinderRadius = [R](double& r) {
+        r = R;
+        return true;
+      };
+    };
+
+    auto wire_cone = [&](double r0, double r1, double H) {
+      out.getConeDims = [r0, r1, H](double& o0, double& o1, double& oH) {
+        o0 = r0;
+        o1 = r1;
+        oH = H;
+        return true;
+      };
+    };
+
     if (const auto* stack = db.get_element<StackedShapeComponent>(e, stack_id))
     {
       bool have_cyl = false;
       double cyl_R = 0.0;
 
-      // 1) Always try to get an outer cylinder radius (for wells, holes, etc.).
       for (const auto& entry : stack->shapes)
       {
         const geometry::Shape& s = entry.shape;
         if (s.type == geometry::ShapeType::Cylinder)
         {
-          const double R = geometry::getShapeBaseRadius(s);  // base == top
+          const double R = geometry::getShapeBaseRadius(s);
           if (!have_cyl || R > cyl_R)
           {
             have_cyl = true;
@@ -471,16 +554,14 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
       }
 
       if (have_cyl)
-        wire_cylinder(cyl_R);  // SeatConeOnCylinder(host, ...) will happily use this
+        wire_cylinder(cyl_R);
 
-      // 2) Also try to build a stacked cone profile (for outer cone-ish guests).
-      double r0 = 0.0, r1 = 0.0, H = 0.0;
-      if (stacked_cone_profile(*stack, r0, r1, H))
-        wire_cone(r0, r1, H);  // SeatConeOnCylinder(guest, ...) will use this
+      double r0 = 0.0, r1 = 0.0, HH = 0.0;
+      if (stacked_cone_profile(*stack, r0, r1, HH))
+        wire_cone(r0, r1, HH);
     }
     else if (const auto* s = db.get_element<ShapeComponent>(e, stack_id))
     {
-      // Simple analytic shape referenced instead of a stack.
       if (s->type == geometry::ShapeType::Cylinder)
       {
         wire_cylinder(geometry::getShapeBaseRadius(*s));
@@ -504,53 +585,55 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
   SelectorContext ctx;
 
   // FRAMES  ── bool (Ref, Pose& out)
+  // STRICT: throws if transform not found.
   ctx.getFrame = [&db, &objects](const Ref& r, Pose& out) -> bool {
-    try
-    {
-      auto e = must_entity(objects, r.entity);
-      const Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, ref_key(r));
-      out = Pose{ T };
-      return true;
-    }
-    catch (...)
-    {
-      return false;
-    }
+    auto e = must_entity(objects, r.entity);
+    const std::string key = ref_key(r);
+    const Eigen::Isometry3d T = must_global_transform(db, e, key, "frame");
+    out = Pose{ T };
+    return true;
   };
 
   // INSERTION  ── bool (Ref, InsertionData& out)
+  // STRICT: read_insertion throws on missing transforms.
   ctx.getInsertion = [&db, &objects](const Ref& r, SelectorContext::InsertionData& out) -> bool {
-    try
-    {
-      auto e = must_entity(objects, r.entity);
-      out = read_insertion(db, e, ref_key(r));
-      return true;
-    }
-    catch (...)
-    {
-      return false;
-    }
+    auto e = must_entity(objects, r.entity);
+    const std::string key = ref_key(r);
+    out = read_insertion(db, e, key);
+    return true;
   };
 
-  // SHAPE: cylinder
+  // SHAPE: cylinder (supports Shape + Domain + StackedShape)
   ctx.getCylinder = [&db, &objects](const Ref& r, Axis& out_axis, double& radius, double& height) -> bool {
     auto e = must_entity(objects, r.entity);
     const std::string key = ref_key(r);
+
     if (read_cylinder_from_shape(db, e, key, out_axis, radius, height))
       return true;
+
+    if (read_cylinder_from_stacked(db, e, key, out_axis, radius, height))
+      return true;
+
     if (read_cylinder_from_domain(db, e, key, out_axis, radius, height))
       return true;
+
     return false;
   };
 
-  // SHAPE: cone
+  // SHAPE: cone (supports Shape + Domain + StackedShape)
   ctx.getCone = [&db, &objects](const Ref& r, Axis& out_axis, double& r0, double& r1, double& height) -> bool {
     auto e = must_entity(objects, r.entity);
     const std::string key = ref_key(r);
+
     if (read_cone_from_shape(db, e, key, out_axis, r0, r1, height))
       return true;
+
+    if (read_cone_from_stacked(db, e, key, out_axis, r0, r1, height))
+      return true;
+
     if (read_cone_from_domain(db, e, key, out_axis, r0, r1, height))
       return true;
+
     return false;
   };
 
@@ -558,13 +641,13 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
   ctx.getPlane = [&db, &objects, &ctx](const Ref& r, Plane& out_plane) -> bool {
     auto e = must_entity(objects, r.entity);
     const std::string key = ref_key(r);
+
     if (read_plane_from_shape(db, e, key, out_plane))
       return true;
 
-    // Fallback to frame plane (+Z)
+    // Fallback to frame plane (+Z), STRICT on transform presence
     Pose F;
-    if (!ctx.getFrame(r, F))
-      return false;
+    (void)ctx.getFrame(r, F);
     out_plane.point = F.translation();
     out_plane.normal = F.linear().col(2).normalized();
     return true;
@@ -573,32 +656,25 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
   // STACKED_SHAPE: primary axis
   ctx.getStackedPrimaryAxis = [&db, &objects](const Ref& r, Axis& out_axis) -> bool {
     using components::StackedShapeComponent;
+
     auto e = must_entity(objects, r.entity);
     const std::string key = ref_key(r);
 
+    // If this key refers to a stacked-shape element, its canonical axis is +X by convention
     if (auto* ss = db.get_element<StackedShapeComponent>(e, key))
     {
-      Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
-      // Use frame pose; primary axis of the stacked shape is intrinsic, but we do
-      // not crack the list here—this function historically returns the frame's
-      // primary (we keep behavior stable). If you want intrinsic, resolve a shape.
+      (void)ss;  // existence check
+      const Eigen::Isometry3d T = must_global_transform(db, e, key, "stacked_shape");
       out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(2).normalized();  // keep legacy behavior for stacked frame (+Z)
+      out_axis.direction = T.linear().col(0).normalized();  // +X (canonical)
       return true;
     }
 
-    // Fallback: any frame's +Z
-    try
-    {
-      Eigen::Isometry3d T = sodf::systems::get_global_transform(db, e, key);
-      out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(2).normalized();
-      return true;
-    }
-    catch (...)
-    {
-      return false;
-    }
+    // Fallback: treat any frame as having +X primary axis for stacked-shape queries
+    const Eigen::Isometry3d T = must_global_transform(db, e, key, "stacked_primary_axis(frame)");
+    out_axis.point = T.translation();
+    out_axis.direction = T.linear().col(0).normalized();  // +X
+    return true;
   };
 
   return ctx;
@@ -656,14 +732,13 @@ SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
 
   // Wrap getFrame
   {
-    auto base_getFrame = base.getFrame;  // copy the original functor
+    auto base_getFrame = base.getFrame;
 
-    ctx.getFrame = [base_getFrame, &db, &objects, W_H]  // <-- explicit captures only
-        (const sodf::assembly::Ref& r, sodf::assembly::Pose& out) -> bool {
+    ctx.getFrame = [base_getFrame, W_H](const sodf::assembly::Ref& r, sodf::assembly::Pose& out) -> bool {
       sodf::assembly::Pose Pw;
       if (!base_getFrame(r, Pw))
-        return false;               // world pose from base
-      out = to_host_pose(W_H, Pw);  // convert world -> host
+        return false;
+      out = to_host_pose(W_H, Pw);
       return true;
     };
   }
@@ -671,14 +746,13 @@ SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
   // Wrap getInsertion
   {
     auto base_getInsertion = base.getInsertion;
+
     ctx.getInsertion = [base_getInsertion, W_H](const sodf::assembly::Ref& r,
                                                 sodf::assembly::SelectorContext::InsertionData& out) -> bool {
       sodf::assembly::SelectorContext::InsertionData tmp;
       if (!base_getInsertion(r, tmp))
         return false;
-      // pose
       tmp.mouth = to_host_pose(W_H, tmp.mouth);
-      // axes
       tmp.axis = (W_H.linear() * tmp.axis).normalized();
       tmp.ref = (W_H.linear() * tmp.ref).normalized();
       out = std::move(tmp);
@@ -689,6 +763,7 @@ SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
   // Wrap getCylinder
   {
     auto base_getCylinder = base.getCylinder;
+
     ctx.getCylinder = [base_getCylinder, W_H](const sodf::assembly::Ref& r, sodf::assembly::Axis& ax, double& R,
                                               double& H) -> bool {
       sodf::assembly::Axis axW;
@@ -705,6 +780,7 @@ SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
   // Wrap getCone
   {
     auto base_getCone = base.getCone;
+
     ctx.getCone = [base_getCone, W_H](const sodf::assembly::Ref& r, sodf::assembly::Axis& ax, double& r0, double& r1,
                                       double& H) -> bool {
       sodf::assembly::Axis axW;
@@ -722,6 +798,7 @@ SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
   // Wrap getPlane
   {
     auto base_getPlane = base.getPlane;
+
     ctx.getPlane = [base_getPlane, W_H](const sodf::assembly::Ref& r, sodf::assembly::Plane& pl) -> bool {
       sodf::assembly::Plane pw;
       if (!base_getPlane(r, pw))
@@ -734,6 +811,7 @@ SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
   // Wrap getStackedPrimaryAxis
   {
     auto base_getStackedPrimaryAxis = base.getStackedPrimaryAxis;
+
     ctx.getStackedPrimaryAxis = [base_getStackedPrimaryAxis, W_H](const sodf::assembly::Ref& r,
                                                                   sodf::assembly::Axis& ax) -> bool {
       sodf::assembly::Axis axW;

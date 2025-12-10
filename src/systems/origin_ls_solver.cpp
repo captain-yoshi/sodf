@@ -57,6 +57,33 @@ static inline Residual plane_frame_residual_axis(const sodf::assembly::Plane& Hp
   return { ang, std::abs(d) };
 }
 
+static inline double unsigned_angle_between_dirs(const Eigen::Vector3d& a, const Eigen::Vector3d& b)
+{
+  const Eigen::Vector3d an = a.normalized();
+  const Eigen::Vector3d bn = b.normalized();
+  const double c = std::abs(an.dot(bn));
+  return std::acos(std::clamp(c, 0.0, 1.0));  // 0 for parallel OR anti-parallel
+}
+
+static inline Residual concentric_residual_unsigned(const sodf::assembly::Axis& H, const sodf::assembly::Axis& G)
+{
+  const Eigen::Vector3d h = H.direction.normalized();
+  const Eigen::Vector3d g = G.direction.normalized();
+
+  const double ang = unsigned_angle_between_dirs(h, g);
+
+  const Eigen::Vector3d w0 = G.point - H.point;
+  const Eigen::Vector3d cx = h.cross(g);
+
+  double dist;
+  if (cx.squaredNorm() < 1e-16)
+    dist = (w0.cross(h)).norm();
+  else
+    dist = std::abs(w0.dot(cx.normalized()));
+
+  return { ang, dist };
+}
+
 static inline Residual concentric_residual(const sodf::assembly::Axis& H, const sodf::assembly::Axis& G)
 {
   const Eigen::Vector3d h = H.direction.normalized();
@@ -512,13 +539,34 @@ static inline void fill_angle_entry(sodf::systems::ResidualEntry& e, const sodf:
   }
 }
 
-// SeatCone already uses concentric axis residuals for diagnostics
 static inline void fill_seatcone_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
                                        const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
 {
-  // Just delegate to concentric with its own error handling
-  fill_concentric_entry(e, H, G, ctx);
-  e.kind = "SeatCone";  // if you want to override the label
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+  e.kind = "SeatCone";
+
+  try
+  {
+    auto aH = sodf::assembly::resolveAxis(H, ctx);
+    auto aG = sodf::assembly::resolveAxis(G, ctx);
+
+    auto R = concentric_residual_unsigned(aH, aG);
+    e.ang_rad = R.angle_rad;
+    e.dist_m = R.dist_m;
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = std::string("seatcone_residual: ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = "seatcone_residual: unknown exception";
+  }
 }
 
 }  // namespace

@@ -1,7 +1,7 @@
 #include <sodf/assembly/constraint_selector.h>
 #include <stdexcept>
 
-#include <iostream>
+#include <sstream>
 #include <iomanip>
 #include <algorithm>  // std::clamp
 #include <cmath>      // std::acos
@@ -55,6 +55,18 @@ static inline Eigen::Isometry3d to_host_pose(const Eigen::Isometry3d& H_w, const
 static inline Eigen::Isometry3d delta_host_to_world(const Eigen::Isometry3d& H_w, const Eigen::Isometry3d& d_host)
 {
   return H_w * d_host * H_w.inverse();
+}
+
+// -------------------- Axis sign helpers --------------------------------------
+
+// Many assembly constraints are line-based (axis direction is sign-invariant).
+// If authoring conventions or mixed operand types flip +axis, we normalize the
+// guest axis to point in the same general direction as the host axis.
+
+static inline void align_axis_sign(const Axis& host, Axis& guest)
+{
+  if (host.direction.dot(guest.direction) < 0.0)
+    guest.direction = -guest.direction;
 }
 
 // -------------------- Primitive resolvers (Ref-based) ------------------------
@@ -111,8 +123,9 @@ Axis resolveAxis(const Ref& r, const SelectorContext& ctx)
       Pose F;
       if (!ctx.getFrame(r, F))
         throw std::runtime_error("resolveAxis: frame not found for '" + r.raw + "'");
+
       const Eigen::Vector3d dir =
-          wantX ? F.linear().col(0) : wantY ? F.linear().col(1) : F.linear().col(2);  // default X
+          wantX ? F.linear().col(0) : wantY ? F.linear().col(1) : F.linear().col(2);  // default X per your legacy
       return Axis{ F.translation(), dir.normalized() };
     }
 
@@ -156,7 +169,6 @@ Plane resolvePlane(const Ref& r, const SelectorContext& ctx)
 
     case NamespaceKind::Insertion:
     {
-      // Insertion mouth plane: origin at mouth, normal along insertion axis
       SelectorContext::InsertionData ins;
       if (!ctx.getInsertion(r, ins))
         throw std::runtime_error("resolvePlane: insertion not found for '" + r.raw + "'");
@@ -183,6 +195,7 @@ Pose resolvePose(const Ref& r, const SelectorContext& ctx)
         throw std::runtime_error("resolvePose: frame not found for '" + r.raw + "'");
       return F;
     }
+
     case NamespaceKind::Insertion:
     {
       SelectorContext::InsertionData ins;
@@ -190,15 +203,16 @@ Pose resolvePose(const Ref& r, const SelectorContext& ctx)
         throw std::runtime_error("resolvePose: insertion not found for '" + r.raw + "'");
       return ins.mouth;
     }
+
     default:
       break;
   }
+
   throw std::runtime_error("resolvePose: cannot get pose from '" + r.raw + "'");
 }
 
 Point resolvePoint(const Ref& r, const SelectorContext& ctx)
 {
-  // For now: frame center is a point
   if (r.kind == NamespaceKind::Frame || r.kind == NamespaceKind::Link || r.kind == NamespaceKind::Origin)
   {
     Pose F;
@@ -214,13 +228,9 @@ Point resolvePoint(const Ref& r, const SelectorContext& ctx)
 
 Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorContext& ctx)
 {
-  // We compute everything in the host frame and map the delta back to world:
-  // ΔW = H * ΔH * H^-1
   Pose H_w;
   if (!ctx.getFrame(host, H_w))
     throw std::runtime_error("Coincident: cannot fetch host pose for '" + host.raw + "'");
-
-  // Prefer frame↔frame; else plane involvement; else point↔frame
 
   // Frame ↔ Frame
   try
@@ -228,12 +238,12 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
     Pose Fh_w = resolvePose(host, ctx);
     Pose Fg_w = resolvePose(guest, ctx);
 
-    Pose Fh_h = to_host_pose(H_w, Fh_w);  // should be ~Identity
+    Pose Fh_h = to_host_pose(H_w, Fh_w);
     Pose Fg_h = to_host_pose(H_w, Fg_w);
 
-    (void)Fh_h;  // unused; solve is relative to host in host frame
+    (void)Fh_h;
 
-    Pose dH = solveCoincidentFrameFrame(Fh_h, Fg_h);  // host-frame delta
+    Pose dH = solveCoincidentFrameFrame(Fh_h, Fg_h);
     return delta_host_to_world(H_w, dH);
   }
   catch (...)
@@ -244,7 +254,6 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
   try
   {
     Plane Hp_w = resolvePlane(host, ctx);
-
     Plane Hp_h = to_host_plane(H_w, Hp_w);
 
     try
@@ -296,23 +305,20 @@ Eigen::Isometry3d Coincident(const Ref& host, const Ref& guest, const SelectorCo
 
 Eigen::Isometry3d Concentric(const Ref& host_axis, const Ref& guest_axis, const SelectorContext& ctx)
 {
-  // Host frame
   Pose H_w;
   if (!ctx.getFrame(host_axis, H_w))
     throw std::runtime_error("Concentric: cannot fetch host pose for '" + host_axis.raw + "'");
 
-  // Resolve in world
   Axis aH_w = resolveAxis(host_axis, ctx);
   Axis aG_w = resolveAxis(guest_axis, ctx);
 
-  // Convert to host
+  // NEW: sign-invariant axis alignment
+  align_axis_sign(aH_w, aG_w);
+
   Axis aH_h = to_host_axis(H_w, aH_w);
   Axis aG_h = to_host_axis(H_w, aG_w);
 
-  // Solve in host frame
   Eigen::Isometry3d dH = solveConcentricAxisAxis(aH_h, aG_h);
-
-  // Map delta to world
   return delta_host_to_world(H_w, dH);
 }
 
@@ -324,6 +330,9 @@ Eigen::Isometry3d Parallel(const Ref& host_axis, const Ref& guest_axis, const Se
 
   Axis aH_w = resolveAxis(host_axis, ctx);
   Axis aG_w = resolveAxis(guest_axis, ctx);
+
+  // NEW: sign-invariant axis alignment
+  align_axis_sign(aH_w, aG_w);
 
   Axis aH_h = to_host_axis(H_w, aH_w);
   Axis aG_h = to_host_axis(H_w, aG_w);
@@ -340,6 +349,8 @@ Eigen::Isometry3d Angle(const Ref& host_axis, const Ref& guest_axis, double radi
 
   Axis aH_w = resolveAxis(host_axis, ctx);
   Axis aG_w = resolveAxis(guest_axis, ctx);
+
+  // Intentionally NOT aligning sign here to avoid changing any signed-angle semantics.
 
   Axis aH_h = to_host_axis(H_w, aH_w);
   Axis aG_h = to_host_axis(H_w, aG_w);
@@ -415,6 +426,7 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
   // 1) host: cylinder dims + axis (or via insertion profile)
   Axis axH_w;
   double r = 0.0, Hcyl = 0.0;
+
   if (!ctx.getCylinder(host_cyl, axH_w, r, Hcyl))
   {
     SelectorContext::InsertionData insH;
@@ -424,6 +436,7 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
     double rtmp = 0.0;
     if (!insH.getCylinderRadius || !insH.getCylinderRadius(rtmp))
       throw std::runtime_error("SeatConeOnCylinder: host '" + host_cyl.raw + "' lacks cylinder radius");
+
     r = rtmp;
     axH_w = Axis{ insH.mouth.translation(), insH.axis.normalized() };
   }
@@ -431,16 +444,21 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
   // 2) guest: cone dims + axis (or via insertion profile)
   Axis axG_w;
   double r0 = 0.0, r1 = 0.0, Hcone = 0.0;
+
   if (!ctx.getCone(guest_cone, axG_w, r0, r1, Hcone))
   {
     SelectorContext::InsertionData insG;
     if (!ctx.getInsertion(guest_cone, insG))
       throw std::runtime_error("SeatConeOnCylinder: guest '" + guest_cone.raw + "' is not a cone and not an insertion");
+
     if (!insG.getConeDims || !insG.getConeDims(r0, r1, Hcone))
       throw std::runtime_error("SeatConeOnCylinder: guest '" + guest_cone.raw + "' lacks cone dims");
 
     axG_w = Axis{ insG.mouth.translation(), insG.axis.normalized() };
   }
+
+  // NEW: sign-invariant axis alignment
+  align_axis_sign(axH_w, axG_w);
 
   // Axes in host frame
   Axis axH_h = to_host_axis(H_w, axH_w);
@@ -456,7 +474,6 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
   }
 
   Eigen::Isometry3d dW = delta_host_to_world(H_w, dH);
-
   return dW;
 }
 
