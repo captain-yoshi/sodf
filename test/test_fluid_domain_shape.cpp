@@ -33,19 +33,28 @@ TEST(CylinderShape, VolumeAndHeight)
 {
   FluidCylinderShape shape(0.5, 0.8);
 
-  // getFillVolume (by height)
-  EXPECT_EQ(0.0, shape.getFillVolume(-0.5));
-  EXPECT_EQ(0.0, shape.getFillVolume(0.0));
-  EXPECT_EQ(0.628319, shape.getFillVolume(0.9));
-  EXPECT_NEAR(0.31415926535897931, shape.getFillVolume(0.4), VOLUME_EPSILON);
-  EXPECT_NEAR(0.62831853071795862, shape.getFillVolume(0.8), VOLUME_EPSILON);
+  // Full volume = pi * r^2 * h
+  const double Vfull = M_PI * 0.5 * 0.5 * 0.8;
 
-  // getHeight (by volume)
-  EXPECT_EQ(0.0, shape.getFillHeight(-0.5));
-  EXPECT_EQ(0.0, shape.getFillHeight(0.0));
-  EXPECT_EQ(0.0, shape.getFillHeight(0.628319));
-  EXPECT_NEAR(0.4, shape.getFillHeight(0.31415926535897931), HEIGHT_EPSILON);
-  EXPECT_NEAR(0.8, shape.getFillHeight(0.6283185307179586), HEIGHT_EPSILON);
+  // getFillVolume (by height)
+  EXPECT_DOUBLE_EQ(0.0, shape.getFillVolume(-0.5));
+  EXPECT_DOUBLE_EQ(0.0, shape.getFillVolume(0.0));
+
+  // Over height should clamp to full volume
+  EXPECT_NEAR(Vfull, shape.getFillVolume(0.9), VOLUME_EPSILON);
+
+  EXPECT_NEAR(0.5 * Vfull, shape.getFillVolume(0.4), VOLUME_EPSILON);
+  EXPECT_NEAR(Vfull, shape.getFillVolume(0.8), VOLUME_EPSILON);
+
+  // getFillHeight (by volume)
+  EXPECT_DOUBLE_EQ(0.0, shape.getFillHeight(-0.5));
+  EXPECT_DOUBLE_EQ(0.0, shape.getFillHeight(0.0));
+
+  // Volume at/over full should clamp to max height
+  EXPECT_NEAR(0.8, shape.getFillHeight(0.628319), HEIGHT_EPSILON);
+
+  EXPECT_NEAR(0.4, shape.getFillHeight(0.5 * Vfull), HEIGHT_EPSILON);
+  EXPECT_NEAR(0.8, shape.getFillHeight(Vfull), HEIGHT_EPSILON);
 }
 
 TEST(ConeShape, VolumeAndHeight)
@@ -53,26 +62,47 @@ TEST(ConeShape, VolumeAndHeight)
   // base_radius, top_radius, height
   FluidConeShape shape1(0.5, 0.3, 0.8);
 
+  const double R = 0.5;
+  const double r = 0.3;
+  const double h = 0.8;
+
+  // Full frustum volume: V = pi*h/3*(R^2 + Rr + r^2)
+  const double Vfull = M_PI * h / 3.0 * (R * R + R * r + r * r);
+
+  // At x=0.4 (half height), radius is 0.4, so volume:
+  const double x = 0.4;
+  const double rx = R + (r - R) * (x / h);  // = 0.4
+  const double Vhalf = M_PI * x / 3.0 * (R * R + R * rx + rx * rx);
+
   // getFillVolume (by height)
-  EXPECT_EQ(0.0, shape1.getFillVolume(-0.5));
-  EXPECT_EQ(0.0, shape1.getFillVolume(0.0));
-  EXPECT_EQ(0.410501, shape1.getFillVolume(0.9));
-  EXPECT_NEAR(0.25551620249196988, shape1.getFillVolume(0.4), VOLUME_EPSILON);
-  EXPECT_NEAR(0.4105014400690663, shape1.getFillVolume(0.8), VOLUME_EPSILON);
+  EXPECT_DOUBLE_EQ(0.0, shape1.getFillVolume(-0.5));
+  EXPECT_DOUBLE_EQ(0.0, shape1.getFillVolume(0.0));
+
+  // Over height should clamp to full volume
+  EXPECT_NEAR(Vfull, shape1.getFillVolume(0.9), VOLUME_EPSILON);
+
+  EXPECT_NEAR(Vhalf, shape1.getFillVolume(0.4), VOLUME_EPSILON);
+  EXPECT_NEAR(Vfull, shape1.getFillVolume(0.8), VOLUME_EPSILON);
 
   // getHeight (by volume)
-  EXPECT_EQ(0.0, shape1.getFillHeight(-0.5));
-  EXPECT_EQ(0.0, shape1.getFillHeight(0.0));
-  EXPECT_EQ(0.8, shape1.getFillHeight(0.411));
-  EXPECT_NEAR(0.4, shape1.getFillHeight(0.25551620249196988), HEIGHT_EPSILON);
-  EXPECT_NEAR(0.8, shape1.getFillHeight(0.4105014400), HEIGHT_EPSILON);
+  EXPECT_DOUBLE_EQ(0.0, shape1.getFillHeight(-0.5));
+  EXPECT_DOUBLE_EQ(0.0, shape1.getFillHeight(0.0));
+
+  // Slightly over full volume should clamp to max height
+  EXPECT_NEAR(0.8, shape1.getFillHeight(0.411), HEIGHT_EPSILON);
+
+  EXPECT_NEAR(0.4, shape1.getFillHeight(Vhalf), HEIGHT_EPSILON);
+  EXPECT_NEAR(0.8, shape1.getFillHeight(Vfull), HEIGHT_EPSILON);
 
   // Inverted cone: top_radius > base_radius
   FluidConeShape shape2(0.3, 0.5, 0.8);
-  EXPECT_NEAR(0.4105014400690663 - 0.25551620249196988, shape2.getFillVolume(0.4), VOLUME_EPSILON);
-  EXPECT_NEAR(0.4105014400690663, shape2.getFillVolume(0.8), VOLUME_EPSILON);
-  EXPECT_NEAR(0.4, shape2.getFillHeight(0.4105014400 - 0.25551620249196988), HEIGHT_EPSILON);
-  EXPECT_NEAR(0.8, shape2.getFillHeight(0.4105014400), HEIGHT_EPSILON);
+
+  // This difference equals the inverted cone's half-height fill volume
+  EXPECT_NEAR(Vfull - Vhalf, shape2.getFillVolume(0.4), VOLUME_EPSILON);
+  EXPECT_NEAR(Vfull, shape2.getFillVolume(0.8), VOLUME_EPSILON);
+
+  EXPECT_NEAR(0.4, shape2.getFillHeight(Vfull - Vhalf), HEIGHT_EPSILON);
+  EXPECT_NEAR(0.8, shape2.getFillHeight(Vfull), HEIGHT_EPSILON);
 }
 
 TEST(SphericalSegmentShape, VolumeAndHeight)
@@ -80,11 +110,15 @@ TEST(SphericalSegmentShape, VolumeAndHeight)
   // SphericalCap bowl upright
   {
     FluidSphericalSegmentShape shape(0.0, 5.0, 5.0);  // base_radius, top_radius, height
+    const double H = 5.0;
+    const double Vmax = shape.getMaxFillVolume();
 
     // getFillVolume (by height)
-    EXPECT_EQ(0.0, shape.getFillVolume(-0.5));
-    EXPECT_EQ(0.0, shape.getFillVolume(0.0));
-    EXPECT_EQ(261.799, shape.getFillVolume(5.0001));
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillVolume(-0.5));
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillVolume(0.0));
+
+    // Over-height clamps to max volume
+    EXPECT_NEAR(Vmax, shape.getFillVolume(5.0001), VOLUME_EPSILON);
 
     EXPECT_NEAR(22.498384888989406, shape.getFillVolume(1.25), VOLUME_EPSILON);
     EXPECT_NEAR(31.808625617596654, shape.getFillVolume(1.5), VOLUME_EPSILON);
@@ -93,10 +127,13 @@ TEST(SphericalSegmentShape, VolumeAndHeight)
     EXPECT_NEAR(165.66992509164925, shape.getFillVolume(3.75), VOLUME_EPSILON);
     EXPECT_NEAR(261.79938779914943, shape.getFillVolume(5.0), VOLUME_EPSILON);
 
-    // getHeight (by volume)
-    EXPECT_EQ(0.0, shape.getFillHeight(-0.5));
-    EXPECT_EQ(0.0, shape.getFillHeight(0.0));
-    EXPECT_EQ(0.0, shape.getFillHeight(262));
+    // getFillHeight (by volume)
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillHeight(-0.5));
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillHeight(0.0));
+
+    // Over-volume clamps to max height
+    EXPECT_NEAR(H, shape.getFillHeight(262.0), HEIGHT_EPSILON);
+
     EXPECT_NEAR(1.25, shape.getFillHeight(22.498384888989406), HEIGHT_EPSILON);
     EXPECT_NEAR(1.5, shape.getFillHeight(31.808625617596654), HEIGHT_EPSILON);
     EXPECT_NEAR(2.5, shape.getFillHeight(81.81230868723421), HEIGHT_EPSILON);
@@ -108,28 +145,35 @@ TEST(SphericalSegmentShape, VolumeAndHeight)
   // SphericalCap bowl downright
   {
     FluidSphericalSegmentShape shape(5.0, 0.0, 5.0);  // base_radius, top_radius, height
+    const double H = 5.0;
+    const double Vmax = shape.getMaxFillVolume();
 
     // getFillVolume (by height)
-    EXPECT_EQ(0.0, shape.getFillVolume(-0.5));
-    EXPECT_EQ(0.0, shape.getFillVolume(0.0));
-    EXPECT_EQ(0.0, shape.getFillVolume(5.0001));
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillVolume(-0.5));
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillVolume(0.0));
 
-    EXPECT_NEAR(shape.getMaxFillVolume() - 165.66992509164925, shape.getFillVolume(1.25), VOLUME_EPSILON);
-    EXPECT_NEAR(shape.getMaxFillVolume() - 147.52395502482068, shape.getFillVolume(1.5), VOLUME_EPSILON);
-    EXPECT_NEAR(shape.getMaxFillVolume() - 81.81230868723421, shape.getFillVolume(2.5), VOLUME_EPSILON);
-    EXPECT_NEAR(shape.getMaxFillVolume() - 31.808625617596654, shape.getFillVolume(3.5), VOLUME_EPSILON);
-    EXPECT_NEAR(shape.getMaxFillVolume() - 22.498384888989406, shape.getFillVolume(3.75), VOLUME_EPSILON);
+    // Current implementation clamps over-height to max volume
+    EXPECT_NEAR(Vmax, shape.getFillVolume(5.0001), VOLUME_EPSILON);
+
+    EXPECT_NEAR(Vmax - 165.66992509164925, shape.getFillVolume(1.25), VOLUME_EPSILON);
+    EXPECT_NEAR(Vmax - 147.52395502482068, shape.getFillVolume(1.5), VOLUME_EPSILON);
+    EXPECT_NEAR(Vmax - 81.81230868723421, shape.getFillVolume(2.5), VOLUME_EPSILON);
+    EXPECT_NEAR(Vmax - 31.808625617596654, shape.getFillVolume(3.5), VOLUME_EPSILON);
+    EXPECT_NEAR(Vmax - 22.498384888989406, shape.getFillVolume(3.75), VOLUME_EPSILON);
     EXPECT_NEAR(261.799387799149, shape.getFillVolume(5.0), VOLUME_EPSILON);
 
-    // getHeight (by volume)
-    EXPECT_EQ(0.0, shape.getFillHeight(-0.5));
-    EXPECT_EQ(0.0, shape.getFillHeight(0.0));
-    EXPECT_EQ(0.0, shape.getFillHeight(262));
-    EXPECT_NEAR(1.25, shape.getFillHeight(shape.getMaxFillVolume() - 165.66992509164925), HEIGHT_EPSILON);
-    EXPECT_NEAR(1.5, shape.getFillHeight(shape.getMaxFillVolume() - 147.52395502482068), HEIGHT_EPSILON);
-    EXPECT_NEAR(2.5, shape.getFillHeight(shape.getMaxFillVolume() - 81.81230868723421), HEIGHT_EPSILON);
-    EXPECT_NEAR(3.5, shape.getFillHeight(shape.getMaxFillVolume() - 31.808625617596654), HEIGHT_EPSILON);
-    EXPECT_NEAR(3.75, shape.getFillHeight(shape.getMaxFillVolume() - 22.498384888989406), HEIGHT_EPSILON);
+    // getFillHeight (by volume)
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillHeight(-0.5));
+    EXPECT_DOUBLE_EQ(0.0, shape.getFillHeight(0.0));
+
+    // Over-volume clamps to max height
+    EXPECT_NEAR(H, shape.getFillHeight(262.0), HEIGHT_EPSILON);
+
+    EXPECT_NEAR(1.25, shape.getFillHeight(Vmax - 165.66992509164925), HEIGHT_EPSILON);
+    EXPECT_NEAR(1.5, shape.getFillHeight(Vmax - 147.52395502482068), HEIGHT_EPSILON);
+    EXPECT_NEAR(2.5, shape.getFillHeight(Vmax - 81.81230868723421), HEIGHT_EPSILON);
+    EXPECT_NEAR(3.5, shape.getFillHeight(Vmax - 31.808625617596654), HEIGHT_EPSILON);
+    EXPECT_NEAR(3.75, shape.getFillHeight(Vmax - 22.498384888989406), HEIGHT_EPSILON);
 
     // Function is flat near tip, ill-conditioned
     EXPECT_NEAR(5.0, shape.getFillHeight(261.799387799149429), 1e-05);

@@ -55,7 +55,7 @@ TEST(DATABASE, ParsingSingleObject)
 
   // Transform component validation
   auto* transform = db.get<components::TransformComponent>(eid);
-  EXPECT_EQ(transform->elements.size(), 69);
+  EXPECT_EQ(transform->elements.size(), 263);
 
   // Link component validation
   auto* link = db.get<components::LinkComponent>(eid);
@@ -123,7 +123,7 @@ TEST(DATABASE, ParseSceneA)
     {
       auto* transform = db.get<components::TransformComponent>(eid);
       ASSERT_NE(transform, nullptr);
-      EXPECT_EQ(transform->elements.size(), 64u);
+      EXPECT_EQ(transform->elements.size(), 257u);
     }
 
     // Link component validation
@@ -140,11 +140,6 @@ TEST(DATABASE, ParseSceneA)
       EXPECT_EQ(joint->elements.size(), 2u);
     }
   }
-
-  // Systems (templated on the façade type)
-  auto obj_ent_map = sodf::systems::make_object_entity_map(db);
-  sodf::systems::align_origin_transforms(db, obj_ent_map);
-  sodf::systems::update_all_global_transforms(db);
 }
 
 TEST(Database, ParseSceneB)
@@ -192,7 +187,7 @@ TEST(Database, ParseSceneB)
     {
       auto* transform = db.get<components::TransformComponent>(eid);
       ASSERT_NE(transform, nullptr);
-      EXPECT_EQ(transform->elements.size(), 64u);
+      EXPECT_EQ(transform->elements.size(), 257u);
     }
 
     // Link

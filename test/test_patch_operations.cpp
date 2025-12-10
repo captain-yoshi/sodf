@@ -107,11 +107,11 @@ static const char* kOverlayXml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Root sodf_version="0.0.7">
   <Overlay id="hmi-fw-2.4.3" slot="hmi" target="bio-rad:t100-thermal-cycler">
     <!-- Direct components introduced by overlay -->
+    <!-- New Rectangle API:
+         - No Axis tags (use canonical default axes)
+         - Dimensions use size_y / size_z -->
     <Shape id="shape/ui_button" type="Rectangle" origin="AABBCenter">
-      <AxisNormal x="1.0" y="0.0" z="0.0"/>
-      <AxisWidth x="0.0" y="1.0" z="0.0"/>
-      <AxisHeight x="0.0" y="0.0" z="-1.0"/>
-      <Dimensions width="0.05" height="0.01"/>
+      <Dimensions size_y="0.05" size_z="0.01"/>
     </Shape>
 
     <VirtualButton id="btn/incubate">
@@ -126,6 +126,7 @@ static const char* kOverlayXml = R"(<?xml version="1.0" encoding="utf-8"?>
         <Map trigger="press" action="incubate"/>
       </ActionMap>
     </VirtualButton>
+
     <!-- Patch ops INSIDE overlay (must be applied in-order) -->
     <Add block="/Origin[@id='root']/Transform">
       <Orientation roll="0" pitch="0" yaw="0"/>

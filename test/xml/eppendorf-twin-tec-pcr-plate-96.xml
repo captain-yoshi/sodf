@@ -8,6 +8,8 @@
       <Model></Model>
       <SerialNumber></SerialNumber>
       <Vendor>Eppendorf</Vendor>
+      <SKU>951020303</SKU>
+      <URL>https://www.eppendorf.com/ca-en/Products/Lab-Consumables/Plates/Eppendorf-twintec-PCR-Plates-p-951020303</URL>
     </Product>
 
     <Origin id="root">
@@ -17,67 +19,287 @@
       </Transform>
     </Origin>
 
-    <Link id="link/gilson_pcr_plate_96_semi_skirted_250">
+    <Link id="link/root">
       <Transform parent="root">
         <Position x="0.0" y="0.0" z="0.0"/>
         <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
       </Transform>
-      <Visual>
-        <Shape type="Mesh">
-          <External uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
-          <Scale x="1.0" y="1.0" z="1.0"/>
+      <BoundingBox>
+        <Transform parent="link/root">
+          <Position x="0.0" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="-pi/2" yaw="0.0"/>
+        </Transform>
+        <Shape type="Box" origin="BaseCenter">
+          <Dimensions x="0.0197" y="0.124" z=" 0.082"/>
         </Shape>
-      </Visual>
+      </BoundingBox>
       <Collision>
         <Shape type="Mesh">
-          <External uri="sodf://eppendrof/twin-tec-pcr-plate-96/collision/coarse.stl"/>
+          <External uri="sodf://eppendorf/twin-tec-pcr-plate-96/collision/microplate-2k.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>
+      <Visual>
+        <Shape type="Mesh">
+          <External uri="sodf://eppendorf/twin-tec-pcr-plate-96/collision/microplate-2k.stl"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
     </Link>
 
-    <StackedShape id="stacked_shape">
-      <AxisStackDirection x="-1.0" y="0.0" z="0.0"/>
-      <AxisStackReference x="0.0" y="1.0" z="0.0"/>
-      <Shape type="SphericalSegment">
-        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
-        <AxisReference x="1.0" y="0.0" z="0.0"/>
-        <Dimensions base_radius="0.0" top_radius="0.00142" height="0.00167"/>
+    <!-- Surfaces + Virtual surfaces -->
+    <Shape id="shape/top_deck" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="0.0" y="0.0" z="0.0197"/>
+        <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+      </Transform>
+      <Dimensions size_y="0.1237" size_z="0.0822"/>
+    </Shape>
+
+    <Shape id="shape/well_field/top_support" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="0.0" y="0.0" z="0.0203"/>
+        <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+      </Transform>
+      <Dimensions size_y="0.099 + 0.008" size_z="0.063 + 0.008"/>
+    </Shape>
+
+    <Shape id="shape/well_field/bottom_seat" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="0.0" y="0.0" z="0.0"/>
+        <Orientation roll="0.0" pitch="-pi/2" yaw="0.0"/>
+      </Transform>
+      <Dimensions size_y="0.099" size_z="0.063"/>
+    </Shape>
+
+    <Shape id="shape/side_front" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="-0.0411" y="0.0" z="0.015855"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+      </Transform>
+      <Dimensions size_y="0.1237" size_z="0.00769"/>
+    </Shape>
+
+    <Shape id="shape/side_back" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="0.0411" y="0.0" z="0.015855"/>
+        <Orientation roll="0.0" pitch="pi" yaw="0.0"/>
+      </Transform>
+      <Dimensions size_y="0.1237" size_z="0.00769"/>
+    </Shape>
+
+    <Shape id="shape/side_left" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="0.0" y="0.1237/2.0" z="0.015855"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="-pi/2"/>
+      </Transform>
+      <Dimensions size_y="0.0822" size_z="0.00769"/>
+    </Shape>
+
+    <Shape id="shape/side_right" type="Rectangle" origin="AABBCenter">
+      <Transform parent="root">
+        <Position x="0.0" y="-0.127/2.0" z="0.015855"/>
+        <Orientation roll="0.0" pitch="0.0" yaw="pi/2"/>
+      </Transform>
+      <Dimensions size_y="0.0822" size_z="0.00769"/>
+    </Shape>
+
+
+    <!-- Approximate inner well shape (250uL) -->
+    <StackedShape id="stacked_shape/well">
+      <Shape type="SphericalSegment" origin="BaseCenter">
+        <Dimensions base_radius="0.0"
+                    top_radius="0.0006513157894736842"
+                    height_x="0.00028398058252427185"/>
       </Shape>
-      <Shape type="Cone">
-        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
-        <AxisReference x="1.0" y="0.0" z="0.0"/>
-        <Dimensions base_radius="0.00142" top_radius="0.00256" height="0.00765"/>
+      <Shape type="SphericalSegment" origin="BaseCenter">
+        <Dimensions base_radius="0.0006513157894736842"
+                    top_radius="0.0010855263157894736"
+                    height_x="0.0005206310679611651"/>
+        <Transform>
+          <Position x="0.00028398058252427185" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
       </Shape>
-      <Shape type="Cone">
-        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
-        <AxisReference x="1.0" y="0.0" z="0.0"/>
-        <Dimensions base_radius="0.00256" top_radius="0.00275" height="0.00478"/>
+      <Shape type="SphericalSegment" origin="BaseCenter">
+        <Dimensions base_radius="0.0010855263157894736"
+                    top_radius="0.0014956140350877191"
+                    height_x="0.0009939320388349514"/>
+        <Transform>
+          <Position x="0.000804611650485437" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
       </Shape>
-      <Shape type="Cylinder">
-        <AxisSymmetry x="0.0" y="0.0" z="1.0"/>
-        <AxisReference x="1.0" y="0.0" z="0.0"/>
-        <Dimensions radius="0.00275" height="0.0040"/>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.0014956140350877191"
+                    top_radius="0.002557017543859649"
+                    height_x="0.00695752427184466"/>
+        <Transform>
+          <Position x="0.0017985436893203884" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.002557017543859649"
+                    top_radius="0.002605263157894737"
+                    height_x="0.0005679611650485437"/>
+        <Transform>
+          <Position x="0.008756067961165048" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.002605263157894737"
+                    top_radius="0.00275"
+                    height_x="0.004780339805825242"/>
+        <Transform>
+          <Position x="0.009324029126213591" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cylinder" origin="BaseCenter">
+        <Dimensions radius="0.00275"
+                    height_x="0.003928398058252428"/>
+        <Transform>
+          <Position x="0.014104368932038834" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.00275"
+                    top_radius="0.0029429824561403506"
+                    height_x="0.0009466019417475729"/>
+        <Transform>
+          <Position x="0.01803276699029126" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.0029429824561403506"
+                    top_radius="0.0032807017543859647"
+                    height_x="0.0005206310679611651"/>
+        <Transform>
+          <Position x="0.018979368932038835" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
       </Shape>
     </StackedShape>
 
-    <FluidDomainShape id="fluid/well_200ul">
-      <StackedShape id="stacked_shape"/>
-    </FluidDomainShape>
+    <StackedShape id="stacked_shape/outer_well">
+      <Shape type="SphericalSegment" origin="BaseCenter">
+        <Dimensions base_radius="0.0"
+                    top_radius="0.0011578947368421054"
+                    height_x="0.00047330097087378643"/>
+      </Shape>
+      <Shape type="SphericalSegment" origin="BaseCenter">
+        <Dimensions base_radius="0.0011578947368421054"
+                    top_radius="0.0014714912280701753"
+                    height_x="0.0005206310679611651"/>
+        <Transform>
+          <Position x="0.00047330097087378643" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="SphericalSegment" origin="BaseCenter">
+        <Dimensions base_radius="0.0014714912280701753"
+                    top_radius="0.0015679824561403509"
+                    height_x="0.0003313106796116505"/>
+        <Transform>
+          <Position x="0.0009939320388349516" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.0015679824561403509"
+                    top_radius="0.0017368421052631577"
+                    height_x="0.0013725728155339805"/>
+        <Transform>
+          <Position x="0.001325242718446602" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+      <Shape type="Cone" origin="BaseCenter">
+        <Dimensions base_radius="0.0017368421052631577"
+                    top_radius="0.0031842105263157894"
+                    height_x="0.009276699029126213"/>
+        <Transform>
+          <Position x="0.0026978155339805825" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </Shape>
+    </StackedShape>
+
+    <DomainShape id="domain_shape/well" type="Fluid">
+      <StackedShapeID id="stacked_shape/well"/>
+    </DomainShape>
 
     <ForLoop row_name="A:H:1" row="1:8:1" col="1:12:1" zipped="[row_name,row]">
+
+      <!-- Use the actual domain_shape you defined above -->
+      <DomainShapeRef id="domain_shape/container/{row_name}{col}" ref="domain_shape/well">
+        <Transform parent="container/{row_name}{col}">
+          <Position x="0.0" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="pi" yaw="0.0"/>
+        </Transform>
+      </DomainShapeRef>
+
+      <!-- Logical well container (volume + fluid domain) -->
       <Container id="container/{row_name}{col}">
         <Transform parent="root">
-          <Position x="0.0315 - (({row}-1)*0.009)" y="0.0495 - (({col}-1)*0.009)" z="0.0008"/>
+          <Position x="0.0315 - (({row}-1)*0.009)"
+                    y="0.0495 - (({col}-1)*0.009)"
+                    z="0.0009"/>
           <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
         </Transform>
-        <!-- <MaterialRef id="polypropylene"/> -->
-        <Content type="" volume="100.0" units="uL"/>
-        <AxisBottom x="1.0" y="0.0" z="0.0"/>
-        <AxisReference x="0.0" y="1.0" z="0.0"/>
-        <DomainShapeRef id="fluid/well_200ul"/>
-        <LiquidLevelJointRef id="container/{row_name}{col}/liquid_level"/>
+
+        <Content volume="((({row}-1)*12)+{col})*3.125" units="uL"/>
+
+        <PayloadDomain>
+          <DomainShapeID id="domain_shape/container/{row_name}{col}" />
+          <LiquidLevelFrame id="container/{row_name}{col}/liquid_level"/>
+        </PayloadDomain>
       </Container>
+
+      <!-- How to interact with the container -->
+      <Insertion id="insertion/container/{row_name}{col}" role="Receptacle">
+        <Transform parent="container/{row_name}{col}">
+          <Position x="-0.0195" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+        <AxisInsertion x="1.0" y="0.0" z="0.0"/>
+        <AxisReference x="0.0" y="1.0" z="0.0"/>
+        <RotationalSymmetry value="0"/>
+        <MaxDepth value="0.0195"/>
+      </Insertion>
+
+      <!-- Mechanical mating interface for thermocycler cylinders -->
+      <!-- This is the OUTER well geometry, not a logical container -->
+      <StackedShapeRef id="stacked_shape/outer_well/{row_name}{col}" ref="stacked_shape/outer_well">
+        <Transform parent="root">
+          <Position x="0.0315 - (({row}-1)*0.009)"
+                    y="0.0495 - (({col}-1)*0.009)"
+                    z="0.0"/>
+          <Orientation roll="0.0" pitch="-pi/2" yaw="0.0"/>
+        </Transform>
+      </StackedShapeRef>
+
+
+      <Insertion id="insertion/container/outer/{row_name}{col}" role="Insert">
+        <Transform parent="root">
+          <Position x="0.0315 - (({row}-1)*0.009)"
+                    y="0.0495 - (({col}-1)*0.009)"
+                    z="0.0"/>
+          <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+        </Transform>
+
+        <StackedShapeID id="stacked_shape/outer_well/{row_name}{col}"/>
+        <AxisInsertion x="1.0" y="0.0" z="0.0"/>
+        <AxisReference x="0.0" y="1.0" z="0.0"/>
+        <RotationalSymmetry value="0"/>
+        <MaxDepth value="0.0"/>
+      </Insertion>
+
+
     </ForLoop>
 
   </Object>

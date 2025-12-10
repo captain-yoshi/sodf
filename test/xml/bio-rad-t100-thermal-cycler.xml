@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Root sodf_version="0.0.7">
+
   <Object id="bio-rad:t100-thermal-cycler">
+
     <Product>
       <Name>T100 Thermal Cycler</Name>
       <Model>T100</Model>
@@ -20,18 +22,27 @@
         <Position x="0.0" y="0.0" z="0.0"/>
         <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
       </Transform>
-      <Visual>
-        <Shape type="Mesh">
-          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/thermal-cycler-base-161k.dae"/>
-          <Scale x="1.0" y="1.0" z="1.0"/>
+      <BoundingBox>
+        <Transform parent="link/base">
+          <Position x="0.0" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="-pi/2" yaw="0.0"/>
+        </Transform>
+        <Shape type="Box" origin="BaseCenter">
+          <Dimensions x="0.21797" y="0.26301" z="0.468822" />
         </Shape>
-      </Visual>
+      </BoundingBox>
       <Collision>
         <Shape type="Mesh">
           <External uri="sodf://bio-rad/t100-thermal-cycler/collision/thermal-cycler-base-161k.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>
+      <Visual>
+        <Shape type="Mesh">
+          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/thermal-cycler-base-161k.dae"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
       <Inertial>
         <Mass value="0.250"/>
         <CenterOfMass x="0.0" y="0.0" z="0.0"/>
@@ -43,7 +54,7 @@
       <Type value="Revolute"/>
       <Actuation value="Passive"/>
       <Transform parent="root">
-        <Position x="0.17011937992" y="0.0" z="0.21267464676"/>
+        <Position x="0.11081837992" y="0.0" z="0.21267464676"/>
         <Orientation roll="0.0" pitch="0.0" yaw="3.14159265359"/>
       </Transform>
       <Position value="0.0"/>
@@ -56,21 +67,30 @@
 
     <Link id="link/lid">
       <Transform parent="joint/lid">
-        <Position x="0.170119" y="0.0" z="-0.212675"/>
+        <Position x="0.11081837992" y="0.0" z="-0.212675"/>
         <Orientation roll="0" pitch="0" yaw="pi"/>
       </Transform>
-      <Visual>
-        <Shape type="Mesh">
-          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/thermal-cycler-lid-34k.dae"/>
-          <Scale x="1.0" y="1.0" z="1.0"/>
+      <BoundingBox>
+        <Transform parent="link/lid">
+          <Position x="0.045208" y="-0.000034" z="0.19838"/>
+          <Orientation roll="0.0" pitch="-pi/2" yaw="0.0"/>
+        </Transform>
+        <Shape type="Box" origin="AABBCenter">
+          <Dimensions x="0.058952" y="0.246648" z="0.169878"/>
         </Shape>
-      </Visual>
+      </BoundingBox>
       <Collision>
         <Shape type="Mesh">
           <External uri="sodf://bio-rad/t100-thermal-cycler/collision/thermal-cycler-lid-25k.stl"/>
           <Scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>
+      <Visual>
+        <Shape type="Mesh">
+          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/thermal-cycler-lid-34k.dae"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
       <Inertial>
         <Mass value="0.250"/>
         <CenterOfMass x="0.0" y="0.0" z="0.0"/>
@@ -95,21 +115,30 @@
 
     <Link id="link/handle">
       <Transform parent="joint/handle">
-        <Position x="0.08556117" y="0.0" z="-0.212675"/>
+        <Position x="0.02525683108" y="0.0" z="-0.212675"/>
         <Orientation roll="0.0" pitch="0.0" yaw="3.14159265359"/>
       </Transform>
-      <Visual>
-        <Shape type="Mesh">
-          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/thermal-cycler-handle-32k.dae"/>
-          <Scale x="1.0" y="1.0" z="1.0"/>
+      <BoundingBox>
+        <Transform parent="link/handle">
+          <Position x="-0.029131" y="-0.000061" z="0.19504"/>
+          <Orientation roll="0.0" pitch="-pi/2" yaw="0.0"/>
+        </Transform>
+        <Shape type="Box" origin="AABBCenter">
+          <Dimensions x="0.06386" y="0.239652" z="0.155954"/>
         </Shape>
-      </Visual>
+      </BoundingBox>
       <Collision>
         <Shape type="Mesh">
           <External uri="sodf://bio-rad/t100-thermal-cycler/collision/thermal-cycler-handle-22k.stl"/>
           <scale x="1.0" y="1.0" z="1.0"/>
         </Shape>
       </Collision>
+      <Visual>
+        <Shape type="Mesh">
+          <External uri="sodf://bio-rad/t100-thermal-cycler/visual/thermal-cycler-handle-32k.dae"/>
+          <Scale x="1.0" y="1.0" z="1.0"/>
+        </Shape>
+      </Visual>
       <Inertial>
         <Mass value="0.250"/>
         <CenterOfMass x="0.0" y="0.0" z="0.0"/>
@@ -117,31 +146,50 @@
       </Inertial>
     </Link>
 
-    <Insertion id="insertion/pcr/rx">
-      <Transform parent="root">
-        <Position x="0.08436" y="0.16794261249" z="0.0"/>
-        <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
-      </Transform>
-      <AxisInsertion x="1.0" y="0.0" z="0.0"/>
-      <AxisReference x="0.0" y="1.0" z="0.0"/>
-      <RotationalSymmetry value="2"/>
-      <ApproachDistance value="0.0"/>
-    </Insertion>
+    <StackedShape id="stacked_shape/well_socket">
+      <Shape type="Cylinder" origin="BaseCenter">
+        <Dimensions radius="0.005402/2.0" height_x="0.01"/>
+      </Shape>
+    </StackedShape>
 
-    <Insertion id="insertion/central_footpad/tx">
-      <Transform parent="root">
-        <Position x="0.08436" y="0.16794261249" z="0.0"/>
+    <ForLoop row_name="A:H:1" row="1:8:1" col="1:12:1" zipped="[row_name,row]">
+      <Insertion id="insertion/{row_name}{col}">
+        <Transform parent="link/base">
+          <Position
+            x="{ 0.056559 - (row - 1) * 0.009 }"
+            y="{ 0.0495   - (col - 1) * 0.009 }"
+            z="0.167943"/>
+          <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
+        </Transform>
+        <StackedShapeID id="stacked_shape/{row_name}{col}"/>
+        <AxisInsertion x="1.0" y="0.0" z="0.0"/>
+        <AxisReference x="0.0" y="1.0" z="0.0"/>
+        <RotationalSymmetry value="0"/>
+        <MaxDepth value="0.01"/>
+      </Insertion>
+
+      <StackedShapeRef id="stacked_shape/{row_name}{col}" ref="stacked_shape/well_socket">
+        <Transform parent="insertion/{row_name}{col}">
+          <Position x="0.0" y="0.0" z="0.0"/>
+          <Orientation roll="0.0" pitch="0.0" yaw="0.0"/>
+        </Transform>
+      </StackedShapeRef>
+    </ForLoop>
+
+    <Insertion id="insertion/obround_pedestal">
+      <Transform parent="link/base">
+        <Position x="-0.059301" y="0.0" z="0.003013"/>
         <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>
       </Transform>
       <AxisInsertion x="1.0" y="0.0" z="0.0"/>
       <AxisReference x="0.0" y="1.0" z="0.0"/>
       <RotationalSymmetry value="2"/>
-      <ApproachDistance value="0.0"/>
+      <MaxDepth value="0.0"/>
     </Insertion>
 
     <Touchscreen id="touchscreen">
       <Transform parent="root">
-        <Position x="-0.10357994592" y="0.0" z="0.1385657087"/>
+        <Position x="-0.16288094592" y="0.0" z="0.1385657087"/>
         <Quaternion x="0.0" y="0.4146932" z="0.0" w="0.9099613"/>
       </Transform>
       <Size width="0.05" height="0.05"/>
@@ -154,7 +202,6 @@
         <Driver>fts_i2c</Driver>
       </Metadata>
     </Touchscreen>
-
     <!-- This <Overlay slot="hmi"/> is a requirement marker (no id here).
      Instances choose the concrete HMI overlay (e.g., id="hmi-fw-2.4.3"). -->
     <Overlay slot="hmi"/>
