@@ -338,6 +338,32 @@ void add_angle_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G, do
   accum(J, Eigen::VectorXd::Constant(1, r), P.w_ang);
 }
 
+template <typename Accum>
+void add_frame_ls(const sodf::assembly::Ref& H, const sodf::assembly::Ref& G,
+                  const sodf::assembly::SelectorContext& ctx, const sodf::systems::LSSolveParams& P, Accum&& accum)
+{
+  using namespace sodf::assembly;
+  using namespace sodf::geometry;
+
+  Pose Fh = resolvePose(H, ctx);
+  Pose Fg = resolvePose(G, ctx);
+
+  // relative transform
+  Isometry3d T_err = Fh.inverse() * Fg;
+
+  // 6D log residual
+  // residual in se(3)
+  Eigen::Matrix<double, 6, 1> r = logSE3(T_err);
+
+  // ---- Correct Jacobian ----
+  // J = Ad( T_err^-1 )
+  Eigen::Matrix<double, 6, 6> J = sodf::geometry::adjointSE3<Eigen::Isometry3d>(T_err.inverse());
+
+  // Split angular / positional weighting
+  accum(J.topRows<3>(), r.head<3>(), P.w_ang);
+  accum(J.bottomRows<3>(), r.tail<3>(), P.w_pos);
+}
+
 static inline void fill_concentric_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
                                          const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
 {
@@ -622,6 +648,41 @@ static inline void fill_seatcone_entry(sodf::systems::ResidualEntry& e, const so
   }
 }
 
+static inline void fill_frame_entry(sodf::systems::ResidualEntry& e, const sodf::assembly::Ref& H,
+                                    const sodf::assembly::Ref& G, const sodf::assembly::SelectorContext& ctx)
+{
+  using namespace sodf::assembly;
+  using namespace sodf::geometry;
+
+  e.ok = true;
+  e.ang_rad = 0.0;
+  e.dist_m = 0.0;
+  e.error_msg.clear();
+
+  try
+  {
+    Pose Fh = resolvePose(H, ctx);
+    Pose Fg = resolvePose(G, ctx);
+
+    Isometry3d T_err = Fh.inverse() * Fg;
+
+    Eigen::Matrix<double, 6, 1> xi = logSE3(T_err);
+
+    e.ang_rad = xi.head<3>().norm();
+    e.dist_m = xi.tail<3>().norm();
+  }
+  catch (const std::exception& ex)
+  {
+    e.ok = false;
+    e.error_msg = std::string("frame_residual: ") + ex.what();
+  }
+  catch (...)
+  {
+    e.ok = false;
+    e.error_msg = "frame_residual: unknown exception";
+  }
+}
+
 }  // namespace
 
 namespace sodf {
@@ -720,6 +781,9 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
     rows += static_cast<int>(r.size());
   };
 
+  bool hard_frame_solution = false;
+  Eigen::Isometry3d hard_delta = Eigen::Isometry3d::Identity();
+
   for (const auto& step_any : origin.constraints)
   {
     std::visit(
@@ -778,6 +842,26 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
             // Important: DO NOT constrain motion along the axis here.
             // Keep seating depth for the discrete SeatConeOnCylinder pass.
           }
+          else if constexpr (std::is_same_v<TStep, components::Frame>)
+          {
+            Ref H = assembly::make_host_ref(step.host, origin);
+            Ref G = assembly::make_guest_ref(step.guest, origin);
+
+            if (step.mode == components::Frame::Mode::FULL)
+            {
+              Pose Fh = resolvePose(H, ctx);
+              Pose Fg = resolvePose(G, ctx);
+
+              hard_delta = Fh * Fg.inverse();
+              hard_frame_solution = true;
+
+              return;  // still returns void
+            }
+            else
+            {
+              add_frame_ls(H, G, ctx, P, accum);
+            }
+          }
           else
           {
             std::ostringstream oss;
@@ -787,6 +871,11 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
           }
         },
         step_any);
+  }
+
+  if (hard_frame_solution)
+  {
+    return hard_delta;
   }
 
   // Solve (JTJ + λI) ξ = -JTr
@@ -894,6 +983,14 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref G = assembly::make_guest_ref(step.guest_cone, origin);
             ResidualEntry e{ "SeatCone", to_ref_str(H), to_ref_str(G) };
             fill_seatcone_entry(e, H, G, ctx);
+            out.push_back(std::move(e));
+          }
+          else if constexpr (std::is_same_v<TStep, components::Frame>)
+          {
+            Ref H = assembly::make_host_ref(step.host, origin);
+            Ref G = assembly::make_guest_ref(step.guest, origin);
+            ResidualEntry e{ "Frame", to_ref_str(H), to_ref_str(G) };
+            fill_frame_entry(e, H, G, ctx);
             out.push_back(std::move(e));
           }
           else

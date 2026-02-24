@@ -165,6 +165,70 @@ inline Isometry3d expSE3(const Eigen::Matrix<double, 6, 1>& xi)
   return T;
 }
 
+// SO(3) logarithm: so(3) vector from rotation matrix
+inline Vector3d logSO3(const Matrix3d& R)
+{
+  const double cos_theta = std::clamp((R.trace() - 1.0) * 0.5, -1.0, 1.0);
+  const double theta = std::acos(cos_theta);
+
+  if (theta < 1e-12)
+  {
+    // Small angle approximation
+    return vee3(R - R.transpose()) * 0.5;
+  }
+
+  const Matrix3d W = (R - R.transpose()) * (0.5 * theta / std::sin(theta));
+  return vee3(W);
+}
+
+// SE(3) logarithm (left-trivialized)
+// Returns xi = [w; v] such that expSE3(xi) = T
+inline Eigen::Matrix<double, 6, 1> logSE3(const Isometry3d& T)
+{
+  Eigen::Matrix<double, 6, 1> xi;
+  xi.setZero();
+
+  const Matrix3d R = T.linear();
+  const Vector3d t = T.translation();
+
+  // --- rotation ---
+  const Vector3d w = logSO3(R);
+  xi.head<3>() = w;
+
+  const double th = w.norm();
+
+  Matrix3d V_inv = Matrix3d::Identity();
+
+  // ---------------------------
+  // Small-angle safe handling
+  // ---------------------------
+  if (th < 1e-8)
+  {
+    // First-order Taylor expansion
+    // V_inv ≈ I - 1/2 W
+    const Matrix3d W = skew(w);
+    V_inv = Matrix3d::Identity() - 0.5 * W;
+  }
+  else
+  {
+    const Matrix3d W = skew(w);
+    const double s = std::sin(th);
+    const double c = std::cos(th);
+
+    const double A = s / th;
+    const double B = (1.0 - c) / (th * th);
+
+    // Safe form (avoids catastrophic cancellation)
+    const double coeff = (1.0 - A / (2.0 * B)) / (th * th);
+
+    V_inv = Matrix3d::Identity() - 0.5 * W + coeff * (W * W);
+  }
+
+  xi.tail<3>() = V_inv * t;
+
+  return xi;
+}
+
 }  // namespace geometry
 }  // namespace sodf
 

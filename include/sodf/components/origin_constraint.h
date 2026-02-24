@@ -43,6 +43,25 @@ struct SeatConeOnCylinder
   int max_it{ 60 };
 };
 
+struct Frame
+{
+  enum class Mode
+  {
+    FULL,
+    POSITION_ONLY,
+    ORIENTATION_ONLY,
+    AXIS_ONLY
+  };
+
+  std::string host;
+  std::string guest;
+
+  Mode mode{ Mode::FULL };
+
+  // Optional transform offset applied after host
+  geometry::Transform host_offset{};
+};
+
 }  // namespace components
 }  // namespace sodf
 

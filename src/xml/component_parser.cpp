@@ -896,6 +896,47 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     program.emplace_back(s);
   };
 
+  auto pushFrame = [&](const tinyxml2::XMLElement* node) {
+    Frame f;
+
+    f.host = evalTextAttributeRequired(node, "host");
+    f.guest = evalTextAttributeRequired(node, "guest");
+
+    // Mode (default FULL)
+    std::string mode_str = evalTextAttribute(node, "mode", "FULL");
+
+    if (mode_str == "FULL")
+      f.mode = Frame::Mode::FULL;
+    else if (mode_str == "POSITION_ONLY")
+      f.mode = Frame::Mode::POSITION_ONLY;
+    else if (mode_str == "ORIENTATION_ONLY")
+      f.mode = Frame::Mode::ORIENTATION_ONLY;
+    else if (mode_str == "AXIS_ONLY")
+      f.mode = Frame::Mode::AXIS_ONLY;
+    else
+      throw std::runtime_error("Invalid mode '" + mode_str + "' in <Frame> at line " +
+                               std::to_string(node->GetLineNum()));
+
+    // Optional Offset child
+    for (const tinyxml2::XMLElement* child = node->FirstChildElement(); child; child = child->NextSiblingElement())
+    {
+      if (std::string(child->Name()) == "Offset")
+      {
+        geometry::TransformNode offset_node = parseTransformNode(child);
+
+        f.host_offset.parent = offset_node.parent;
+        f.host_offset.tf = offset_node.local;
+      }
+      else
+      {
+        throw std::runtime_error("Unknown child <" + std::string(child->Name()) + "> inside <Frame> at line " +
+                                 std::to_string(child->GetLineNum()));
+      }
+    }
+
+    program.emplace_back(f);
+  };
+
   // Parse children in order ---------------------------------------------------
 
   for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
@@ -937,6 +978,10 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     else if (tag == "SeatConeOnCylinder")
     {
       pushSeatConeOnCylinder(child);
+    }
+    else if (tag == "Frame")
+    {
+      pushFrame(child);
     }
     else
     {

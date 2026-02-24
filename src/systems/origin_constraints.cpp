@@ -85,6 +85,8 @@ static std::string infer_host_object(const components::OriginComponent& origin)
             host_ref = c.host;
           else if constexpr (std::is_same_v<C, components::SeatConeOnCylinder>)
             host_ref = c.host_cyl;
+          else if constexpr (std::is_same_v<C, components::Frame>)
+            host_ref = c.host;
 
           if (!result.empty() || host_ref.empty())
             return;
