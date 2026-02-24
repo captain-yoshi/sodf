@@ -715,6 +715,73 @@ SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& ob
   return obj;
 }
 
+static void handleSceneElement(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, ObjectIndex& object_index,
+                               SceneMap& scene, const std::string& base_dir)
+{
+  const std::string tag = elem->Name();
+
+  // -------------------------------------------------------
+  // Include (indexing phase already handled this)
+  // -------------------------------------------------------
+  if (tag == "Include")
+  {
+    return;
+  }
+
+  // -------------------------------------------------------
+  // Import
+  // -------------------------------------------------------
+  if (tag == "Import")
+  {
+    processImport(elem, object_index,
+                  /*including_file_dir=*/base_dir,
+                  /*parent_ns=*/"", scene);
+    return;
+  }
+
+  // -------------------------------------------------------
+  // Object
+  // -------------------------------------------------------
+  if (tag == "Object")
+  {
+    const std::string current_ns;
+
+    SceneObject obj = composeSceneObject(elem, object_index, current_ns, base_dir);
+
+    if (obj.id.empty())
+      throw std::runtime_error("Scene <Object> is missing 'id'.");
+
+    if (scene.count(obj.id))
+      throw std::runtime_error("Duplicate scene object id: " + obj.id);
+
+    scene[obj.id] = std::move(obj);
+    return;
+  }
+
+  // -------------------------------------------------------
+  // ForLoop (scene-level expansion)
+  // -------------------------------------------------------
+  if (tag == "ForLoop")
+  {
+    expandForLoop(elem, [&](const std::unordered_map<std::string, std::string>& ctx) {
+      for (const tinyxml2::XMLElement* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
+      {
+        tinyxml2::XMLElement* clone = cloneAndSubstitute(child, doc, ctx);
+
+        handleSceneElement(clone, doc, object_index, scene, base_dir);
+      }
+    });
+
+    return;
+  }
+
+  // -------------------------------------------------------
+  // Unknown tag
+  // -------------------------------------------------------
+  throw std::runtime_error("Invalid top-level scene element <" + tag + "> at line " +
+                           std::to_string(elem->GetLineNum()) + ". Only <Import>, <Object>, or <ForLoop> are allowed.");
+}
+
 void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_index, SceneMap& scene,
                        const std::string& base_dir)
 {
@@ -722,24 +789,9 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
   if (!root)
     return;
 
-  for (const auto* imp = root->FirstChildElement("Import"); imp; imp = imp->NextSiblingElement("Import"))
+  for (const auto* child = root->FirstChildElement(); child; child = child->NextSiblingElement())
   {
-    processImport(imp, object_index, /*including_file_dir=*/base_dir, /*parent_ns=*/"", scene);
-  }
-
-  // Only create entities for objects defined in the MAIN SCENE file!
-  for (const auto* obj_elem = root->FirstChildElement("Object"); obj_elem;
-       obj_elem = obj_elem->NextSiblingElement("Object"))
-  {
-    // Compose directly from the SCENE object element.
-    // (This lets <Overlay>, <Remove>, clone rules, etc. on the scene instance be respected.)
-    const std::string current_ns;  // scene file has no namespace by default
-    SceneObject obj = composeSceneObject(obj_elem, object_index, current_ns, base_dir);
-
-    if (obj.id.empty())
-      throw std::runtime_error("Scene <Object> is missing 'id'.");
-
-    scene[obj.id] = std::move(obj);
+    handleSceneElement(child, const_cast<tinyxml2::XMLDocument*>(doc), object_index, scene, base_dir);
   }
 }
 
