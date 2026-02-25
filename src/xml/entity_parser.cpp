@@ -332,8 +332,20 @@ SceneObject composeModelObject(const tinyxml2::XMLElement* elem, const ObjectInd
     if (is_patch_tag(tag))
       continue;  // handled at scene-level (not model-level)
 
-    // Otherwise, itâ€™s a component tag â€” register directly
-    upsert_direct_component(obj, child);
+    if (tag == "ForLoop")
+    {
+      SceneComponent sc;
+
+      sc.type = SceneComponentType::ForLoop;  // must exist in your enum
+      sc.id = "";                             // ForLoop has no ID
+      sc.xml = child;
+
+      obj.components.push_back(std::move(sc));
+    }
+    else
+    {
+      upsert_direct_component(obj, child);
+    }
   }
 
   return obj;
@@ -694,8 +706,21 @@ SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& ob
       if (is_patch_tag(tag))
         throw std::runtime_error("Invalid child element <" + tag + "> inside non-clone scene <Object id=\"" + obj.id +
                                  "\"> at line " + std::to_string(child->GetLineNum()) +
-                                 ". Only direct component tags or <Overlay> are allowed.");
-      upsert_direct_component(obj, child);
+                                 ". Only direct component tags, <Overlay>, or <ForLoop> are allowed.");
+
+      if (tag == "ForLoop")
+      {
+        SceneComponent sc;
+        sc.type = SceneComponentType::ForLoop;
+        sc.id = "";  // ForLoop has no ID
+        sc.xml = child;
+
+        obj.components.push_back(std::move(sc));
+      }
+      else
+      {
+        upsert_direct_component(obj, child);
+      }
     }
   }
 
