@@ -535,5 +535,119 @@ Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone,
   return dW;
 }
 
+Eigen::Isometry3d InsertionMate(const Ref& host, const Ref& guest, double depth, bool clamp_to_min_depth,
+                                bool align_reference_axis, const SelectorContext& ctx)
+{
+  auto make_pose_from_axis_ref = [&](const Eigen::Vector3d& p_w, const Eigen::Vector3d& axis_w,
+                                     const Eigen::Vector3d& ref_w) -> Eigen::Isometry3d {
+    Eigen::Vector3d x = axis_w.normalized();
+
+    // Make ref orthogonal to axis
+    Eigen::Vector3d y = ref_w - x * ref_w.dot(x);
+    if (y.squaredNorm() < 1e-12)
+    {
+      // fallback: pick any orthogonal axis
+      y = x.unitOrthogonal();
+    }
+    y.normalize();
+
+    Eigen::Vector3d z = x.cross(y).normalized();
+    // Re-orthonormalize y (guards numerical drift)
+    y = z.cross(x).normalized();
+
+    Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
+    T.translation() = p_w;
+    T.linear().col(0) = x;
+    T.linear().col(1) = y;
+    T.linear().col(2) = z;
+    return T;
+  };
+
+  // 1) Fetch insertion data (WORLD)
+  SelectorContext::InsertionData h, g;
+  if (!ctx.getInsertion(host, h))
+    throw std::runtime_error("InsertionMate: host insertion not found '" + host.raw + "'");
+  if (!ctx.getInsertion(guest, g))
+    throw std::runtime_error("InsertionMate: guest insertion not found '" + guest.raw + "'");
+
+  // 2) Build a *host insertion frame* in WORLD (IMPORTANT)
+  const Eigen::Isometry3d H_w = make_pose_from_axis_ref(h.mouth.translation(), h.axis, h.ref);
+
+  // 3) World axes
+  Axis aH_w{ h.mouth.translation(), h.axis.normalized() };
+  Axis aG_w{ g.mouth.translation(), g.axis.normalized() };
+
+  // Align sign so guest points opposite (guest goes into host)
+  if (aH_w.direction.dot(aG_w.direction) > 0.0)
+    aG_w.direction = -aG_w.direction;
+
+  // Convert to HOST frame
+  Axis aH_h = to_host_axis(H_w, aH_w);
+  Axis aG_h = to_host_axis(H_w, aG_w);
+
+  // 4) Align axes (concentric)
+  Eigen::Isometry3d dH = solveConcentricAxisAxis(aH_h, aG_h);
+
+  // 5) Optional reference alignment (removes spin DOF)
+  if (align_reference_axis)
+  {
+    Eigen::Vector3d h_ref_h = to_host_dir(H_w, h.ref.normalized());
+    Eigen::Vector3d g_ref_h = to_host_dir(H_w, g.ref.normalized());
+    g_ref_h = (dH.linear() * g_ref_h).normalized();
+
+    const Eigen::Vector3d axis = aH_h.direction.normalized();
+
+    Eigen::Vector3d h_ref_proj = (h_ref_h - axis * h_ref_h.dot(axis));
+    Eigen::Vector3d g_ref_proj = (g_ref_h - axis * g_ref_h.dot(axis));
+
+    if (h_ref_proj.squaredNorm() > 1e-12 && g_ref_proj.squaredNorm() > 1e-12)
+    {
+      h_ref_proj.normalize();
+      g_ref_proj.normalize();
+
+      double cosang = std::clamp(h_ref_proj.dot(g_ref_proj), -1.0, 1.0);
+      double angle = std::acos(cosang);
+
+      Eigen::Vector3d cross = g_ref_proj.cross(h_ref_proj);
+      if (cross.dot(axis) < 0.0)
+        angle = -angle;
+
+      Eigen::Isometry3d dH_spin = Eigen::Isometry3d::Identity();
+      dH_spin.linear() = Eigen::AngleAxisd(angle, axis).toRotationMatrix();
+
+      dH = dH_spin * dH;
+    }
+  }
+
+  // 6) Compute depth
+  double final_depth = depth;
+  if (final_depth < 0.0)
+  {
+    if (!clamp_to_min_depth)
+      throw std::runtime_error("InsertionMate: depth < 0 and clamp disabled");
+    final_depth = std::min(h.max_depth, g.max_depth);
+  }
+
+  // 7) Translation along host insertion axis (HOST frame)
+  const Eigen::Vector3d axis_h = aH_h.direction.normalized();
+
+  // Host mouth is at origin in its own insertion frame by construction:
+  const Eigen::Vector3d host_mouth_h = Eigen::Vector3d::Zero();
+
+  // Guest mouth in host frame, after current dH
+  Eigen::Vector3d guest_mouth_h = to_host_point(H_w, g.mouth.translation());
+  guest_mouth_h = dH * guest_mouth_h;
+
+  const Eigen::Vector3d target_h = host_mouth_h + axis_h * final_depth;
+
+  Eigen::Isometry3d dH_trans = Eigen::Isometry3d::Identity();
+  dH_trans.translation() = target_h - guest_mouth_h;
+
+  dH = dH_trans * dH;
+
+  // 8) Convert back to world delta
+  return delta_host_to_world(H_w, dH);
+}
+
 }  // namespace assembly
 }  // namespace sodf

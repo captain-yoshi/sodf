@@ -4,6 +4,7 @@
 #include <sodf/assembly/constraint.h>
 #include <functional>
 #include <vector>
+#include "sodf/components/insertion.h"
 
 namespace sodf {
 namespace assembly {
@@ -15,6 +16,8 @@ struct SelectorContext
     Pose mouth;
     Eigen::Vector3d axis;
     Eigen::Vector3d ref;
+    double max_depth{ 0.0 };
+    components::InsertionRole role{ components::InsertionRole::Receptacle };
     std::function<bool(double& radius)> getCylinderRadius;
     std::function<bool(double& r0, double& r1, double& H)> getConeDims;
   };
@@ -43,7 +46,8 @@ Eigen::Isometry3d Angle(const Ref& host_axis, const Ref& guest_axis, double radi
 Eigen::Isometry3d Distance(const Ref& host, const Ref& guest, double value, const SelectorContext& ctx);
 Eigen::Isometry3d SeatConeOnCylinder(const Ref& host_cyl, const Ref& guest_cone, const SelectorContext& ctx,
                                      double tol = 1e-9, int max_it = 60);
-
+Eigen::Isometry3d InsertionMate(const Ref& host, const Ref& guest, double depth, bool clamp_to_min_depth,
+                                bool align_reference_axis, const SelectorContext& ctx);
 }  // namespace assembly
 }  // namespace sodf
 

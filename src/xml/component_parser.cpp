@@ -325,12 +325,19 @@ void parseInsertionComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::X
   auto parseRole = [&](const tinyxml2::XMLElement* e, const std::string& insertion_id) -> InsertionRole {
     const char* role_cstr = e->Attribute("role");
     if (!role_cstr)
-      return InsertionRole::Receptacle;  // default if absent
+    {
+      throw std::runtime_error("Insertion '" + insertion_id + "' missing required attribute role at line " +
+                               std::to_string(e->GetLineNum()) + " (allowed: Receptacle or Insert).");
+    }
+
     const std::string v(role_cstr);
+
     if (v == "Receptacle")
       return InsertionRole::Receptacle;
+
     if (v == "Insert")
       return InsertionRole::Insert;
+
     throw std::runtime_error("Insertion '" + insertion_id + "' has invalid role='" + v + "' at line " +
                              std::to_string(e->GetLineNum()) + " (allowed: Receptacle or Insert).");
   };
@@ -937,6 +944,57 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     program.emplace_back(f);
   };
 
+  auto pushInsertionMate = [&](const tinyxml2::XMLElement* node) {
+    InsertionMate m;
+
+    m.host = evalTextAttributeRequired(node, "host");
+    m.guest = evalTextAttributeRequired(node, "guest");
+
+    // --------------------------------------------
+    // Depth mode (STRICT: UPPERCASE only)
+    // --------------------------------------------
+    std::string mode_str = evalTextAttribute(node, "depth_mode", "AUTO");
+
+    if (mode_str == "NONE")
+    {
+      m.depth_mode = InsertionDepthMode::NONE;
+    }
+    else if (mode_str == "EXPLICIT")
+    {
+      m.depth_mode = InsertionDepthMode::EXPLICIT;
+    }
+    else if (mode_str == "AUTO")
+    {
+      m.depth_mode = InsertionDepthMode::AUTO;
+    }
+    else
+    {
+      throw std::runtime_error("InsertionMate: depth_mode must be one of {NONE, EXPLICIT, AUTO}");
+    }
+
+    // --------------------------------------------
+    // Depth value (only meaningful if EXPLICIT)
+    // --------------------------------------------
+    m.depth = evalNumberAttribute(node, "depth", 0.0);
+
+    if (m.depth_mode == InsertionDepthMode::EXPLICIT)
+    {
+      if (!node->Attribute("depth"))
+      {
+        throw std::runtime_error("InsertionMate: depth attribute required when depth_mode=EXPLICIT");
+      }
+    }
+
+    // --------------------------------------------
+    // Optional flags
+    // --------------------------------------------
+    m.clamp_to_min_depth = evalBoolAttribute(node, "clamp_to_min_depth", true);
+
+    m.align_reference_axis = evalBoolAttribute(node, "align_reference_axis", true);
+
+    program.emplace_back(m);
+  };
+
   // Parse children in order ---------------------------------------------------
 
   for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
@@ -982,6 +1040,10 @@ void parseOriginComponent(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLE
     else if (tag == "Frame")
     {
       pushFrame(child);
+    }
+    else if (tag == "InsertionMate")
+    {
+      pushInsertionMate(child);
     }
     else
     {

@@ -87,6 +87,8 @@ static std::string infer_host_object(const components::OriginComponent& origin)
             host_ref = c.host_cyl;
           else if constexpr (std::is_same_v<C, components::Frame>)
             host_ref = c.host;
+          else if constexpr (std::is_same_v<C, components::InsertionMate>)
+            host_ref = c.host;
 
           if (!result.empty() || host_ref.empty())
             return;
@@ -235,6 +237,120 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
 
 }  // namespace
 
+static void expand_insertion_mates(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
+                                   components::OriginComponent& origin)
+{
+  using namespace sodf::components;
+  using ConstraintT = decltype(origin.constraints)::value_type;
+
+  std::vector<ConstraintT> expanded;
+  expanded.reserve(origin.constraints.size() * 3);
+
+  auto ctx = sodf::assembly::makeSelectorContext(db, map);
+
+  for (const auto& step_any : origin.constraints)
+  {
+    std::visit(
+        [&](const auto& step) {
+          using TStep = std::decay_t<decltype(step)>;
+
+          if constexpr (std::is_same_v<TStep, InsertionMate>)
+          {
+            // -----------------------------------------
+            // 1) Always align insertion axes
+            // -----------------------------------------
+            expanded.emplace_back(Concentric{ step.host + "#axis", step.guest + "#axis" });
+
+            // -----------------------------------------
+            // Resolve insertion data
+            // -----------------------------------------
+            sodf::assembly::Ref host_ref = sodf::assembly::make_host_ref(step.host, origin);
+
+            sodf::assembly::Ref guest_ref = sodf::assembly::make_guest_ref(step.guest, origin);
+
+            sodf::assembly::SelectorContext::InsertionData H, G;
+
+            if (!ctx.getInsertion(host_ref, H) || !ctx.getInsertion(guest_ref, G))
+            {
+              throw std::runtime_error("InsertionMate: failed to resolve insertion data");
+            }
+
+            const bool roles_differ = (H.role != G.role);
+
+            // -----------------------------------------
+            // 2) Axial constraint
+            // -----------------------------------------
+            double depth_value = 0.0;
+            bool add_distance = false;
+
+            switch (step.depth_mode)
+            {
+              case InsertionDepthMode::NONE:
+              {
+                add_distance = false;
+                break;
+              }
+
+              case InsertionDepthMode::EXPLICIT:
+              {
+                add_distance = true;
+                depth_value = step.depth;
+                break;
+              }
+
+              case InsertionDepthMode::AUTO:
+              {
+                // Only meaningful for Insert<->Receptacle
+                if (H.role == G.role)
+                {
+                  add_distance = false;
+                  break;
+                }
+
+                // magnitude
+                if (step.clamp_to_min_depth)
+                  depth_value = std::min(H.max_depth, G.max_depth);
+                else
+                {
+                  // choose receptacle's depth as the authoritative one
+                  depth_value = (H.role == InsertionRole::Receptacle) ? H.max_depth : G.max_depth;
+                }
+
+                // sign so that motion is "into receptacle" along receptacle axis
+                // If host is receptacle -> +depth along host axis (good)
+                // If host is insert      -> -depth along host axis (because receptacle is guest)
+                depth_value = (H.role == InsertionRole::Receptacle) ? +depth_value : -depth_value;
+
+                // expanded.emplace_back(Distance{ step.host + "#axis", step.guest, signed_depth });
+                add_distance = true;  // we already emitted it
+                break;
+              }
+            }
+
+            if (add_distance)
+            {
+              expanded.emplace_back(Distance{ step.host + "#axis", step.guest, depth_value });
+            }
+
+            // -----------------------------------------
+            // 3) Reference axis alignment
+            // -----------------------------------------
+            if (step.align_reference_axis)
+            {
+              expanded.emplace_back(Parallel{ step.host + "#ref", step.guest + "#ref" });
+            }
+          }
+          else
+          {
+            expanded.emplace_back(step_any);
+          }
+        },
+        step_any);
+  }
+
+  origin.constraints = std::move(expanded);
+}
+
 // ------------------------ single-Origin solver -----------------------------
 
 static void solve_single_origin(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
@@ -264,6 +380,9 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
       throw std::runtime_error("[Origin] Cannot infer guest_object for entity.");
     origin.guest_object = obj;
   }
+
+  // Expand InsertionMate into primitives
+  expand_insertion_mates(db, map, eid, origin);
 
   // host_object is already inferred in apply_origin_constraints (topology phase)
 
@@ -388,6 +507,51 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
 
     const int max_seat_iters = kOriginMaxSeatConeIters;
     const double seat_eps = kOriginSeatConeEps;
+
+    // // --- First: apply all InsertionMate analytically ONCE ---
+    // {
+    //   auto ctx = sodf::assembly::makeSelectorContext(db, map);
+
+    //   for (const auto& step_any : origin.constraints)
+    //   {
+    //     std::visit(
+    //         [&](const auto& step) {
+    //           using TStep = std::decay_t<decltype(step)>;
+
+    //           if constexpr (std::is_same_v<TStep, components::InsertionMate>)
+    //           {
+    //             sodf::assembly::Ref H = sodf::assembly::make_host_ref(step.host, origin);
+    //             sodf::assembly::Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
+
+    //             Eigen::Isometry3d dW = sodf::assembly::InsertionMate(H, G, step.depth, step.clamp_to_min_depth,
+    //                                                                  step.align_reference_axis, ctx);
+
+    //             if (!dW.isApprox(Eigen::Isometry3d::Identity(), 1e-12))
+    //             {
+    //               // Print before applying delta
+    //               Eigen::Vector3d before = root_node.local.translation();
+
+    //               std::cout << "\n--- InsertionMate step ---\n";
+    //               std::cout << "Before world Z: " << before.z() << "\n";
+    //               std::cout << "dW.translation: " << dW.translation().transpose() << "\n";
+
+    //               // Apply delta
+    //               T_world_seat = dW * T_world_seat;
+
+    //               Eigen::Vector3d after = T_world_seat.translation();
+
+    //               std::cout << "After world Z:  " << after.z() << "\n";
+    //               std::cout << "Delta Z:        " << (after.z() - before.z()) << "\n";
+
+    //               root_node.local = T_world_seat;
+    //               root_node.dirty = true;
+    //               sodf::systems::update_entity_global_transforms(db, eid, map);
+    //             }
+    //           }
+    //         },
+    //         step_any);
+    //   }
+    // }
 
     int iter = 0;
     for (;;)

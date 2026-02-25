@@ -17,7 +17,8 @@ using OriginConstraint = std::variant<geometry::Transform,  // absolute pose
                                       Angle,                //
                                       Distance,             //
                                       SeatConeOnCylinder,   //
-                                      Frame                 //
+                                      Frame,                //
+                                      InsertionMate         //
                                       >;
 
 struct OriginComponent

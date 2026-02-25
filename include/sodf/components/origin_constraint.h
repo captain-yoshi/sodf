@@ -62,6 +62,26 @@ struct Frame
   geometry::Transform host_offset{};
 };
 
+enum class InsertionDepthMode
+{
+  NONE,      // no Distance primitive
+  EXPLICIT,  // use depth value
+  AUTO       // compute from max_depth
+};
+
+struct InsertionMate
+{
+  std::string host;
+  std::string guest;
+
+  double depth{ 0.0 };  // used only if EXPLICIT
+
+  InsertionDepthMode depth_mode{ InsertionDepthMode::AUTO };
+
+  bool clamp_to_min_depth{ true };
+  bool align_reference_axis{ true };
+};
+
 }  // namespace components
 }  // namespace sodf
 

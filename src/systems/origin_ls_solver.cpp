@@ -862,6 +862,15 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
               add_frame_ls(H, G, ctx, P, accum);
             }
           }
+          else if constexpr (std::is_same_v<TStep, components::InsertionMate>)
+          {
+            Ref H = sodf::assembly::make_host_ref(step.host, origin);
+            Ref G = sodf::assembly::make_guest_ref(step.guest, origin);
+
+            // For LS: only align axes + radial alignment.
+            // Do NOT enforce depth here.
+            add_concentric_axis_ls(H, G, origin, ctx, P, accum);
+          }
           else
           {
             std::ostringstream oss;
@@ -991,6 +1000,18 @@ std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& 
             Ref G = assembly::make_guest_ref(step.guest, origin);
             ResidualEntry e{ "Frame", to_ref_str(H), to_ref_str(G) };
             fill_frame_entry(e, H, G, ctx);
+            out.push_back(std::move(e));
+          }
+          else if constexpr (std::is_same_v<TStep, components::InsertionMate>)
+          {
+            Ref H = assembly::make_host_ref(step.host, origin);
+            Ref G = assembly::make_guest_ref(step.guest, origin);
+
+            ResidualEntry e{ "InsertionMate", to_ref_str(H), to_ref_str(G) };
+
+            // For diagnostics: reuse concentric residual
+            fill_concentric_entry(e, H, G, ctx);
+
             out.push_back(std::move(e));
           }
           else

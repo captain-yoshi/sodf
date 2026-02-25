@@ -469,6 +469,12 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
   if (!ins)
     return out;
 
+  if (ins)
+  {
+    out.max_depth = ins->max_depth;
+    out.role = ins->role;
+  }
+
   // 2a) Author provided explicit LOCAL axes
   if (ins->axis_insertion.squaredNorm() > 0.0)
     out.axis = rot_vec(T_ins, ins->axis_insertion);
