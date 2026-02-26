@@ -27,7 +27,8 @@ public:
   bool loadEntitiesFromText(const std::string& text, database::Database& db, const std::string& base_dir = "");
 
 private:
-  bool loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, database::Database& db);
+  bool loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, const std::string& filename,
+                    database::Database& db);
 
   /// Pointer to the loaded XML document (lifetime is managed).
   std::unique_ptr<tinyxml2::XMLDocument> doc;

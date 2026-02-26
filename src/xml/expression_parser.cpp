@@ -18,11 +18,12 @@
 namespace sodf {
 namespace xml {
 
-std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalContext& ctx);
+std::optional<double> resolve_numeric_ref(std::string_view ref, const tinyxml2::XMLElement* current_scope,
+                                          const XMLParseContext& ctx);
 double parseExpression(const char* expr);
-static std::optional<std::string> resolve_ref_raw(std::string_view ref, const ExprEvalContext& ctx);
+static std::optional<std::string> resolve_ref_raw(std::string_view ref, const tinyxml2::XMLElement* current_scope,
+                                                  const XMLParseContext& ctx);
 double evalBareMath(const char* expr);
-ExprEvalContext make_context(const tinyxml2::XMLElement* scope);
 
 namespace {
 using Real = mu::value_type;
@@ -184,7 +185,8 @@ static mu::Parser& get_math_parser()
 
 // Expand ${...} references as raw text, repeatedly, up to max_depth.
 // No math evaluation here.
-std::string eval_text_with_refs(const char* raw, const ExprEvalContext& ctx, int max_depth = MAX_RECURSION_DEPTH)
+std::string eval_text_with_refs(const char* raw, const tinyxml2::XMLElement* current_scope, const XMLParseContext& ctx,
+                                int max_depth = MAX_RECURSION_DEPTH)
 {
   if (!raw)
     return {};
@@ -202,12 +204,11 @@ std::string eval_text_with_refs(const char* raw, const ExprEvalContext& ctx, int
         break;
       size_t r = s.find('}', l + 2);
       if (r == std::string::npos)
-        throw std::runtime_error("Unclosed ${...} in text expression");
-
+        throw_xml_error(current_scope, ctx, "Unclosed ${...} in text expression");
       std::string ref = s.substr(l + 2, r - (l + 2));
-      auto rawv = resolve_ref_raw(ref, ctx);
+      auto rawv = resolve_ref_raw(ref, current_scope, ctx);
       if (!rawv.has_value())
-        throw std::runtime_error("Cannot resolve reference: " + ref);
+        throw_xml_error(current_scope, ctx, "Cannot resolve reference: " + ref);
 
       s.replace(l, r - l + 1, *rawv);
       pos = l + rawv->size();
@@ -217,12 +218,12 @@ std::string eval_text_with_refs(const char* raw, const ExprEvalContext& ctx, int
     if (!changed)
     {
       if (s.find("${") != std::string::npos)
-        throw std::runtime_error("Unresolved ${...} after expansion");
+        throw_xml_error(current_scope, ctx, "Unresolved ${...} after expansion");
       return s;  // fully expanded, as text
     }
   }
 
-  throw std::runtime_error("Recursive reference detected (text), expansion too deep.");
+  throw_xml_error(current_scope, ctx, "Recursive reference detected (text), expansion too deep.");
 }
 
 static std::string_view trim_sv(std::string_view v)
@@ -341,7 +342,8 @@ static bool is_top_level_under_doc_root(const tinyxml2::XMLElement* cur,
 //   [*=foo]     -> missing key (no '@')
 //   [@id=]      -> missing value
 //   [@id*=]     -> missing value
-static void validate_attr_predicates_have_keys_and_values(std::string_view token)
+static void validate_attr_predicates_have_keys_and_values(std::string_view token, const tinyxml2::XMLElement* cur,
+                                                          const XMLParseContext& ctx)
 {
   auto is_space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
   auto trim = [&](std::string_view s) {
@@ -435,18 +437,20 @@ static void validate_attr_predicates_have_keys_and_values(std::string_view token
           // EXISTS form: [@name] or [@*]
           std::string_view key = trim(rest);
           if (key.empty())
-            throw std::runtime_error("Missing key in attribute predicate '[" + std::string(body) + "]'");
+          {
+            throw_xml_error(cur, ctx, "Missing key in attribute predicate '[" + std::string(body) + "]'");
+          }
         }
         else
         {
           // EQUALS/CONTAINS: LHS must be a key (possibly "*"), RHS must be non-empty
           std::string_view key = trim(rest.substr(0, op_pos - (contains_op ? 1 : 0)));
           if (key.empty())
-            throw std::runtime_error("Missing key in attribute predicate '[" + std::string(body) + "]'");
+            throw_xml_error(cur, ctx, "Missing key in attribute predicate '[" + std::string(body) + "]'");
 
           std::string_view rhs = trim(rest.substr(op_pos + 1));
           if (rhs.empty())
-            throw std::runtime_error("Missing value in attribute predicate '[" + std::string(body) + "]'");
+            throw_xml_error(cur, ctx, "Missing key in attribute predicate '[" + std::string(body) + "]'");
         }
       }
       else
@@ -477,9 +481,9 @@ static void validate_attr_predicates_have_keys_and_values(std::string_view token
         }
         if (has_unquoted_eq)
         {
-          throw std::runtime_error("Missing key in attribute predicate '[" + std::string(body) + "]'");
+          throw_xml_error(cur, ctx, "Missing key in attribute predicate '[" + std::string(body) + "]'");
         }
-        // Otherwise: digits-only index like [2] is allowed — no error here.
+        // Otherwise: digits-only index like [2] is allowed, no error here.
       }
     }
 
@@ -487,14 +491,14 @@ static void validate_attr_predicates_have_keys_and_values(std::string_view token
   }
 }
 
-static std::vector<tinyxml2::XMLElement*> eval_one_step_or_root_retry(const tinyxml2::XMLElement* cur,
-                                                                      std::string_view token)
+static std::vector<tinyxml2::XMLElement*>
+eval_one_step_or_root_retry(const tinyxml2::XMLElement* cur, const XMLParseContext& ctx, std::string_view token)
 {
-  validate_attr_predicates_have_keys_and_values(token);
+  validate_attr_predicates_have_keys_and_values(token, cur, ctx);
 
   auto sel = parse_selector(std::string(token));
   if (sel.steps.size() != 1)
-    throw std::runtime_error("Invalid token in ${...} path: " + std::string(token));
+    throw_xml_error(cur, ctx, "Invalid token in ${...} path: " + std::string(token));
 
   auto* cur_nc = const_cast<tinyxml2::XMLElement*>(cur);
   auto nexts = eval_step(cur_nc, sel.steps[0]);
@@ -516,10 +520,11 @@ static std::vector<tinyxml2::XMLElement*> eval_one_step_or_root_retry(const tiny
   return {};
 }
 
-double eval_with_refs(const char* raw_expr, const ExprEvalContext& ctx, int max_depth = MAX_RECURSION_DEPTH)
+double eval_with_refs(const char* raw_expr, const tinyxml2::XMLElement* current_scope, const XMLParseContext& ctx,
+                      int max_depth = MAX_RECURSION_DEPTH)
 {
   if (!raw_expr)
-    throw std::runtime_error("Null expression.");
+    throw_xml_error(current_scope, ctx, "Null expression.");
   std::string expr(raw_expr);
 
   for (int depth = 0; depth < max_depth; ++depth)
@@ -534,12 +539,16 @@ double eval_with_refs(const char* raw_expr, const ExprEvalContext& ctx, int max_
         break;
       size_t r = expr.find('}', l + 2);
       if (r == std::string::npos)
-        throw std::runtime_error("Unclosed ${...} in expression");
+      {
+        throw_xml_error(current_scope, ctx, "Unclosed ${...} in expression");
+      }
 
       std::string ref = expr.substr(l + 2, r - (l + 2));
-      auto raw = resolve_ref_raw(ref, ctx);
+      auto raw = resolve_ref_raw(ref, current_scope, ctx);
       if (!raw.has_value())
-        throw std::runtime_error("Cannot resolve reference: " + ref);
+      {
+        throw_xml_error(current_scope, ctx, std::string("Cannot resolve reference: ") + ref);
+      }
 
       // Replace ${...} with (raw) to preserve precedence
       std::string replacement = "(" + *raw + ")";
@@ -551,21 +560,26 @@ double eval_with_refs(const char* raw_expr, const ExprEvalContext& ctx, int max_
     if (!changed)
     {
       if (expr.find("${") != std::string::npos)
-        throw std::runtime_error("Unresolved ${...} after expansion");
-      return evalBareMath(expr.c_str());
+      {
+        throw_xml_error(current_scope, ctx, "Unresolved ${...} after expansion");
+      }
+      try
+      {
+        return evalBareMath(expr.c_str());
+      }
+      catch (const std::exception& e)
+      {
+        throw_xml_error(current_scope, ctx, e.what());
+      }
     }
   }
 
-  throw std::runtime_error("Recursive reference detected or expansion too deep (> " + std::to_string(max_depth) + ").");
+  throw_xml_error(current_scope, ctx,
+                  "Recursive reference detected or expansion too deep (> " + std::to_string(max_depth) + ").");
 }
 
-double eval_with_refs(const char* expr, const tinyxml2::XMLElement* scope, int max_depth = MAX_RECURSION_DEPTH)
-{
-  ExprEvalContext ctx = make_context(scope);
-  return eval_with_refs(expr, ctx, max_depth);
-}
-
-static std::optional<std::string> resolve_ref_raw(std::string_view ref, const ExprEvalContext& ctx)
+static std::optional<std::string> resolve_ref_raw(std::string_view ref, const tinyxml2::XMLElement* current_scope,
+                                                  const XMLParseContext& ctx)
 {
   ref = trim_sv(ref);
   if (ref.empty())
@@ -586,7 +600,7 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
   }
   else
   {
-    cur = ctx.scope;  // default: current element scope
+    cur = current_scope;  // default: current element scope
   }
   if (!cur)
     return std::nullopt;
@@ -624,14 +638,14 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
         // optional single-step descend before reading attribute
         if (!left.empty() && !(left.size() == 1 && left[0] == '.'))
         {
-          auto nexts = eval_one_step_or_root_retry(cur, left);
+          auto nexts = eval_one_step_or_root_retry(cur, ctx, left);
           if (nexts.empty())
             return std::nullopt;
           cur = nexts.front();
         }
 
         if (attr.empty())
-          throw std::runtime_error("Empty .attr on last segment");
+          throw_xml_error(current_scope, ctx, "Empty .attr on last segment in ${" + std::string(ref) + "}");
         if (const char* aval = cur->Attribute(std::string(attr).c_str()))
         {
           return std::string(aval);  // raw text (may contain ${...} and math)
@@ -639,12 +653,13 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
         return std::nullopt;
       }
       // if last and not .attr → require .attr (explicit rule)
-      throw std::runtime_error("Terminal element requires `.attr` (e.g., `.../Tag.attr`).");
+      throw_xml_error(current_scope, ctx,
+                      "Terminal element requires `.attr` (e.g., `.../Tag.attr`) in ${" + std::string(ref) + "}");
     }
 
     // normal element step (./children scope by default) with top-level retry
     {
-      auto nexts = eval_one_step_or_root_retry(cur, tok);
+      auto nexts = eval_one_step_or_root_retry(cur, ctx, tok);
       if (nexts.empty())
         return std::nullopt;
       cur = nexts.front();
@@ -655,7 +670,8 @@ static std::optional<std::string> resolve_ref_raw(std::string_view ref, const Ex
   return std::nullopt;
 }
 
-std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalContext& ctx)
+std::optional<double> resolve_numeric_ref(std::string_view ref, const tinyxml2::XMLElement* current_scope,
+                                          const XMLParseContext& ctx)
 {
   ref = trim_sv(ref);
   if (ref.empty())
@@ -676,7 +692,7 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
   }
   else
   {
-    cur = ctx.scope;  // default: current element scope
+    cur = current_scope;  // default: current element scope
   }
   if (!cur)
     return std::nullopt;
@@ -703,25 +719,26 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
         // Optional: descend one step into 'left' if provided (with top-level retry)
         if (!left.empty() && left != std::string_view("."))
         {
-          auto nexts = eval_one_step_or_root_retry(cur, left);
+          auto nexts = eval_one_step_or_root_retry(cur, ctx, left);
           if (nexts.empty())
             return std::nullopt;
           cur = nexts.front();
         }
 
         if (attr.empty())
-          throw std::runtime_error("Empty .attr on last segment");
+          throw_xml_error(current_scope, ctx, "Empty .attr on last segment in ${" + std::string(ref) + "}");
         const char* aval = cur->Attribute(std::string(attr).c_str());
         if (!aval)
           return std::nullopt;
-        return eval_with_refs(aval, ctx);
+        return eval_with_refs(aval, current_scope, ctx);
       }
     }
 
     // No '@' allowed — explicit .attr only
     if (tok.front() == '@')
-      throw std::runtime_error("`@attr` is not supported. Use final `.attr` (e.g., `.../Tag.attr`).");
-
+      throw_xml_error(current_scope, ctx,
+                      "`@attr` is not supported. Use final `.attr` (e.g., `.../Tag.attr`) in ${" + std::string(ref) +
+                          "}");
     if (tok == ".")  // ./ children scope
       continue;
 
@@ -735,7 +752,7 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
 
     // Element or Element[i], default child scope with top-level retry
     {
-      auto nexts = eval_one_step_or_root_retry(cur, tok);
+      auto nexts = eval_one_step_or_root_retry(cur, ctx, tok);
       if (nexts.empty())
         return std::nullopt;
       cur = nexts.front();
@@ -744,31 +761,12 @@ std::optional<double> resolve_numeric_ref(std::string_view ref, const ExprEvalCo
     if (last)
     {
       // Strict: terminal element must specify attribute via final .attr
-      throw std::runtime_error("Terminal element requires `.attr` (e.g., `.../Tag.attr`).");
+      throw_xml_error(current_scope, ctx,
+                      "Terminal element requires `.attr` (e.g., `.../Tag.attr`) in ${" + std::string(ref) + "}");
     }
   }
 
   return std::nullopt;
-}
-
-const tinyxml2::XMLElement* find_enclosing_object(const tinyxml2::XMLElement* cur)
-{
-  const tinyxml2::XMLElement* e = cur;
-  while (e)
-  {
-    if (strcmp(e->Name(), "Object") == 0)
-      return e;
-    const tinyxml2::XMLNode* p = e->Parent();
-    e = p ? p->ToElement() : nullptr;
-  }
-  return nullptr;
-}
-
-ExprEvalContext make_context(const tinyxml2::XMLElement* scope)
-{
-  const tinyxml2::XMLDocument* doc = scope ? scope->GetDocument() : nullptr;
-  const tinyxml2::XMLElement* object_root = scope ? find_enclosing_object(scope) : nullptr;
-  return { doc, object_root, scope };
 }
 
 double evalBareMath(const char* expr)
@@ -823,153 +821,102 @@ double evalMathWithVariables(const char* expr, const std::unordered_map<std::str
   }
 }
 
-double evalNumberExpr(const char* expr, const tinyxml2::XMLElement* scope)
-{
-  if (!expr)
-    throw std::runtime_error("Null expression.");
-  if (std::strstr(expr, "${") == nullptr)
-    return evalBareMath(expr);
-  return eval_with_refs(expr, scope);
-}
-
-double evalNumberAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr)
+double evalNumberAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr, const XMLParseContext& ctx)
 {
   const char* expr = elem ? elem->Attribute(attr) : nullptr;
   if (!expr)
   {
-    throw std::runtime_error(std::string("Missing required attribute '") + attr + "' on <" +
-                             (elem ? elem->Name() : "?") + "> at line " + std::to_string(elem ? elem->GetLineNum() : 0));
+    throw_xml_error(elem, ctx,
+                    std::string("Missing required attribute '") + attr + "' on <" + (elem ? elem->Name() : "?") + ">");
   }
-  return evalNumberExpr(expr, elem);
+
+  return eval_with_refs(expr, elem, ctx);
 }
 
-double evalNumberAttribute(const tinyxml2::XMLElement* elem, const char* attr, double fallback)
+double evalNumberAttribute(const tinyxml2::XMLElement* elem, const char* attr, double fallback,
+                           const XMLParseContext& ctx)
 {
   const char* expr = elem ? elem->Attribute(attr) : nullptr;
   if (!expr)
     return fallback;
-  return evalNumberExpr(expr, elem);
+  return eval_with_refs(expr, elem, ctx);
 }
 
-bool tryEvalNumberAttribute(const tinyxml2::XMLElement* elem, const char* attr, double* out)
+bool tryEvalNumberAttribute(const tinyxml2::XMLElement* elem, const char* attr, double* out, const XMLParseContext& ctx)
 {
   if (!elem || !attr || !out)
     return false;
   const char* expr = elem->Attribute(attr);
   if (!expr)
     return false;
-  *out = evalNumberExpr(expr, elem);
+  *out = eval_with_refs(expr, elem, ctx);
   return true;
 }
 
-std::string evalTextExpr(const char* raw, const tinyxml2::XMLElement* scope, int max_depth = 32)
-{
-  if (!raw)
-    return {};
-  if (std::strstr(raw, "${") == nullptr)
-    return std::string(raw);
-
-  ExprEvalContext ctx = make_context(scope);
-
-  std::string s(raw);
-  for (int depth = 0; depth < max_depth; ++depth)
-  {
-    bool changed = false;
-    size_t pos = 0;
-    while (true)
-    {
-      size_t l = s.find("${", pos);
-      if (l == std::string::npos)
-        break;
-      size_t r = s.find('}', l + 2);
-      if (r == std::string::npos)
-        throw std::runtime_error("Unclosed ${...} in text expression");
-
-      std::string ref = s.substr(l + 2, r - (l + 2));
-      auto rawv = resolve_ref_raw(ref, ctx);
-      if (!rawv.has_value())
-        throw std::runtime_error("Cannot resolve reference: " + ref);
-
-      s.replace(l, r - l + 1, *rawv);
-      pos = l + rawv->size();
-      changed = true;
-    }
-    if (!changed)
-    {
-      if (s.find("${") != std::string::npos)
-        throw std::runtime_error("Unresolved ${...} after text expansion");
-      return s;
-    }
-  }
-  throw std::runtime_error("Recursive reference detected (text) or expansion too deep.");
-}
-
-std::string evalTextNode(const tinyxml2::XMLElement* elem)
+std::string evalTextNode(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   const char* raw = (elem && elem->GetText()) ? elem->GetText() : "";
-  return evalTextExpr(raw, elem);
+  return eval_text_with_refs(raw, elem, ctx);
 }
 
-std::string evalTextAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr)
+std::string evalTextAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr, const XMLParseContext& ctx)
 {
   const char* raw = elem ? elem->Attribute(attr) : nullptr;
   if (!raw)
-    throw std::runtime_error(std::string("Missing required attribute '") + attr + "' on <" +
-                             (elem ? elem->Name() : "?") + "> at line " + std::to_string(elem ? elem->GetLineNum() : 0));
-  return evalTextExpr(raw, elem);
+    throw_xml_error(elem, ctx,
+                    std::string("Missing required attribute '") + attr + "' on <" + (elem ? elem->Name() : "?") + ">");
+  return eval_text_with_refs(raw, elem, ctx);
 }
 
-std::string evalTextAttribute(const tinyxml2::XMLElement* elem, const char* attr, const std::string& fallback)
+std::string evalTextAttribute(const tinyxml2::XMLElement* elem, const char* attr, const std::string& fallback,
+                              const XMLParseContext& ctx)
 {
   const char* raw = elem ? elem->Attribute(attr) : nullptr;
-  return raw ? evalTextExpr(raw, elem) : fallback;
+  return raw ? eval_text_with_refs(raw, elem, ctx) : fallback;
 }
 
-bool tryEvalTextAttribute(const tinyxml2::XMLElement* elem, const char* attr, std::string* out)
+bool tryEvalTextAttribute(const tinyxml2::XMLElement* elem, const char* attr, std::string* out,
+                          const XMLParseContext& ctx)
 {
   if (!elem || !attr || !out)
     return false;
   const char* raw = elem->Attribute(attr);
   if (!raw)
     return false;
-  *out = evalTextExpr(raw, elem);
+  *out = eval_text_with_refs(raw, elem, ctx);
   return true;
 }
 
-bool evalBoolAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr)
+bool evalBoolAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr, const XMLParseContext& ctx)
 {
-  std::string s = evalTextAttributeRequired(elem, attr);
+  std::string s = evalTextAttributeRequired(elem, attr, ctx);
   if (s == "true")
     return true;
   if (s == "false")
     return false;
-  throw std::runtime_error(std::string("Attribute '") + attr + "' must be 'true' or 'false' at line " +
-                           std::to_string(elem->GetLineNum()));
+  throw_xml_error(elem, ctx, std::string("Attribute '") + attr + "' must be 'true' or 'false'");
 }
 
-bool evalBoolAttribute(const tinyxml2::XMLElement* elem, const char* attr, bool fallback)
+bool evalBoolAttribute(const tinyxml2::XMLElement* elem, const char* attr, bool fallback, const XMLParseContext& ctx)
 {
   std::string s;
-  if (!tryEvalTextAttribute(elem, attr, &s))
+  if (!tryEvalTextAttribute(elem, attr, &s, ctx))
     return fallback;
   if (s == "true")
     return true;
   if (s == "false")
     return false;
-  throw std::runtime_error(std::string("Attribute '") + attr + "' must be 'true' or 'false' at line " +
-                           std::to_string(elem->GetLineNum()));
+  throw_xml_error(elem, ctx, std::string("Attribute '") + attr + "' must be 'true' or 'false'");
 }
 
-uint32_t evalUIntAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr)
+uint32_t evalUIntAttributeRequired(const tinyxml2::XMLElement* elem, const char* attr, const XMLParseContext& ctx)
 {
-  double v = evalNumberAttributeRequired(elem, attr);
+  double v = evalNumberAttributeRequired(elem, attr, ctx);
   if (v < 0.0 || v > static_cast<double>(std::numeric_limits<uint32_t>::max()))
-    throw std::runtime_error(std::string("Attribute '") + attr + "' out of range at line " +
-                             std::to_string(elem->GetLineNum()));
+    throw_xml_error(elem, ctx, std::string("Attribute '") + attr + "' is out of uint32_t range");
   double r = std::round(v);
   if (std::abs(v - r) > 1e-9)
-    throw std::runtime_error(std::string("Attribute '") + attr + "' must be an integer at line " +
-                             std::to_string(elem->GetLineNum()));
+    throw_xml_error(elem, ctx, std::string("Attribute '") + attr + "' must be an integer");
   return static_cast<uint32_t>(r);
 }
 

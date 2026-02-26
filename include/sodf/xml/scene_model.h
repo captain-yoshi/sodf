@@ -28,6 +28,10 @@ struct SceneObject
   std::string id;
   std::vector<SceneComponent> components;
   std::set<std::string> remove_ids;  // currently unused in patch ops, but kept for parity
+
+  std::unique_ptr<tinyxml2::XMLDocument> doc;
+
+  std::string origin_filename;
 };
 
 }  // namespace xml

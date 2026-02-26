@@ -13,7 +13,8 @@ struct AxesTagNames
   const char* Z;  // canonical Z tag (e.g., "AxisNormal")
 };
 
-inline std::array<Eigen::Vector3d, 3> parseAxesCanonicalXYZ(const tinyxml2::XMLElement* elem, const AxesTagNames& tags,
+inline std::array<Eigen::Vector3d, 3> parseAxesCanonicalXYZ(const tinyxml2::XMLElement* elem,
+                                                            const XMLParseContext& ctx, const AxesTagNames& tags,
                                                             double tol = 1e-9)
 {
   using Eigen::Vector3d;
@@ -34,31 +35,43 @@ inline std::array<Eigen::Vector3d, 3> parseAxesCanonicalXYZ(const tinyxml2::XMLE
   }
 
   if (provided < 2)
-    throw std::runtime_error(std::string("Provide at least two of <") + tags.X + ">, <" + tags.Y + ">, <" + tags.Z +
-                             "> at line " + std::to_string(ln));
+  {
+    throw_xml_error(elem, ctx,
+                    std::string("Provide at least two of <") + tags.X + ">, <" + tags.Y + ">, <" + tags.Z + ">");
+  }
 
   auto nearly_zero = [&](const Vector3d& v) { return v.squaredNorm() < tol * tol; };
   auto is_unit = [&](const Vector3d& v) { return std::abs(v.norm() - 1.0) <= 1e2 * tol; };
 
-  Vector3d X = hasX ? parseUnitVector(ex) : Vector3d::Zero();
-  Vector3d Y = hasY ? parseUnitVector(ey) : Vector3d::Zero();
-  Vector3d Z = hasZ ? parseUnitVector(ez) : Vector3d::Zero();
+  Vector3d X = hasX ? parseUnitVector(ex, ctx) : Vector3d::Zero();
+  Vector3d Y = hasY ? parseUnitVector(ey, ctx) : Vector3d::Zero();
+  Vector3d Z = hasZ ? parseUnitVector(ez, ctx) : Vector3d::Zero();
 
   if (provided == 3)
   {
     // Do NOT change user-provided axes. Only validate.
     if (!is_unit(X) || !is_unit(Y) || !is_unit(Z))
-      throw std::runtime_error("Axes must be unit-length at line " + std::to_string(ln));
+    {
+      throw_xml_error(elem, ctx, "Axes must be unit-length");
+    }
 
     if (std::abs(X.dot(Y)) > tol || std::abs(X.dot(Z)) > tol || std::abs(Y.dot(Z)) > tol)
-      throw std::runtime_error("Provided axes must be orthogonal at line " + std::to_string(ln));
+    {
+      throw_xml_error(elem, ctx, "Provided axes must be orthogonal");
+    }
 
     const double det = X.dot(Y.cross(Z));
     if (det < 0.0 - 1e2 * tol)
-      throw std::runtime_error("Provided axes are left-handed; expected right-handed at line " + std::to_string(ln));
+    {
+      throw_xml_error(elem, ctx,
+                      "Provided axes are left-handed; "
+                      "expected right-handed");
+    }
 
     if (nearly_zero(Y.cross(Z)) || nearly_zero(Z.cross(X)) || nearly_zero(X.cross(Y)))
-      throw std::runtime_error("Degenerate axes at line " + std::to_string(ln));
+    {
+      throw_xml_error(elem, ctx, "Degenerate axes");
+    }
 
     return { X, Y, Z };
   }
@@ -95,56 +108,57 @@ inline std::array<Eigen::Vector3d, 3> parseAxesCanonicalXYZ(const tinyxml2::XMLE
   return { R.col(0), R.col(1), R.col(2) };
 }
 
-void parsePosition(const tinyxml2::XMLElement* element, Eigen::Vector3d& pos)
+void parsePosition(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, Eigen::Vector3d& pos)
 {
-  pos.x() = evalNumberAttributeRequired(element, "x");
-  pos.y() = evalNumberAttributeRequired(element, "y");
-  pos.z() = evalNumberAttributeRequired(element, "z");
+  pos.x() = evalNumberAttributeRequired(elem, "x", ctx);
+  pos.y() = evalNumberAttributeRequired(elem, "y", ctx);
+  pos.z() = evalNumberAttributeRequired(elem, "z", ctx);
 }
 
-void parseOrientationRPY(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
+void parseOrientationRPY(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, Eigen::Quaterniond& q)
 {
-  double roll = evalNumberAttributeRequired(element, "roll");
-  double pitch = evalNumberAttributeRequired(element, "pitch");
-  double yaw = evalNumberAttributeRequired(element, "yaw");
+  double roll = evalNumberAttributeRequired(elem, "roll", ctx);
+  double pitch = evalNumberAttributeRequired(elem, "pitch", ctx);
+  double yaw = evalNumberAttributeRequired(elem, "yaw", ctx);
   Eigen::AngleAxisd rx(roll, Eigen::Vector3d::UnitX());
   Eigen::AngleAxisd ry(pitch, Eigen::Vector3d::UnitY());
   Eigen::AngleAxisd rz(yaw, Eigen::Vector3d::UnitZ());
   q = rz * ry * rx;
 }
 
-void parseQuaternion(const tinyxml2::XMLElement* element, Eigen::Quaterniond& q)
+void parseQuaternion(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, Eigen::Quaterniond& q)
 {
-  q.x() = evalNumberAttributeRequired(element, "x");
-  q.y() = evalNumberAttributeRequired(element, "y");
-  q.z() = evalNumberAttributeRequired(element, "z");
-  q.w() = evalNumberAttributeRequired(element, "w");
+  q.x() = evalNumberAttributeRequired(elem, "x", ctx);
+  q.y() = evalNumberAttributeRequired(elem, "y", ctx);
+  q.z() = evalNumberAttributeRequired(elem, "z", ctx);
+  q.w() = evalNumberAttributeRequired(elem, "w", ctx);
 }
 
-Eigen::Isometry3d parseIsometry3D(const tinyxml2::XMLElement* transform_elem)
+Eigen::Isometry3d parseIsometry3D(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   Eigen::Vector3d pos{ 0, 0, 0 };
   Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
 
-  if (const auto* pos_elem = transform_elem->FirstChildElement("Position"))
-    parsePosition(pos_elem, pos);
+  if (const auto* pos_elem = elem->FirstChildElement("Position"))
+    parsePosition(pos_elem, ctx, pos);
 
-  if (const auto* ori_elem = transform_elem->FirstChildElement("Orientation"))
-    parseOrientationRPY(ori_elem, q);
-  else if (const auto* quat_elem = transform_elem->FirstChildElement("Quaternion"))
+  if (const auto* ori_elem = elem->FirstChildElement("Orientation"))
+    parseOrientationRPY(ori_elem, ctx, q);
+  else if (const auto* quat_elem = elem->FirstChildElement("Quaternion"))
   {
-    parseQuaternion(quat_elem, q);
+    parseQuaternion(quat_elem, ctx, q);
   }
 
   return Eigen::Translation3d(pos) * q;
 }
 
-geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform_elem)
+geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   geometry::TransformNode frame;
-  (void)tryEvalTextAttribute(transform_elem, "parent", &frame.parent);
 
-  frame.local = parseIsometry3D(transform_elem);
+  (void)tryEvalTextAttribute(elem, "parent", &frame.parent, ctx);
+
+  frame.local = parseIsometry3D(elem, ctx);
   frame.rest_local = frame.local;
   frame.global = Eigen::Isometry3d::Identity();
   frame.dirty = true;
@@ -152,34 +166,34 @@ geometry::TransformNode parseTransformNode(const tinyxml2::XMLElement* transform
   return frame;
 }
 
-Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* element, double epsilon)
+Eigen::Vector3d parseUnitVector(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, double epsilon)
 {
   Eigen::Vector3d vec;
 
-  vec.x() = evalNumberAttributeRequired(element, "x");
-  vec.y() = evalNumberAttributeRequired(element, "y");
-  vec.z() = evalNumberAttributeRequired(element, "z");
+  vec.x() = evalNumberAttributeRequired(elem, "x", ctx);
+  vec.y() = evalNumberAttributeRequired(elem, "y", ctx);
+  vec.z() = evalNumberAttributeRequired(elem, "z", ctx);
 
   double norm = vec.norm();
   if (std::abs(norm - 1.0) > epsilon)
   {
-    std::ostringstream oss;
-    oss << "Expected unit vector but got vector with norm " << norm << " at line " << element->GetLineNum();
-    throw std::runtime_error(oss.str());
+    {
+      throw_xml_error(elem, ctx, "Expected unit vector but got norm=" + std::to_string(norm));
+    }
   }
   return vec;
 }
 
 // (Note: fixed the spelling to "RightHand")
-void validateAxesRightHandOrthonormal(const geometry::Shape& shape, const tinyxml2::XMLElement* elem, double eps = 1e-9)
+void validateAxesRightHandOrthonormal(const geometry::Shape& shape, const tinyxml2::XMLElement* elem,
+                                      const XMLParseContext& ctx, double eps = 1e-9)
 {
   const int ln = elem ? elem->GetLineNum() : -1;
   const std::size_t n = shape.axes.size();
 
   if (n != 3)
   {
-    throw std::runtime_error("Shape must define exactly 3 axes (X, Y, Z) at line " + std::to_string(ln) + " (got " +
-                             std::to_string(n) + ")");
+    throw_xml_error(elem, ctx, "Shape must define exactly 3 axes (X, Y, Z); got " + std::to_string(n));
   }
 
   const Eigen::Vector3d& X = shape.axes[0];
@@ -188,25 +202,32 @@ void validateAxesRightHandOrthonormal(const geometry::Shape& shape, const tinyxm
 
   if (!geometry::areVectorsOrthonormal(X, Y, Z, eps))
   {
-    throw std::runtime_error("Shape axes are not orthonormal at line " + std::to_string(ln));
+    throw_xml_error(elem, ctx, "Shape axes are not orthonormal");
   }
 
   if (!geometry::isRightHanded(X, Y, Z, eps))
   {
-    throw std::runtime_error("Shape axes are not right-handed at line " + std::to_string(ln));
+    throw_xml_error(elem, ctx, "Shape axes are not right-handed");
   }
 }
 
-const tinyxml2::XMLElement* reqChild(const tinyxml2::XMLElement* parent, const char* tag, const char* ctx)
+const tinyxml2::XMLElement* reqChild(const tinyxml2::XMLElement* parent, const XMLParseContext& ctx, const char* tag,
+                                     const char* context)
 {
+  if (!parent)
+  {
+    throw_xml_error(nullptr, ctx, std::string(context) + ": null parent element while requiring <" + tag + ">");
+  }
+
   if (const auto* e = parent->FirstChildElement(tag))
     return e;
-  throw std::runtime_error(std::string(ctx) + " missing <" + tag + "> at line " + std::to_string(parent->GetLineNum()));
+
+  throw_xml_error(parent, ctx, std::string(context) + " missing <" + tag + ">");
 }
 
 // ============================== 2D SHAPES ==============================
 
-geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
 
@@ -215,7 +236,7 @@ geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = normal, Y = size_y, Z = size_z
   const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=size_y, Z=size_z]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=normal, Y=size_y, Z=size_z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   const auto* dims = elem->FirstChildElement("Dimensions");
@@ -223,13 +244,16 @@ geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
   const int ln = elem ? elem->GetLineNum() : -1;
 
   if ((dims != nullptr) == (verts != nullptr))
-    throw std::runtime_error("Rectangle must specify exactly one of <Dimensions> or <Vertices> at line " +
-                             std::to_string(ln));
+  {
+    throw_xml_error(elem, ctx,
+                    "Rectangle must specify exactly one of "
+                    "<Dimensions> or <Vertices>");
+  }
 
   if (dims)
   {
-    const double sy = evalNumberAttributeRequired(dims, "size_y");
-    const double sz = evalNumberAttributeRequired(dims, "size_z");
+    const double sy = evalNumberAttributeRequired(dims, "size_y", ctx);
+    const double sz = evalNumberAttributeRequired(dims, "size_z", ctx);
     s.dimensions = { sy, sz };
   }
   else
@@ -238,22 +262,26 @@ geometry::Shape parseRectangleShape(const tinyxml2::XMLElement* elem)
     std::size_t count = 0;
     for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double y = evalNumberAttributeRequired(v, "y");
-      const double z = evalNumberAttributeRequired(v, "z");
+      const double y = evalNumberAttributeRequired(v, "y", ctx);
+      const double z = evalNumberAttributeRequired(v, "z", ctx);
       s.vertices.emplace_back(0.0, y, z);
       ++count;
     }
     if (count != 4)
-      throw std::runtime_error("Rectangle with <Vertices> must have exactly 4 entries at line " +
-                               std::to_string(verts->GetLineNum()));
+    {
+      throw_xml_error(verts, ctx,
+                      "Rectangle with <Vertices> "
+                      "must contain exactly 4 <Vertex> entries");
+    }
+
     s.dimensions.clear();
   }
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -261,17 +289,17 @@ geometry::Shape parseCircleShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = normal, (Y,Z) = reference in-plane axes
   const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=refY, Z=refZ]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=normal, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
-  const auto* dims = reqChild(elem, "Dimensions", "Circle");
-  s.dimensions = { evalNumberAttributeRequired(dims, "radius") };
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "Circle");
+  s.dimensions = { evalNumberAttributeRequired(dims, "radius", ctx) };
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -279,7 +307,7 @@ geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = normal, Y = base, Z = altitude
   const AxesTagNames tags{ "AxisNormal", "AxisBase", "AxisAltitude" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=base, Z=altitude]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=normal, Y=base, Z=altitude]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   const auto* dims = elem->FirstChildElement("Dimensions");
@@ -287,14 +315,17 @@ geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
   const int ln = elem ? elem->GetLineNum() : -1;
 
   if ((dims != nullptr) == (verts != nullptr))
-    throw std::runtime_error("Triangle must specify exactly one of <Dimensions> or <Vertices> at line " +
-                             std::to_string(ln));
+  {
+    throw_xml_error(elem, ctx,
+                    "Triangle must specify exactly one of "
+                    "<Dimensions> or <Vertices>");
+  }
 
   if (dims)
   {
-    const double base_y = evalNumberAttributeRequired(dims, "base_y");
-    const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z");
-    const double apex_off_y = evalNumberAttributeRequired(dims, "apex_offset_y");
+    const double base_y = evalNumberAttributeRequired(dims, "base_y", ctx);
+    const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z", ctx);
+    const double apex_off_y = evalNumberAttributeRequired(dims, "apex_offset_y", ctx);
     s.dimensions = { base_y, apex_off_y, altitude_z };
   }
   else
@@ -303,22 +334,26 @@ geometry::Shape parseTriangleShape(const tinyxml2::XMLElement* elem)
     int count = 0;
     for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double y = evalNumberAttributeRequired(v, "y");
-      const double z = evalNumberAttributeRequired(v, "z");
+      const double y = evalNumberAttributeRequired(v, "y", ctx);
+      const double z = evalNumberAttributeRequired(v, "z", ctx);
       s.vertices.emplace_back(0.0, y, z);
       ++count;
     }
     if (count != 3)
-      throw std::runtime_error("Triangle with <Vertices> must have exactly 3 <Vertex> entries at line " +
-                               std::to_string(verts->GetLineNum()));
+    {
+      throw_xml_error(verts, ctx,
+                      "Triangle with <Vertices> must contain "
+                      "exactly 3 <Vertex> entries");
+    }
+
     s.dimensions.clear();
   }
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -326,31 +361,37 @@ geometry::Shape parsePolygonShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = normal, Y = in-plane y, Z = in-plane z
   const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y, Z]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=normal, Y, Z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   if (const auto* dims = elem->FirstChildElement("Dimensions"))
-    throw std::runtime_error("Polygon must not define <Dimensions> (dimensionless) at line " +
-                             std::to_string(dims->GetLineNum()));
+  {
+    throw_xml_error(dims, ctx,
+                    "Polygon must not define <Dimensions> "
+                    "(dimensionless shape)");
+  }
 
-  const auto* verts = reqChild(elem, "Vertices", "Polygon");
+  const auto* verts = reqChild(elem, ctx, "Vertices", "Polygon");
   std::size_t count = 0;
   for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
   {
-    const double y = evalNumberAttributeRequired(v, "y");
-    const double z = evalNumberAttributeRequired(v, "z");
+    const double y = evalNumberAttributeRequired(v, "y", ctx);
+    const double z = evalNumberAttributeRequired(v, "z", ctx);
     s.vertices.emplace_back(0.0, y, z);  // X=0 (normal axis)
     ++count;
   }
   if (count < 3)
-    throw std::runtime_error("Polygon requires at least 3 <Vertex> entries at line " +
-                             std::to_string(verts->GetLineNum()));
+  {
+    throw_xml_error(verts, ctx,
+                    "Polygon requires at least 3 "
+                    "<Vertex> entries");
+  }
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -358,7 +399,7 @@ geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = normal, Y = refY, Z = refZ
   const AxesTagNames tags{ "AxisNormal", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=normal, Y=refY, Z=refZ]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=normal, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   const auto* dims = elem->FirstChildElement("Dimensions");
@@ -366,16 +407,22 @@ geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
   const int ln = elem ? elem->GetLineNum() : -1;
 
   if (dims && verts)
-    throw std::runtime_error("Plane must specify at most one of <Dimensions> or <Vertices> at line " +
-                             std::to_string(ln));
+  {
+    throw_xml_error(elem, ctx,
+                    "Plane must specify at most one of "
+                    "<Dimensions> or <Vertices>");
+  }
 
   if (dims)
   {
-    const double sy = evalNumberAttributeRequired(dims, "size_y");
-    const double sz = evalNumberAttributeRequired(dims, "size_z");
+    const double sy = evalNumberAttributeRequired(dims, "size_y", ctx);
+    const double sz = evalNumberAttributeRequired(dims, "size_z", ctx);
     if (!(sy > 0.0 && sz > 0.0))
-      throw std::runtime_error("Plane <Dimensions> require positive size_y and size_z at line " +
-                               std::to_string(dims->GetLineNum()));
+    {
+      throw_xml_error(dims, ctx,
+                      "Plane <Dimensions> require positive "
+                      "size_y and size_z");
+    }
     s.dimensions = { sy, sz };
   }
   else if (verts)
@@ -383,25 +430,29 @@ geometry::Shape parsePlaneShape(const tinyxml2::XMLElement* elem)
     std::size_t count = 0;
     for (const auto* v = verts->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double y = evalNumberAttributeRequired(v, "y");
-      const double z = evalNumberAttributeRequired(v, "z");
+      const double y = evalNumberAttributeRequired(v, "y", ctx);
+      const double z = evalNumberAttributeRequired(v, "z", ctx);
       s.vertices.emplace_back(0.0, y, z);
       ++count;
     }
     if (count < 3)
-      throw std::runtime_error("Plane with <Vertices> requires at least 3 <Vertex> entries at line " +
-                               std::to_string(verts->GetLineNum()));
+    {
+      throw_xml_error(verts, ctx,
+                      "Plane with <Vertices> requires "
+                      "at least 3 <Vertex> entries");
+    }
+
     s.dimensions.clear();
   }
   // else: infinite plane
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
 // ============================== 3D SHAPES ==============================
 
-geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -409,23 +460,25 @@ geometry::Shape parseBoxShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X, Y, Z
   const AxesTagNames tags{ "AxisX", "AxisY", "AxisZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X, Y, Z]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X, Y, Z]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   if (const auto* verts = elem->FirstChildElement("Vertices"))
-    throw std::runtime_error("Box must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+  {
+    throw_xml_error(verts, ctx, "Box must not define <Vertices>");
+  }
 
-  const auto* dims = reqChild(elem, "Dimensions", "Box");
-  const double x = evalNumberAttributeRequired(dims, "x");
-  const double y = evalNumberAttributeRequired(dims, "y");
-  const double z = evalNumberAttributeRequired(dims, "z");
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "Box");
+  const double x = evalNumberAttributeRequired(dims, "x", ctx);
+  const double y = evalNumberAttributeRequired(dims, "y", ctx);
+  const double z = evalNumberAttributeRequired(dims, "z", ctx);
   s.dimensions = { x, y, z };
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -433,31 +486,34 @@ geometry::Shape parseTriangularPrismShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = extrusion/length_x, Y = base, Z = altitude
   const AxesTagNames tags{ "AxisExtrusion", "AxisBase", "AxisAltitude" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=extrusion, Y=base, Z=altitude]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=extrusion, Y=base, Z=altitude]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   if (const auto* verts = elem->FirstChildElement("Vertices"))
     throw std::runtime_error("TriangularPrism must not define <Vertices> at line " +
                              std::to_string(verts->GetLineNum()));
 
-  const auto* dims = reqChild(elem, "Dimensions", "TriangularPrism");
-  const double length_x = evalNumberAttributeRequired(dims, "length_x");      // along X
-  const double base_y = evalNumberAttributeRequired(dims, "base_y");          // along Y
-  const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z");  // along Z
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "TriangularPrism");
+  const double length_x = evalNumberAttributeRequired(dims, "length_x", ctx);      // along X
+  const double base_y = evalNumberAttributeRequired(dims, "base_y", ctx);          // along Y
+  const double altitude_z = evalNumberAttributeRequired(dims, "altitude_z", ctx);  // along Z
   double apex_offset_y = 0.0;
-  (void)tryEvalNumberAttribute(dims, "apex_offset_y", &apex_offset_y);
+  (void)tryEvalNumberAttribute(dims, "apex_offset_y", &apex_offset_y, ctx);
 
   if (!(length_x > 0.0 && base_y > 0.0 && altitude_z > 0.0))
-    throw std::runtime_error("TriangularPrism requires positive length_x, base_y, altitude_z at line " +
-                             std::to_string(dims->GetLineNum()));
+  {
+    throw_xml_error(dims, ctx,
+                    "TriangularPrism requires positive "
+                    "length_x, base_y, and altitude_z");
+  }
 
   s.dimensions = { base_y, apex_offset_y, altitude_z, length_x };
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -465,26 +521,31 @@ geometry::Shape parseCylinderShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = symmetry/height axis, (Y,Z) = reference in-plane
   const AxesTagNames tags{ "AxisSymmetry", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=symmetry, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   if (const auto* verts = elem->FirstChildElement("Vertices"))
-    throw std::runtime_error("Cylinder must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+  {
+    throw_xml_error(verts, ctx, "Cylinder must not define <Vertices>");
+  }
 
-  const auto* dims = reqChild(elem, "Dimensions", "Cylinder");
-  const double radius = evalNumberAttributeRequired(dims, "radius");
-  const double height_x = evalNumberAttributeRequired(dims, "height_x");
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "Cylinder");
+  const double radius = evalNumberAttributeRequired(dims, "radius", ctx);
+  const double height_x = evalNumberAttributeRequired(dims, "height_x", ctx);
   if (!(radius > 0.0 && height_x > 0.0))
-    throw std::runtime_error("Cylinder requires positive radius and height_x at line " +
-                             std::to_string(dims->GetLineNum()));
+  {
+    throw_xml_error(dims, ctx,
+                    "Cylinder requires positive "
+                    "radius and height_x");
+  }
 
   s.dimensions = { radius, height_x };
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -493,8 +554,8 @@ geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem)
   if (const auto* verts = elem->FirstChildElement("Vertices"))
     throw std::runtime_error("Sphere must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
 
-  const auto* dims = reqChild(elem, "Dimensions", "Sphere");
-  const double radius = evalNumberAttributeRequired(dims, "radius");
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "Sphere");
+  const double radius = evalNumberAttributeRequired(dims, "radius", ctx);
   if (!(radius > 0.0))
     throw std::runtime_error("Sphere requires positive radius at line " + std::to_string(dims->GetLineNum()));
 
@@ -503,7 +564,7 @@ geometry::Shape parseSphereShape(const tinyxml2::XMLElement* elem)
   return s;
 }
 
-geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -511,31 +572,39 @@ geometry::Shape parseConeShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = symmetry/height, (Y,Z) = reference
   const AxesTagNames tags{ "AxisSymmetry", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=symmetry, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   if (const auto* verts = elem->FirstChildElement("Vertices"))
-    throw std::runtime_error("Cone must not define <Vertices> at line " + std::to_string(verts->GetLineNum()));
+  {
+    throw_xml_error(verts, ctx, "Cone must not define <Vertices>");
+  }
 
-  const auto* dims = reqChild(elem, "Dimensions", "Cone");
-  const double base_r = evalNumberAttributeRequired(dims, "base_radius");
-  const double top_r = evalNumberAttributeRequired(dims, "top_radius");
-  const double height_x = evalNumberAttributeRequired(dims, "height_x");
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "Cone");
+  const double base_r = evalNumberAttributeRequired(dims, "base_radius", ctx);
+  const double top_r = evalNumberAttributeRequired(dims, "top_radius", ctx);
+  const double height_x = evalNumberAttributeRequired(dims, "height_x", ctx);
 
   if (!(height_x > 0.0) || base_r < 0.0 || top_r < 0.0)
-    throw std::runtime_error("Cone requires base_radius ≥ 0, top_radius ≥ 0, height_x > 0 at line " +
-                             std::to_string(dims->GetLineNum()));
+  {
+    throw_xml_error(dims, ctx,
+                    "Cone requires base_radius ≥ 0, "
+                    "top_radius ≥ 0, and height_x > 0");
+  }
   if (base_r == 0.0 && top_r == 0.0)
-    throw std::runtime_error("Cone invalid: base_radius and top_radius cannot both be zero at line " +
-                             std::to_string(dims->GetLineNum()));
+  {
+    throw_xml_error(dims, ctx,
+                    "Cone invalid: base_radius and "
+                    "top_radius cannot both be zero");
+  }
 
   s.dimensions = { base_r, top_r, height_x };
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
   geometry::Shape s;
@@ -543,14 +612,15 @@ geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
 
   // Axes (canonical): X = symmetry/height, (Y,Z) = reference
   const AxesTagNames tags{ "AxisSymmetry", "AxisRefY", "AxisRefZ" };
-  auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X=symmetry, Y=refY, Z=refZ]
+  auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X=symmetry, Y=refY, Z=refZ]
   s.axes.assign(axesXYZ.begin(), axesXYZ.end());
 
   if (const auto* verts = elem->FirstChildElement("Vertices"))
-    throw std::runtime_error("SphericalSegment must not define <Vertices> at line " +
-                             std::to_string(verts->GetLineNum()));
+  {
+    throw_xml_error(verts, ctx, "SphericalSegment must not define <Vertices>");
+  }
 
-  const auto* dims = reqChild(elem, "Dimensions", "SphericalSegment");
+  const auto* dims = reqChild(elem, ctx, "Dimensions", "SphericalSegment");
 
   const bool has_r1 = dims->Attribute("base_radius");
   const bool has_r2 = dims->Attribute("top_radius");
@@ -558,13 +628,15 @@ geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
 
   int have = (has_r1 ? 1 : 0) + (has_r2 ? 1 : 0) + (has_hx ? 1 : 0);
   if (have < 2)
-    throw std::runtime_error(
-        "SphericalSegment must provide at least two of base_radius, top_radius, height_x at line " +
-        std::to_string(dims->GetLineNum()));
+  {
+    throw_xml_error(dims, ctx,
+                    "SphericalSegment must provide at least two of "
+                    "base_radius, top_radius, height_x");
+  }
 
-  double r1 = has_r1 ? evalNumberAttributeRequired(dims, "base_radius") : 0.0;
-  double r2 = has_r2 ? evalNumberAttributeRequired(dims, "top_radius") : 0.0;
-  double hx = has_hx ? evalNumberAttributeRequired(dims, "height_x") : 0.0;
+  double r1 = has_r1 ? evalNumberAttributeRequired(dims, "base_radius", ctx) : 0.0;
+  double r2 = has_r2 ? evalNumberAttributeRequired(dims, "top_radius", ctx) : 0.0;
+  double hx = has_hx ? evalNumberAttributeRequired(dims, "height_x", ctx) : 0.0;
 
   // If you have inference helpers, call them here (renamed for *_height_x if needed).
   if (have == 2)
@@ -579,17 +651,20 @@ geometry::Shape parseSphericalSegmentShape(const tinyxml2::XMLElement* elem)
   else
   {
     if (!geometry::isValidSegment(r1, r2, hx))
-      throw std::runtime_error("SphericalSegment <Dimensions> are incompatible: no valid sphere exists at line " +
-                               std::to_string(dims->GetLineNum()));
+    {
+      throw_xml_error(dims, ctx,
+                      "SphericalSegment <Dimensions> are incompatible: "
+                      "no valid sphere exists");
+    }
   }
 
   s.dimensions = { r1, r2, hx };
 
-  validateAxesRightHandOrthonormal(s, elem);
+  validateAxesRightHandOrthonormal(s, elem, ctx);
   return s;
 }
 
-geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
+geometry::Shape parseMeshShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::geometry;
 
@@ -613,25 +688,25 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
   }
   else if (nAxesProvided == 1)
   {
-    const int ln = elem ? elem->GetLineNum() : -1;
-    throw std::runtime_error("Mesh must provide either 0 axes (defaults to identity) or at least 2 axes at line " +
-                             std::to_string(ln));
+    throw_xml_error(elem, ctx,
+                    "Mesh must provide either 0 axes "
+                    "(defaults to identity) or at least 2 axes");
   }
   else
   {
     // 2 or 3 provided → parse/complete/validate
     const AxesTagNames tags{ "AxisX", "AxisY", "AxisZ" };
-    auto axesXYZ = parseAxesCanonicalXYZ(elem, tags);  // [X, Y, Z], right-handed ONB
+    auto axesXYZ = parseAxesCanonicalXYZ(elem, ctx, tags);  // [X, Y, Z], right-handed ONB
     s.axes.assign(axesXYZ.begin(), axesXYZ.end());
-    validateAxesRightHandOrthonormal(s, elem);
+    validateAxesRightHandOrthonormal(s, elem, ctx);
   }
 
   // --- Scale (optional, defaults to 1,1,1) ---
   if (const auto* scale = elem->FirstChildElement("Scale"))
   {
-    s.scale.x() = evalNumberAttribute(scale, "x", 1.0);
-    s.scale.y() = evalNumberAttribute(scale, "y", 1.0);
-    s.scale.z() = evalNumberAttribute(scale, "z", 1.0);
+    s.scale.x() = evalNumberAttribute(scale, "x", 1.0, ctx);
+    s.scale.y() = evalNumberAttribute(scale, "y", 1.0, ctx);
+    s.scale.z() = evalNumberAttribute(scale, "z", 1.0, ctx);
   }
 
   // --- Exactly one of <External> or <Inline> ---
@@ -641,16 +716,16 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
   const bool hasInline = (internal != nullptr);
   if (hasExternal == hasInline)
   {
-    throw std::runtime_error(
-        std::string("<Shape type='Mesh'> must contain exactly one of <External> or <Inline> at line ") +
-        std::to_string(elem->GetLineNum()));
+    throw_xml_error(elem, ctx,
+                    "<Mesh> must contain exactly one of "
+                    "<External> or <Inline>");
   }
 
   if (hasExternal)
   {
     // External URI form
-    std::string uri = evalTextAttributeRequired(external, "uri");
-    uri = resolve_realtive_uri(external, doc, uri);  // (uses your resolver; keep spelling as in your codebase)
+    std::string uri = evalTextAttributeRequired(external, "uri", ctx);
+    uri = resolve_realtive_uri(external, ctx.doc, uri);  // (uses your resolver; keep spelling as in your codebase)
     s.mesh = MeshRef{ std::move(uri) };
   }
   else
@@ -660,8 +735,9 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
     const auto* fs = internal->FirstChildElement("Faces");
     if (!vs || !fs)
     {
-      throw std::runtime_error(std::string("<Inline> must contain <Vertices> and <Faces> at line ") +
-                               std::to_string(internal->GetLineNum()));
+      throw_xml_error(internal, ctx,
+                      "<Inline> must contain <Vertices> "
+                      "and <Faces>");
     }
 
     auto M = std::make_shared<TriangleMesh>();
@@ -671,27 +747,27 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
     // <Vertices>
     for (const tinyxml2::XMLElement* v = vs->FirstChildElement("Vertex"); v; v = v->NextSiblingElement("Vertex"))
     {
-      const double x = evalNumberAttributeRequired(v, "x");
-      const double y = evalNumberAttributeRequired(v, "y");
-      const double z = evalNumberAttributeRequired(v, "z");
+      const double x = evalNumberAttributeRequired(v, "x", ctx);
+      const double y = evalNumberAttributeRequired(v, "y", ctx);
+      const double z = evalNumberAttributeRequired(v, "z", ctx);
       M->V.emplace_back(x, y, z);
     }
     if (M->V.empty())
     {
-      throw std::runtime_error(std::string("<Vertices> is empty at line ") + std::to_string(vs->GetLineNum()));
+      throw_xml_error(vs, ctx, "<Vertices> is empty");
     }
 
     // <Faces> (0-based indices)
     for (const tinyxml2::XMLElement* f = fs->FirstChildElement("Face"); f; f = f->NextSiblingElement("Face"))
     {
-      const uint32_t a = evalUIntAttributeRequired(f, "a");
-      const uint32_t b = evalUIntAttributeRequired(f, "b");
-      const uint32_t c = evalUIntAttributeRequired(f, "c");
+      const uint32_t a = evalUIntAttributeRequired(f, "a", ctx);
+      const uint32_t b = evalUIntAttributeRequired(f, "b", ctx);
+      const uint32_t c = evalUIntAttributeRequired(f, "c", ctx);
       M->F.push_back({ a, b, c });
     }
     if (M->F.empty())
     {
-      throw std::runtime_error(std::string("<Faces> is empty at line ") + std::to_string(fs->GetLineNum()));
+      throw_xml_error(fs, ctx, "<Faces> is empty");
     }
 
     // Validate indices
@@ -700,8 +776,9 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
     {
       if (tri[0] >= nV || tri[1] >= nV || tri[2] >= nV)
       {
-        throw std::runtime_error(std::string("Face index out of range in <Inline> mesh at line ") +
-                                 std::to_string(fs->GetLineNum()));
+        throw_xml_error(fs, ctx,
+                        "Face index out of range "
+                        "in <Inline> mesh");
       }
     }
 
@@ -711,7 +788,7 @@ geometry::Shape parseMeshShape(const tinyxml2::XMLDocument* doc, const tinyxml2:
   return s;
 }
 
-geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
+geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace tinyxml2;
   using Eigen::Vector3d;
@@ -727,8 +804,6 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   const bool has_dims = (dims_elem != nullptr);
   const bool has_verts = (vtx_elem != nullptr);
 
-  const int ln = elem ? elem->GetLineNum() : -1;
-
   // --- Mode selection & exclusivity rules -----------------------------------
   // Valid options:
   //  A) AxisDirection + Dimensions(length)     (bounded segment)
@@ -741,8 +816,9 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   {
     if (has_axis || has_dims)
     {
-      throw std::runtime_error("Line: Vertices mode forbids <AxisDirection> and <Dimensions> at line " +
-                               std::to_string(ln));
+      throw_xml_error(elem, ctx,
+                      "Line: Vertices mode forbids "
+                      "<AxisDirection> and <Dimensions>");
     }
   }
   else
@@ -750,13 +826,17 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
     // no vertices → must have BOTH axis and dims
     if (has_axis != has_dims)
     {
-      throw std::runtime_error(
-          "Line: Provide EITHER two <Vertex> tags OR BOTH <AxisDirection> and <Dimensions length=\"...\"> at line " +
-          std::to_string(ln));
+      throw_xml_error(elem, ctx,
+                      "Line: Provide EITHER two <Vertex> tags "
+                      "OR BOTH <AxisDirection> and "
+                      "<Dimensions length=\"...\">");
     }
     if (!has_axis && !has_dims)
     {
-      throw std::runtime_error("Line: Missing specification. Provide either vertices or (AxisDirection + Dimensions).");
+      throw_xml_error(elem, ctx,
+                      "Line: Missing specification. "
+                      "Provide either vertices or "
+                      "(AxisDirection + Dimensions)");
     }
   }
 
@@ -764,20 +844,21 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   if (!has_verts)
   {
     // Parse axis (single unit vector only; no 3-axis frame)
-    const Vector3d axis = parseUnitVector(axis_elem);
+    const Vector3d axis = parseUnitVector(axis_elem, ctx);
     s.axes.clear();
     s.axes.push_back(axis);
 
     // Require <Dimensions length="..."> and length > 0
     if (!dims_elem->FindAttribute("length"))
     {
-      throw std::runtime_error("Line: <Dimensions> must include a 'length' attribute at line " +
-                               std::to_string(dims_elem->GetLineNum()));
+      throw_xml_error(dims_elem, ctx,
+                      "Line: <Dimensions> must include "
+                      "a 'length' attribute");
     }
-    const double length = evalNumberAttributeRequired(dims_elem, "length");
+    const double length = evalNumberAttributeRequired(dims_elem, "length", ctx);
     if (!(length > 0.0))
     {
-      throw std::runtime_error("Line: length must be positive at line " + std::to_string(dims_elem->GetLineNum()));
+      throw_xml_error(dims_elem, ctx, "Line: length must be positive");
     }
 
     // Store length. Do NOT synthesize vertices.
@@ -798,18 +879,18 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   }
   if (count != 2 || Vxml[1] == nullptr)
   {
-    throw std::runtime_error("Line: Must have exactly two <Vertex> tags at line " + std::to_string(ln));
+    throw_xml_error(elem, ctx, "Line: Must have exactly two <Vertex> tags");
   }
 
   s.vertices.reserve(2);
   for (int i = 0; i < 2; ++i)
   {
     const XMLElement* v = Vxml[i];
-    const double x = evalNumberAttributeRequired(v, "x");
-    const double y = evalNumberAttributeRequired(v, "y");
+    const double x = evalNumberAttributeRequired(v, "x", ctx);
+    const double y = evalNumberAttributeRequired(v, "y", ctx);
     double z = 0.0;
     if (v->FindAttribute("z"))
-      tryEvalNumberAttribute(v, "z", &z);
+      tryEvalNumberAttribute(v, "z", &z, ctx);
     s.vertices.emplace_back(x, y, z);
   }
 
@@ -818,8 +899,9 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   const bool z1 = (Vxml[1]->FindAttribute("z") != nullptr);
   if (z0 != z1)
   {
-    throw std::runtime_error("Line: Either both vertices specify 'z' or neither does (line " + std::to_string(ln) +
-                             ").");
+    throw_xml_error(elem, ctx,
+                    "Line: Either both vertices must "
+                    "specify 'z' or neither does");
   }
 
   // In vertices mode, axes and dimensions are irrelevant.
@@ -829,7 +911,8 @@ geometry::Shape parseLineShape(const tinyxml2::XMLElement* elem)
   return s;
 }
 
-void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, const tinyxml2::XMLElement* elem)
+void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, const tinyxml2::XMLElement* elem,
+                             const XMLParseContext& ctx)
 {
   using geometry::OriginPolicy;
   using geometry::ShapeType;
@@ -843,7 +926,8 @@ void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, cons
       return;  // OK
     if (s.origin == OriginPolicy::Native)
       return;  // OK
-    throw std::runtime_error("Mesh 'origin' must be 'Native' or omitted (line " + line + ")");
+
+    throw_xml_error(elem, ctx, "Mesh 'origin' must be 'Native' or omitted");
   }
 
   // Non-mesh primitives only below
@@ -856,8 +940,9 @@ void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, cons
   // (3) 3D primitives cannot have vertices -> must use Mesh
   if (s.type != ShapeType::Line && isPrimitive3D(s.type) && has_verts)
   {
-    throw std::runtime_error("3D primitives cannot use <Vertices> (except Line). Use type='Mesh' instead (line " +
-                             line + ")");
+    throw_xml_error(elem, ctx,
+                    "3D primitives cannot use <Vertices>. "
+                    "Use type='Mesh' instead");
   }
 
   // (2) Primitives with dimensions: origin required and must be != Native
@@ -865,11 +950,15 @@ void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, cons
   {
     if (!origin_present)
     {
-      throw std::runtime_error("Primitive with <Dimensions> requires explicit 'origin' attribute (line " + line + ")");
+      throw_xml_error(elem, ctx,
+                      "Primitive with <Dimensions> requires "
+                      "explicit 'origin' attribute");
     }
     if (s.origin == OriginPolicy::Native)
     {
-      throw std::runtime_error("Primitive with <Dimensions> must have origin != 'Native' (line " + line + ")");
+      throw_xml_error(elem, ctx,
+                      "Primitive with <Dimensions> must have "
+                      "origin != 'Native'");
     }
     return;  // OK
   }
@@ -881,15 +970,18 @@ void validateOriginAuthoring(const geometry::Shape& s, bool origin_present, cons
       return;  // OK
     if (s.origin == OriginPolicy::Native)
       return;  // OK
-    throw std::runtime_error("Vertex-authored primitive allows only origin='Native' or no attribute (line " + line +
-                             ")");
+    throw_xml_error(elem, ctx,
+                    "Vertex-authored primitive allows only "
+                    "origin='Native' or no attribute");
   }
 
   // If neither dims nor vertices are provided for a primitive, it's ill-formed
-  throw std::runtime_error("Primitive is missing authoring data (<Dimensions> or <Vertices>) (line " + line + ")");
+  throw_xml_error(elem, ctx,
+                  "Primitive is missing authoring data "
+                  "(<Dimensions> or <Vertices>)");
 }
 
-std::optional<geometry::OriginPolicy> parseOriginPolicyAttr(const tinyxml2::XMLElement* elem)
+std::optional<geometry::OriginPolicy> parseOriginPolicyAttr(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   const char* raw = elem->Attribute("origin");
   if (!raw)
@@ -907,63 +999,65 @@ std::optional<geometry::OriginPolicy> parseOriginPolicyAttr(const tinyxml2::XMLE
   if (v == "VolumeCentroid")
     return OriginPolicy::VolumeCentroid;
 
-  throw std::runtime_error(std::string("Unknown origin policy '") + std::string(v) + "' at line " +
-                           std::to_string(elem->GetLineNum()));
+  throw_xml_error(elem, ctx,
+                  std::string("Unknown origin policy '") + std::string(v) +
+                      "' (allowed: Native, BaseCenter, "
+                      "AABBCenter, VolumeCentroid)");
 }
 
-geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
+geometry::Shape parseShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
-  const std::string type_str = evalTextAttributeRequired(elem, "type");
+  const std::string type_str = evalTextAttributeRequired(elem, "type", ctx);
   geometry::ShapeType type = geometry::shapeTypeFromString(type_str.c_str());
 
   geometry::Shape s;
   switch (type)
   {
     case geometry::ShapeType::Rectangle:
-      s = parseRectangleShape(elem);
+      s = parseRectangleShape(elem, ctx);
       break;
     case geometry::ShapeType::Circle:
-      s = parseCircleShape(elem);
+      s = parseCircleShape(elem, ctx);
       break;
     case geometry::ShapeType::Triangle:
-      s = parseTriangleShape(elem);
+      s = parseTriangleShape(elem, ctx);
       break;
     case geometry::ShapeType::Polygon:
-      s = parsePolygonShape(elem);
+      s = parsePolygonShape(elem, ctx);
       break;
     case geometry::ShapeType::Box:
-      s = parseBoxShape(elem);
+      s = parseBoxShape(elem, ctx);
       break;
     case geometry::ShapeType::TriangularPrism:
-      s = parseTriangularPrismShape(elem);
+      s = parseTriangularPrismShape(elem, ctx);
       break;
     case geometry::ShapeType::Cylinder:
-      s = parseCylinderShape(elem);
+      s = parseCylinderShape(elem, ctx);
       break;
     case geometry::ShapeType::Sphere:
-      s = parseSphereShape(elem);
+      s = parseSphereShape(elem, ctx);
       break;
     case geometry::ShapeType::Cone:
-      s = parseConeShape(elem);
+      s = parseConeShape(elem, ctx);
       break;
     case geometry::ShapeType::SphericalSegment:
-      s = parseSphericalSegmentShape(elem);
+      s = parseSphericalSegmentShape(elem, ctx);
       break;
     case geometry::ShapeType::Plane:
-      s = parsePlaneShape(elem);
+      s = parsePlaneShape(elem, ctx);
       break;
     case geometry::ShapeType::Mesh:
-      s = parseMeshShape(doc, elem);
+      s = parseMeshShape(elem, ctx);
       break;
     case geometry::ShapeType::Line:
-      s = parseLineShape(elem);
+      s = parseLineShape(elem, ctx);
       break;
     default:
-      throw std::runtime_error("Unknown shape type in parseShapeElement at line " + std::to_string(elem->GetLineNum()));
+      throw_xml_error(elem, ctx, std::string("Unknown shape type '") + type_str + "'");
   }
 
   // Parse optional origin attribute
-  const auto origin_attr = parseOriginPolicyAttr(elem);
+  const auto origin_attr = parseOriginPolicyAttr(elem, ctx);
   const bool origin_present = origin_attr.has_value();
   if (origin_present)
   {
@@ -971,12 +1065,12 @@ geometry::Shape parseShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XML
   }
 
   // Enforce your rules
-  validateOriginAuthoring(s, origin_present, elem);
+  validateOriginAuthoring(s, origin_present, elem, ctx);
 
   return s;
 }
 
-geometry::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* stacked_elem)
+geometry::StackedShape parseStackedShape(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   geometry::StackedShape stack;
 
@@ -997,15 +1091,15 @@ geometry::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const
   //                            std::to_string(stacked_elem->GetLineNum()));
 
   // --- shapes: optional <Transform>; defaults to Identity (absolute in stack frame) ---
-  for (const tinyxml2::XMLElement* shape_elem = stacked_elem->FirstChildElement("Shape"); shape_elem;
+  for (const tinyxml2::XMLElement* shape_elem = elem->FirstChildElement("Shape"); shape_elem;
        shape_elem = shape_elem->NextSiblingElement("Shape"))
   {
-    geometry::Shape shape = parseShape(doc, shape_elem);
+    geometry::Shape shape = parseShape(shape_elem, ctx);
 
     const tinyxml2::XMLElement* trans_elem = shape_elem->FirstChildElement("Transform");
     Eigen::Isometry3d T_abs = Eigen::Isometry3d::Identity();
     if (trans_elem)
-      T_abs = parseIsometry3D(trans_elem);  // absolute w.r.t. stack/base frame
+      T_abs = parseIsometry3D(trans_elem, ctx);  // absolute w.r.t. stack/base frame
 
     // Store absolute transform as-is (field name may still be 'relative_transform')
     stack.shapes.push_back({ shape, T_abs });
@@ -1014,114 +1108,139 @@ geometry::StackedShape parseStackedShape(const tinyxml2::XMLDocument* doc, const
   return stack;
 }
 
-components::Button parseButton(const tinyxml2::XMLElement* btn_elem)
+components::Button parseButton(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
+
 {
   using namespace sodf::components;
 
   Button btn;
-  btn.type = buttonTypeFromString(evalTextAttributeRequired(btn_elem, "type").c_str());
+  btn.type = buttonTypeFromString(evalTextAttributeRequired(elem, "type", ctx).c_str());
 
-  const tinyxml2::XMLElement* link_elem = btn_elem->FirstChildElement("Link");
+  const tinyxml2::XMLElement* link_elem = elem->FirstChildElement("Link");
   if (!link_elem)
-    throw std::runtime_error("Button missing <Link> at line " + std::to_string(btn_elem->GetLineNum()));
-  btn.link_id = evalTextAttributeRequired(link_elem, "ref");
+  {
+    throw_xml_error(elem, ctx, "Button missing <Link>");
+  }
 
-  const tinyxml2::XMLElement* joint_elem = btn_elem->FirstChildElement("Joint");
+  btn.link_id = evalTextAttributeRequired(link_elem, "ref", ctx);
+
+  const tinyxml2::XMLElement* joint_elem = elem->FirstChildElement("Joint");
   if (!joint_elem)
-    throw std::runtime_error("Button missing <Joint> at line " + std::to_string(btn_elem->GetLineNum()));
-  btn.joint_id = evalTextAttributeRequired(joint_elem, "ref");
+  {
+    throw_xml_error(elem, ctx, "Button missing <Joint>");
+  }
 
-  if (const auto* detent_elem = btn_elem->FirstChildElement("DetentSpacing"))
-    tryEvalNumberAttribute(detent_elem, "value", &btn.detent_spacing);
+  btn.joint_id = evalTextAttributeRequired(joint_elem, "ref", ctx);
 
-  if (const auto* rest_elem = btn_elem->FirstChildElement("RestPositions"))
+  if (const auto* detent_elem = elem->FirstChildElement("DetentSpacing"))
+    tryEvalNumberAttribute(detent_elem, "value", &btn.detent_spacing, ctx);
+
+  if (const auto* rest_elem = elem->FirstChildElement("RestPositions"))
     for (const auto* pos_elem = rest_elem->FirstChildElement("Position"); pos_elem;
          pos_elem = pos_elem->NextSiblingElement("Position"))
     {
       double v = 0.0;
-      if (tryEvalNumberAttribute(pos_elem, "value", &v))
+      if (tryEvalNumberAttribute(pos_elem, "value", &v, ctx))
         btn.rest_positions.push_back(v);
     }
 
-  if (const auto* stiff_elem = btn_elem->FirstChildElement("StiffnessProfile"))
+  if (const auto* stiff_elem = elem->FirstChildElement("StiffnessProfile"))
     for (const auto* s_elem = stiff_elem->FirstChildElement("Stiffness"); s_elem;
          s_elem = s_elem->NextSiblingElement("Stiffness"))
     {
       double v = 0.0;
-      if (tryEvalNumberAttribute(s_elem, "value", &v))
+      if (tryEvalNumberAttribute(s_elem, "value", &v, ctx))
         btn.stiffness_profile.push_back(v);
     }
 
   return btn;
 }
 
-components::VirtualButton parseVirtualButton(const tinyxml2::XMLElement* vb_elem)
+components::VirtualButton parseVirtualButton(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::components;
   VirtualButton vbtn;
 
-  const auto* shape_elem = vb_elem->FirstChildElement("Shape");
+  const auto* shape_elem = elem->FirstChildElement("Shape");
   if (!shape_elem)
-    throw std::runtime_error("VirtualButton missing <Shape> at line " + std::to_string(vb_elem->GetLineNum()));
-  vbtn.shape_id = evalTextAttributeRequired(shape_elem, "id");
+  {
+    throw_xml_error(elem, ctx, "VirtualButton missing <Shape>");
+  }
 
-  const auto* axis_elem = vb_elem->FirstChildElement("AxisPress");
+  vbtn.shape_id = evalTextAttributeRequired(shape_elem, "id", ctx);
+
+  const auto* axis_elem = elem->FirstChildElement("AxisPress");
   if (!axis_elem)
-    throw std::runtime_error("VirtualButton missing <AxisPress> at line " + std::to_string(vb_elem->GetLineNum()));
-  const double x = evalNumberAttributeRequired(axis_elem, "x");
-  const double y = evalNumberAttributeRequired(axis_elem, "y");
-  const double z = evalNumberAttributeRequired(axis_elem, "z");
+  {
+    throw_xml_error(elem, ctx, "VirtualButton missing <AxisPress>");
+  }
+
+  const double x = evalNumberAttributeRequired(axis_elem, "x", ctx);
+  const double y = evalNumberAttributeRequired(axis_elem, "y", ctx);
+  const double z = evalNumberAttributeRequired(axis_elem, "z", ctx);
   vbtn.press_axis = Eigen::Vector3d(x, y, z);
   if (!geometry::isUnitVector(vbtn.press_axis))
-    throw std::runtime_error("Axis element must be a unit vector " + std::to_string(axis_elem->GetLineNum()));
+  {
+    throw_xml_error(axis_elem, ctx, "AxisPress must define a unit vector");
+  }
 
-  if (const auto* label_elem = vb_elem->FirstChildElement("Label"))
-    vbtn.label = evalTextAttribute(label_elem, "text", "");
+  if (const auto* label_elem = elem->FirstChildElement("Label"))
+    vbtn.label = evalTextAttribute(label_elem, "text", "", ctx);
 
-  if (const auto* img_elem = vb_elem->FirstChildElement("Image"))
-    vbtn.image_uri = evalTextAttribute(img_elem, "uri", "");
+  if (const auto* img_elem = elem->FirstChildElement("Image"))
+    vbtn.image_uri = evalTextAttribute(img_elem, "uri", "", ctx);
 
   return vbtn;
 }
 
-components::Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem)
+components::Joint parseSingleDofJoint(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::components;
 
   Joint joint;
 
-  const auto* type_e = joint_elem->FirstChildElement("Type");
-  const auto* act_e = joint_elem->FirstChildElement("Actuation");
+  const auto* type_e = elem->FirstChildElement("Type");
+  const auto* act_e = elem->FirstChildElement("Actuation");
   if (!type_e || !act_e)
-    throw std::runtime_error("Joint missing <Type> or <Actuation>");
+  {
+    throw_xml_error(elem, ctx, "Joint missing <Type> or <Actuation>");
+  }
 
-  joint.type = jointTypeFromString(evalTextAttributeRequired(type_e, "value").c_str());
-  joint.actuation = jointActuationFromString(evalTextAttributeRequired(act_e, "value").c_str());
+  joint.type = jointTypeFromString(evalTextAttributeRequired(type_e, "value", ctx).c_str());
+  joint.actuation = jointActuationFromString(evalTextAttributeRequired(act_e, "value", ctx).c_str());
   joint.initialize_for_type();
 
-  const auto* axis_elem = joint_elem->FirstChildElement("Axis");
+  const auto* axis_elem = elem->FirstChildElement("Axis");
   if (!axis_elem)
-    throw std::runtime_error("Missing <Axis>");
-  joint.axes.col(0) =
-      Eigen::Vector3d(evalNumberAttributeRequired(axis_elem, "x"), evalNumberAttributeRequired(axis_elem, "y"),
-                      evalNumberAttributeRequired(axis_elem, "z"));
+  {
+    throw_xml_error(elem, ctx, "Joint missing <Axis>");
+  }
+
+  joint.axes.col(0) = Eigen::Vector3d(evalNumberAttributeRequired(axis_elem, "x", ctx),
+                                      evalNumberAttributeRequired(axis_elem, "y", ctx),
+                                      evalNumberAttributeRequired(axis_elem, "z", ctx));
   if (!geometry::isUnitVector(joint.axes.col(0)))
-    throw std::runtime_error("Axis element must be a unit vector " + std::to_string(axis_elem->GetLineNum()));
+  {
+    throw_xml_error(axis_elem, ctx, "<Axis> must define a unit vector");
+  }
 
-  const auto* pos_e = joint_elem->FirstChildElement("Position");
+  const auto* pos_e = elem->FirstChildElement("Position");
   if (!pos_e)
-    throw std::runtime_error("Single-DOF joint missing <Position>");
-  joint.position(0) = evalNumberAttributeRequired(pos_e, "value");
+  {
+    throw_xml_error(elem, ctx, "Single-DOF joint missing <Position>");
+  }
 
-  if (const auto* vel_e = joint_elem->FirstChildElement("Velocity"))
-    joint.velocity(0) = evalNumberAttributeRequired(vel_e, "value");
-  if (const auto* eff_e = joint_elem->FirstChildElement("Effort"))
-    joint.effort(0) = evalNumberAttributeRequired(eff_e, "value");
+  joint.position(0) = evalNumberAttributeRequired(pos_e, "value", ctx);
 
-  if (const auto* limit_e = joint_elem->FirstChildElement("Limit"))
+  if (const auto* vel_e = elem->FirstChildElement("Velocity"))
+    joint.velocity(0) = evalNumberAttributeRequired(vel_e, "value", ctx);
+  if (const auto* eff_e = elem->FirstChildElement("Effort"))
+    joint.effort(0) = evalNumberAttributeRequired(eff_e, "value", ctx);
+
+  if (const auto* limit_e = elem->FirstChildElement("Limit"))
   {
     auto opt = [&](const tinyxml2::XMLElement* e, const char* attr, double& out) {
-      return e && tryEvalNumberAttribute(e, attr, &out);
+      return e && tryEvalNumberAttribute(e, attr, &out, ctx);
     };
 
     if (const auto* pos = limit_e->FirstChildElement("Position"))
@@ -1151,53 +1270,60 @@ components::Joint parseSingleDofJoint(const tinyxml2::XMLElement* joint_elem)
     }
   }
 
-  if (const auto* dyn_e = joint_elem->FirstChildElement("Dynamics"))
+  if (const auto* dyn_e = elem->FirstChildElement("Dynamics"))
   {
     if (const auto* s = dyn_e->FirstChildElement("Stiffness"))
-      joint.dynamics.stiffness(0) = evalNumberAttributeRequired(s, "value");
+      joint.dynamics.stiffness(0) = evalNumberAttributeRequired(s, "value", ctx);
     if (const auto* d = dyn_e->FirstChildElement("Damping"))
-      joint.dynamics.damping(0) = evalNumberAttributeRequired(d, "value");
+      joint.dynamics.damping(0) = evalNumberAttributeRequired(d, "value", ctx);
     if (const auto* r = dyn_e->FirstChildElement("RestPosition"))
       joint.dynamics.rest_position[0] =
-          r->Attribute("value") ? std::optional<double>{ evalNumberAttributeRequired(r, "value") } : std::nullopt;
+          r->Attribute("value") ? std::optional<double>{ evalNumberAttributeRequired(r, "value", ctx) } : std::nullopt;
     if (const auto* i = dyn_e->FirstChildElement("Inertia"))
-      joint.dynamics.inertia(0) = evalNumberAttributeRequired(i, "value");
+      joint.dynamics.inertia(0) = evalNumberAttributeRequired(i, "value", ctx);
   }
   return joint;
 }
 
-components::Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
+components::Joint parseMultiDofJoint(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace sodf::components;
 
   Joint joint;
 
-  const auto* type_e = joint_elem->FirstChildElement("Type");
-  const auto* act_e = joint_elem->FirstChildElement("Actuation");
+  const auto* type_e = elem->FirstChildElement("Type");
+  const auto* act_e = elem->FirstChildElement("Actuation");
   if (!type_e || !act_e)
-    throw std::runtime_error("Joint missing <Type> or <Actuation>");
+  {
+    throw_xml_error(elem, ctx, "Joint missing <Type> or <Actuation>");
+  }
 
-  joint.type = jointTypeFromString(evalTextAttributeRequired(type_e, "value").c_str());
-  joint.actuation = jointActuationFromString(evalTextAttributeRequired(act_e, "value").c_str());
+  const std::string type_str = evalTextAttributeRequired(type_e, "value", ctx);
+
+  joint.type = jointTypeFromString(type_str.c_str());
+  joint.actuation = jointActuationFromString(evalTextAttributeRequired(act_e, "value", ctx).c_str());
   joint.initialize_for_type();  // <-- initialize first
   const int dof = joint.dof();  //     then query DOF
 
-  const auto* axes_elem = joint_elem->FirstChildElement("Axes");
+  const auto* axes_elem = elem->FirstChildElement("Axes");
   if (!axes_elem)
-    throw std::runtime_error("Multi-DOF joint missing <Axes> at line " + std::to_string(joint_elem->GetLineNum()));
+  {
+    throw_xml_error(elem, ctx, "Multi-DOF joint missing <Axes>");
+  }
 
   int axis_i = 0;
   for (const auto* axis_elem = axes_elem->FirstChildElement("Axis"); axis_elem && axis_i < dof;
        axis_elem = axis_elem->NextSiblingElement("Axis"), ++axis_i)
   {
-    joint.axes.col(axis_i) =
-        Eigen::Vector3d(evalNumberAttributeRequired(axis_elem, "x"), evalNumberAttributeRequired(axis_elem, "y"),
-                        evalNumberAttributeRequired(axis_elem, "z"));
+    joint.axes.col(axis_i) = Eigen::Vector3d(evalNumberAttributeRequired(axis_elem, "x", ctx),
+                                             evalNumberAttributeRequired(axis_elem, "y", ctx),
+                                             evalNumberAttributeRequired(axis_elem, "z", ctx));
   }
   if (axis_i != dof)
-    throw std::runtime_error("There must be " + std::to_string(dof) + " <Axis> tags for a " +
-                             evalTextAttributeRequired(type_e, "value") + " joint at line " +
-                             std::to_string(axes_elem->GetLineNum()));
+  {
+    throw_xml_error(axes_elem, ctx,
+                    "Expected " + std::to_string(dof) + " <Axis> elements for joint type '" + type_str + "'");
+  }
 
   // Validate axes
   switch (joint.type)
@@ -1209,142 +1335,243 @@ components::Joint parseMultiDofJoint(const tinyxml2::XMLElement* joint_elem)
     case JointType::REVOLUTE:
     case JointType::PRISMATIC:
       if (!geometry::isUnitVector(joint.axes.col(0)))
-        throw std::runtime_error(std::string("Axis for ") + evalTextAttributeRequired(type_e, "value") +
-                                 " joint must be a unit vector at line " + std::to_string(axes_elem->GetLineNum()));
+      {
+        throw_xml_error(axes_elem, ctx, "Axis for '" + type_str + "' joint must be a unit vector");
+      }
       break;
 
     case JointType::SPHERICAL:
     case JointType::PLANAR:
       if (!geometry::areVectorsOrthonormal(joint.axes.col(0), joint.axes.col(1), joint.axes.col(2)))
-        throw std::runtime_error(std::string("Axes for ") + evalTextAttributeRequired(type_e, "value") +
-                                 " joint must be mutually orthonormal at line " +
-                                 std::to_string(axes_elem->GetLineNum()));
+      {
+        throw_xml_error(axes_elem, ctx, "Axes for '" + type_str + "' joint must be mutually orthonormal");
+      }
       if (!geometry::isRightHanded(joint.axes.col(0), joint.axes.col(1), joint.axes.col(2)))
-        throw std::runtime_error(std::string("Axes for ") + evalTextAttributeRequired(type_e, "value") +
-                                 " joint must be mutually right handed at line " +
-                                 std::to_string(axes_elem->GetLineNum()));
+      {
+        throw_xml_error(axes_elem, ctx, "Axes for '" + type_str + "' joint must be right-handed");
+      }
       break;
 
     case JointType::FLOATING:
       if (!geometry::areVectorsOrthonormal(joint.axes.col(0), joint.axes.col(1), joint.axes.col(2)) ||
           !geometry::areVectorsOrthonormal(joint.axes.col(3), joint.axes.col(4), joint.axes.col(5)))
-        throw std::runtime_error("Axes for FLOATING joint must be two mutually orthonormal triplets at line " +
-                                 std::to_string(axes_elem->GetLineNum()));
+      {
+        throw_xml_error(axes_elem, ctx, "FLOATING joint requires two orthonormal triplets");
+      }
+
       if (!geometry::isRightHanded(joint.axes.col(0), joint.axes.col(1), joint.axes.col(2)) ||
           !geometry::isRightHanded(joint.axes.col(3), joint.axes.col(4), joint.axes.col(5)))
-        throw std::runtime_error("Axes for FLOATING joint must be two mutually right handed triplets at line " +
-                                 std::to_string(axes_elem->GetLineNum()));
+      {
+        throw_xml_error(axes_elem, ctx, "FLOATING joint axes must form right-handed triplets");
+      }
 
       break;
 
     default:
-      throw std::runtime_error("Unknown JointType for axes validation at line " +
-                               std::to_string(axes_elem->GetLineNum()));
+      throw_xml_error(axes_elem, ctx, "Unknown JointType during axes validation");
   }
 
   // Fill state vectors
-  auto fill_vector = [](Eigen::VectorXd& v, const tinyxml2::XMLElement* parent, const char* tag) {
+  auto fill_vector = [](Eigen::VectorXd& v, const tinyxml2::XMLElement* parent, const char* tag,
+                        const XMLParseContext& ctx) {
     int i = 0;
     for (const auto* e = parent ? parent->FirstChildElement(tag) : nullptr; e && i < v.size();
          e = e->NextSiblingElement(tag), ++i)
-      v(i) = evalNumberAttributeRequired(e, "value");
+      v(i) = evalNumberAttributeRequired(e, "value", ctx);
   };
-  fill_vector(joint.position, joint_elem->FirstChildElement("Positions"), "Position");
-  fill_vector(joint.velocity, joint_elem->FirstChildElement("Velocities"), "Velocity");
-  fill_vector(joint.effort, joint_elem->FirstChildElement("Efforts"), "Effort");
+  fill_vector(joint.position, elem->FirstChildElement("Positions"), "Position", ctx);
+  fill_vector(joint.velocity, elem->FirstChildElement("Velocities"), "Velocity", ctx);
+  fill_vector(joint.effort, elem->FirstChildElement("Efforts"), "Effort", ctx);
 
   // Limits
   auto fill_limits = [](Eigen::VectorXd& min_v, Eigen::VectorXd& max_v, const tinyxml2::XMLElement* limits_elem,
-                        const char* tag) {
+                        const char* tag, const XMLParseContext& ctx) {
     int i = 0;
     for (const auto* e = limits_elem ? limits_elem->FirstChildElement(tag) : nullptr; e && i < min_v.size();
          e = e->NextSiblingElement(tag), ++i)
     {
-      min_v(i) = evalNumberAttributeRequired(e, "min");
-      max_v(i) = evalNumberAttributeRequired(e, "max");
+      min_v(i) = evalNumberAttributeRequired(e, "min", ctx);
+      max_v(i) = evalNumberAttributeRequired(e, "max", ctx);
     }
   };
-  const auto* limits_elem = joint_elem->FirstChildElement("Limits");
+  const auto* limits_elem = elem->FirstChildElement("Limits");
   if (limits_elem)
   {
-    fill_limits(joint.limit.min_position, joint.limit.max_position, limits_elem, "Position");
-    fill_limits(joint.limit.min_velocity, joint.limit.max_velocity, limits_elem, "Velocity");
-    fill_limits(joint.limit.min_acceleration, joint.limit.max_acceleration, limits_elem, "Acceleration");
-    fill_limits(joint.limit.min_jerk, joint.limit.max_jerk, limits_elem, "Jerk");
-    fill_limits(joint.limit.min_effort, joint.limit.max_effort, limits_elem, "Effort");
+    fill_limits(joint.limit.min_position, joint.limit.max_position, limits_elem, "Position", ctx);
+    fill_limits(joint.limit.min_velocity, joint.limit.max_velocity, limits_elem, "Velocity", ctx);
+    fill_limits(joint.limit.min_acceleration, joint.limit.max_acceleration, limits_elem, "Acceleration", ctx);
+    fill_limits(joint.limit.min_jerk, joint.limit.max_jerk, limits_elem, "Jerk", ctx);
+    fill_limits(joint.limit.min_effort, joint.limit.max_effort, limits_elem, "Effort", ctx);
   }
 
   // Dynamics
-  auto fill_dyn = [](Eigen::VectorXd& v, const tinyxml2::XMLElement* parent, const char* tag) {
+  auto fill_dyn = [](Eigen::VectorXd& v, const tinyxml2::XMLElement* parent, const char* tag,
+                     const XMLParseContext& ctx) {
     int i = 0;
     for (const auto* e = parent ? parent->FirstChildElement(tag) : nullptr; e && i < v.size();
          e = e->NextSiblingElement(tag), ++i)
-      v(i) = evalNumberAttributeRequired(e, "value");
+      v(i) = evalNumberAttributeRequired(e, "value", ctx);
   };
-  const auto* dyn_elem = joint_elem->FirstChildElement("Dynamics");
+  const auto* dyn_elem = elem->FirstChildElement("Dynamics");
   if (dyn_elem)
   {
-    fill_dyn(joint.dynamics.stiffness, dyn_elem, "Stiffness");
-    fill_dyn(joint.dynamics.damping, dyn_elem, "Damping");
-    fill_dyn(joint.dynamics.inertia, dyn_elem, "Inertia");
+    fill_dyn(joint.dynamics.stiffness, dyn_elem, "Stiffness", ctx);
+    fill_dyn(joint.dynamics.damping, dyn_elem, "Damping", ctx);
+    fill_dyn(joint.dynamics.inertia, dyn_elem, "Inertia", ctx);
 
     int i = 0;
     for (const auto* r = dyn_elem->FirstChildElement("RestPosition"); r && i < joint.dynamics.rest_position.size();
          r = r->NextSiblingElement("RestPosition"), ++i)
-      joint.dynamics.rest_position[i] = evalNumberAttributeRequired(r, "value");
+      joint.dynamics.rest_position[i] = evalNumberAttributeRequired(r, "value", ctx);
   }
 
   return joint;
 }
 
-components::Joint parseJoint(const tinyxml2::XMLElement* joint_elem)
+components::Joint parseJoint(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
-  // Heuristic: multi-DOF if <Axes> exists, single-DOF if <Axis> exists
-  if (joint_elem->FirstChildElement("Axes"))
-    return parseMultiDofJoint(joint_elem);
-  if (joint_elem->FirstChildElement("Axis"))
-    return parseSingleDofJoint(joint_elem);
-  throw std::runtime_error("Joint element is missing <Axis> or <Axes>");
+  if (!elem)
+  {
+    throw_xml_error(nullptr, ctx, "parseJoint: null <Joint> element");
+  }
+
+  const bool hasAxes = elem->FirstChildElement("Axes") != nullptr;
+
+  const bool hasAxis = elem->FirstChildElement("Axis") != nullptr;
+
+  // Heuristic:
+  //  - Multi-DOF -> <Axes>
+  //  - Single-DOF -> <Axis>
+
+  if (hasAxes)
+  {
+    return parseMultiDofJoint(elem, ctx);
+  }
+
+  if (hasAxis)
+  {
+    return parseSingleDofJoint(elem, ctx);
+  }
+
+  throw_xml_error(elem, ctx,
+                  "Joint element must contain either "
+                  "<Axis> (single-DOF) or "
+                  "<Axes> (multi-DOF)");
 }
 
-components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* elem)
+components::ParallelGrasp parseParallelGrasp(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx)
 {
   using namespace components;
+
+  if (!elem)
+  {
+    throw_xml_error(nullptr, ctx, "parseParallelGrasp: null <ParallelGrasp> element");
+  }
+
   ParallelGrasp grasp;
 
+  // ---------------------------------------------------------------------------
+  // Required <GraspType>
+  // ---------------------------------------------------------------------------
+
   const auto* gt = elem->FirstChildElement("GraspType");
+
   if (!gt)
-    throw std::runtime_error("ParallelGrasp: <GraspType> is required.");
-  const std::string gtv = evalTextAttributeRequired(gt, "value");
+  {
+    throw_xml_error(elem, ctx, "ParallelGrasp: <GraspType> is required");
+  }
+
+  const std::string gtv = evalTextAttributeRequired(gt, "value", ctx);
+
   if (gtv == "Internal")
+  {
     grasp.grasp_type = ParallelGrasp::GraspType::INTERNAL;
+  }
   else if (gtv == "External")
+  {
     grasp.grasp_type = ParallelGrasp::GraspType::EXTERNAL;
+  }
   else
-    throw std::runtime_error("ParallelGrasp: <GraspType> value must be 'Internal' or 'External'");
+  {
+    throw_xml_error(gt, ctx,
+                    "ParallelGrasp: <GraspType> value must be "
+                    "'Internal' or 'External'");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Optional <GapSize>
+  // ---------------------------------------------------------------------------
 
   if (const auto* gap = elem->FirstChildElement("GapSize"))
-    grasp.gap_size = evalNumberAttributeRequired(gap, "value");
-  grasp.gap_axis = parseUnitVector(elem->FirstChildElement("GapAxis"));
-  grasp.rotation_axis = parseUnitVector(elem->FirstChildElement("RotationalAxis"));
+  {
+    grasp.gap_size = evalNumberAttributeRequired(gap, "value", ctx);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Required axes
+  // ---------------------------------------------------------------------------
+
+  const auto* gap_axis_elem = elem->FirstChildElement("GapAxis");
+
+  if (!gap_axis_elem)
+  {
+    throw_xml_error(elem, ctx, "ParallelGrasp missing <GapAxis>");
+  }
+
+  grasp.gap_axis = parseUnitVector(gap_axis_elem, ctx);
+
+  const auto* rot_axis_elem = elem->FirstChildElement("RotationalAxis");
+
+  if (!rot_axis_elem)
+  {
+    throw_xml_error(elem, ctx, "ParallelGrasp missing <RotationalAxis>");
+  }
+
+  grasp.rotation_axis = parseUnitVector(rot_axis_elem, ctx);
+
+  // ---------------------------------------------------------------------------
+  // Optional <RotationalSymmetry>
+  // ---------------------------------------------------------------------------
 
   if (const auto* sym = elem->FirstChildElement("RotationalSymmetry"))
-    grasp.rotational_symmetry = evalUIntAttributeRequired(sym, "value");  // <- integer semantics
+  {
+    grasp.rotational_symmetry = evalUIntAttributeRequired(sym, "value", ctx);
+  }
   else
+  {
     grasp.rotational_symmetry = 1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Optional <RealSurfaces>
+  // ---------------------------------------------------------------------------
 
   grasp.contact_shape_ids.clear();
+
   if (const auto* reals = elem->FirstChildElement("RealSurfaces"))
+  {
     for (const auto* surf = reals->FirstChildElement("Shape"); surf; surf = surf->NextSiblingElement("Shape"))
-      grasp.contact_shape_ids.push_back(evalTextAttributeRequired(surf, "id"));
+    {
+      grasp.contact_shape_ids.push_back(evalTextAttributeRequired(surf, "id", ctx));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Optional <VirtualSurface>
+  // ---------------------------------------------------------------------------
 
   if (const auto* vs = elem->FirstChildElement("VirtualSurface"))
   {
     const auto* shape = vs->FirstChildElement("Shape");
+
     if (!shape)
-      throw std::runtime_error("<VirtualSurface> missing <Shape> at line " + std::to_string(vs->GetLineNum()));
-    grasp.canonical_surface = parseShape(doc, shape);
+    {
+      throw_xml_error(vs, ctx, "<VirtualSurface> missing <Shape>");
+    }
+
+    grasp.canonical_surface = parseShape(shape, ctx);
   }
+
   return grasp;
 }
 

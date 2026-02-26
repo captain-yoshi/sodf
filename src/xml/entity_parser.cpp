@@ -11,6 +11,7 @@
 #include <sodf/components/object.h>
 
 #include <iostream>
+#include "sodf/database/database.h"
 
 namespace sodf {
 namespace xml {
@@ -296,56 +297,89 @@ SceneObject composeModelObject(const tinyxml2::XMLElement* elem, const ObjectInd
                                const std::string& current_ns)
 {
   SceneObject obj;
+
+  obj.doc = std::make_unique<tinyxml2::XMLDocument>();
+
+  auto* root = obj.doc->NewElement("ObjectRoot");
+  obj.doc->InsertFirstChild(root);
+
   obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
 
-  // Collect overlay tags (model-level). We DO NOT enforce them here.
-  // (We also do NOT apply model defaults here; can be added later if desired.)
   bool has_model = elem->Attribute("model");
 
-  // If cloning a model: recursively compose the clone source as a MODEL (no enforcement)
+  // 1️⃣ If cloning another model, compose it first
   if (has_model)
   {
-    // Resolve clone id (handle namespaces)
     auto known_ns = collect_namespaces(object_index);
     std::string model_id = elem->Attribute("model");
     std::string canonical_clone = canonicalize_ref(current_ns, model_id, known_ns);
 
     auto found = object_index.find(canonical_clone);
     if (found == object_index.end())
-      throw std::runtime_error("Clone source not found: " + canonical_clone + " (line " +
-                               std::to_string(elem->GetLineNum()) + ")");
+      throw std::runtime_error("Clone source not found: " + canonical_clone);
 
     std::string cloned_ns = extract_namespace_from_qid_and_base(canonical_clone, found->second.base_id);
 
-    // Recurse as MODEL
-    obj = composeModelObject(found->second.xml, object_index, cloned_ns);
+    // Compose parent model
+    SceneObject parent = composeModelObject(found->second.xml, object_index, cloned_ns);
+
+    // Move parent components into this object
+    obj = std::move(parent);
     obj.id = elem->Attribute("id") ? elem->Attribute("id") : "";
   }
 
-  // Walk children (centralized handling)
+  // 2️⃣ Now process this element's children
   for (const auto* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
   {
     const std::string tag = child->Name();
-    if (tag == "Overlay")
-      continue;  // handled later
 
-    if (is_patch_tag(tag))
-      continue;  // handled at scene-level (not model-level)
+    if (tag == "Overlay" || is_patch_tag(tag))
+      continue;
 
     if (tag == "ForLoop")
     {
-      SceneComponent sc;
+      tinyxml2::XMLDocument* owner_doc = obj.doc.get();
 
-      sc.type = SceneComponentType::ForLoop;  // must exist in your enum
-      sc.id = "";                             // ForLoop has no ID
-      sc.xml = child;
+      expandForLoop(child, [&](const std::unordered_map<std::string, std::string>& ctx) {
+        for (const tinyxml2::XMLElement* sub = child->FirstChildElement(); sub; sub = sub->NextSiblingElement())
+        {
+          tinyxml2::XMLElement* clone = cloneAndSubstitute(sub, owner_doc, ctx);
 
-      obj.components.push_back(std::move(sc));
+          owner_doc->RootElement()->InsertEndChild(clone);
+
+          upsert_direct_component(obj, clone);
+        }
+      });
+
+      continue;
+
+      // // Clone loop node into obj.doc
+      // tinyxml2::XMLNode* cloned = child->DeepClone(obj.doc.get());
+      // obj.doc->RootElement()->InsertEndChild(cloned);
+
+      // SceneComponent sc;
+      // sc.type = SceneComponentType::ForLoop;
+      // sc.id = "";
+      // sc.xml = cloned->ToElement();
+      // sc.owned_doc = nullptr;  // not needed anymore if object owns whole doc
+
+      // obj.components.push_back(std::move(sc));
     }
     else
     {
-      upsert_direct_component(obj, child);
+      // 🔥 CRITICAL: CLONE into obj.doc
+      tinyxml2::XMLNode* cloned = child->DeepClone(obj.doc.get());
+      obj.doc->RootElement()->InsertEndChild(cloned);
+
+      upsert_direct_component(obj, cloned->ToElement());
     }
+  }
+
+  std::cout << "Object: " << obj.id << std::endl;
+  for (auto& sc : obj.components)
+  {
+    std::cout << "  - " << sc.xml->Name() << " id=" << (sc.xml->Attribute("id") ? sc.xml->Attribute("id") : "<none>")
+              << std::endl;
   }
 
   return obj;
@@ -624,6 +658,8 @@ SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& ob
     throw std::runtime_error("Model '" + model_qid + "' not found in object index while resolving overlays.");
   const ObjectSource& model_os = mit->second;
 
+  obj.origin_filename = model_os.filename;
+
   auto find_by_id_slot = [&](const std::string& id, const std::string& slot) -> const OverlaySource& {
     auto k = overlay_key(id, slot);
     auto it = model_os.overlay_map.find(k);
@@ -710,12 +746,33 @@ SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& ob
 
       if (tag == "ForLoop")
       {
-        SceneComponent sc;
-        sc.type = SceneComponentType::ForLoop;
-        sc.id = "";  // ForLoop has no ID
-        sc.xml = child;
+        tinyxml2::XMLDocument* owner_doc = const_cast<tinyxml2::XMLDocument*>(child->GetDocument());
 
-        obj.components.push_back(std::move(sc));
+        expandForLoop(child, [&](const std::unordered_map<std::string, std::string>& loop_ctx) {
+          for (const tinyxml2::XMLElement* sub = child->FirstChildElement(); sub; sub = sub->NextSiblingElement())
+          {
+            tinyxml2::XMLElement* clone = cloneAndSubstitute(sub, owner_doc, loop_ctx);
+
+            const std::string sub_tag = clone->Name();
+
+            if (is_patch_tag(sub_tag))
+            {
+              apply_patch_block(obj, clone, sub_tag);
+            }
+            else
+            {
+              upsert_direct_component(obj, clone);
+            }
+          }
+        });
+
+        continue;
+        // SceneComponent sc;
+        // sc.type = SceneComponentType::ForLoop;
+        // sc.id = "";  // ForLoop has no ID
+        // sc.xml = child;
+
+        // obj.components.push_back(std::move(sc));
       }
       else
       {
@@ -725,11 +782,18 @@ SceneObject composeSceneObject(const tinyxml2::XMLElement* elem, ObjectIndex& ob
   }
 
   // --- Step 5: Finalize ---
-  for (auto& sc : obj.components)
-    ensure_owned(sc);
+  // for (auto& sc : obj.components)
+  //   ensure_owned(sc);
 
-  const std::string self_model_qid = qualify_id(current_ns, obj.id);
-  register_materialized_model(object_index, self_model_qid, obj.id, obj, scene_base_dir);
+  // const std::string self_model_qid = qualify_id(current_ns, obj.id);
+  // register_materialized_model(object_index, self_model_qid, obj.id, obj, scene_base_dir);
+
+  // // test
+  // auto it_self = object_index.find(self_model_qid);
+  // if (it_self == object_index.end())
+  //   throw std::runtime_error("Internal error: materialized model not found for '" + self_model_qid + "'");
+
+  // obj.object_xml_root = elem;
 
   // Purge empty components
   obj.components.erase(
@@ -818,47 +882,30 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
   {
     handleSceneElement(child, const_cast<tinyxml2::XMLDocument*>(doc), object_index, scene, base_dir);
   }
+
+  for (auto& [id, obj] : scene)
+  {
+    std::cout << "Scene object: " << id << std::endl;
+  }
 }
 
-void parseComponentSubElements(const tinyxml2::XMLDocument* doc, const tinyxml2::XMLElement* parent,
-                               database::Database& db, database::EntityID eid)
+void parseComponentSubElements(const tinyxml2::XMLElement* parent, const XMLParseContext& ctx, database::Database& db,
+                               database::EntityID eid)
+
 {
   // Call every registered subcomponent parser with the parent element itself.
   for (const auto& subParseFunc : subParseFuncs)
   {
-    subParseFunc(doc, parent, db, eid);
+    subParseFunc(parent, ctx, db, eid);
   }
 }
 
-void parseComponents(const tinyxml2::XMLElement* elem, tinyxml2::XMLDocument* doc, database::Database& db,
+void parseComponents(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, database::Database& db,
                      database::EntityID eid, size_t parseFuncIdx)
 {
-  if (parseFuncIdx == ForLoopIndex)
-  {
-    // Expand and parse each child for each ForLoop iteration
-    expandForLoop(elem, [&](const std::unordered_map<std::string, std::string>& ctx) {
-      for (const tinyxml2::XMLElement* child = elem->FirstChildElement(); child; child = child->NextSiblingElement())
-      {
-        tinyxml2::XMLElement* clone = cloneAndSubstitute(child, doc, ctx);
-
-        // Determine the type index of the expanded child
-        std::string child_tag = clone->Name();
-        auto opt_type = sceneComponentTypeFromString(child_tag);
-        if (!opt_type)
-          throw std::runtime_error("Unknown component type in ForLoop: <" + child_tag + ">");
-        size_t child_idx = static_cast<size_t>(*opt_type);
-
-        // Recursively handle, so nested ForLoops also work!
-        parseComponents(clone, doc, db, eid, child_idx);
-      }
-    });
-  }
-  else
-  {
-    // Standard component: parse and handle subcomponents
-    parseFuncs[parseFuncIdx](doc, elem, db, eid);
-    parseComponentSubElements(doc, elem, db, eid);
-  }
+  // Standard component: parse and handle subcomponents
+  parseFuncs[parseFuncIdx](elem, ctx, db, eid);
+  parseComponentSubElements(elem, ctx, db, eid);
 }
 
 // Constructor to initialize filename
@@ -879,7 +926,7 @@ bool EntityParser::loadEntitiesFromFile(const std::string& filename, database::D
     return false;
   }
   std::string base_dir = std::filesystem::path(filename).parent_path().string();
-  return loadEntities(doc.get(), base_dir, db);
+  return loadEntities(doc.get(), base_dir, filename, db);
 }
 
 bool EntityParser::loadEntitiesFromText(const std::string& text, database::Database& db, const std::string& base_dir)
@@ -891,13 +938,14 @@ bool EntityParser::loadEntitiesFromText(const std::string& text, database::Datab
     return false;
   }
   // base_dir can be "" (no includes) or user-specified for relative includes
-  return loadEntities(doc.get(), base_dir, db);
+  return loadEntities(doc.get(), base_dir, "[inline-xml]", db);
 }
 
-bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, database::Database& db)
+bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& base_dir, const std::string& filename,
+                                database::Database& db)
 {
   ObjectIndex object_index;
-  buildObjectIndex(doc, object_index, "", base_dir, "[root]", false);
+  buildObjectIndex(doc, object_index, "", base_dir, filename, false);
 
   SceneMap scene_map;
   parseSceneObjects(doc, object_index, scene_map, base_dir);
@@ -905,30 +953,32 @@ bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& b
   for (const auto& scene : scene_map)
   {
     auto eid = db.create();
+
     components::ObjectComponent obj_comp{ .id = scene.second.id };
     db.add(eid, std::move(obj_comp));
 
+    const tinyxml2::XMLElement* object_root = scene.second.doc->RootElement();
+
     for (const auto& comp : scene.second.components)
     {
-      // Skip components that were deleted or detached
-      if (!comp.xml || !comp.xml->GetDocument())
-        continue;
-
-      // Skip if the element no longer has its tag (TinyXML may leave stubs)
-      if (!comp.xml->Name() || !*comp.xml->Name())
+      if (!comp.xml || !comp.xml->Name())
         continue;
 
       const std::string tag = comp.xml->Name();
-      auto opt_type = sceneComponentTypeFromString(tag);  // already exists
+      auto opt_type = sceneComponentTypeFromString(tag);
       if (!opt_type)
         throw std::runtime_error("Unknown component type for tag <" + tag + ">");
 
-      const size_t index = static_cast<size_t>(*opt_type);  // or via a dedicated map
-      if (index >= parseFuncs.size())
-        throw std::runtime_error("No parse function for tag <" + tag + ">");
-      parseComponents(comp.xml, doc, db, eid, index);
+      const size_t index = static_cast<size_t>(*opt_type);
+
+      tinyxml2::XMLDocument* docc = const_cast<tinyxml2::XMLDocument*>(comp.xml->GetDocument());
+
+      XMLParseContext ctx{ .doc = docc, .object_root = object_root, .filename = scene.second.origin_filename };
+
+      parseComponents(comp.xml, ctx, db, eid, index);
     }
   }
+
   return true;
 }
 
