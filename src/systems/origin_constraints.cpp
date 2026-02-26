@@ -300,29 +300,27 @@ static void expand_insertion_mates(database::Database& db, const database::Objec
 
               case InsertionDepthMode::AUTO:
               {
-                // Only meaningful for Insert<->Receptacle
+                // Same-role case: anchor but no penetration
                 if (H.role == G.role)
                 {
-                  add_distance = false;
+                  depth_value = 0.0;
+                  add_distance = true;
                   break;
                 }
 
-                // magnitude
+                // Magnitude
                 if (step.clamp_to_min_depth)
                   depth_value = std::min(H.max_depth, G.max_depth);
                 else
                 {
-                  // choose receptacle's depth as the authoritative one
+                  // choose receptacle's depth as authoritative
                   depth_value = (H.role == InsertionRole::Receptacle) ? H.max_depth : G.max_depth;
                 }
 
-                // sign so that motion is "into receptacle" along receptacle axis
-                // If host is receptacle -> +depth along host axis (good)
-                // If host is insert      -> -depth along host axis (because receptacle is guest)
+                // Sign: motion "into receptacle" along receptacle axis
                 depth_value = (H.role == InsertionRole::Receptacle) ? +depth_value : -depth_value;
 
-                // expanded.emplace_back(Distance{ step.host + "#axis", step.guest, signed_depth });
-                add_distance = true;  // we already emitted it
+                add_distance = true;
                 break;
               }
             }
