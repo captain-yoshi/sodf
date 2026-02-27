@@ -375,13 +375,6 @@ SceneObject composeModelObject(const tinyxml2::XMLElement* elem, const ObjectInd
     }
   }
 
-  std::cout << "Object: " << obj.id << std::endl;
-  for (auto& sc : obj.components)
-  {
-    std::cout << "  - " << sc.xml->Name() << " id=" << (sc.xml->Attribute("id") ? sc.xml->Attribute("id") : "<none>")
-              << std::endl;
-  }
-
   return obj;
 }
 
@@ -881,11 +874,6 @@ void parseSceneObjects(const tinyxml2::XMLDocument* doc, ObjectIndex& object_ind
   for (const auto* child = root->FirstChildElement(); child; child = child->NextSiblingElement())
   {
     handleSceneElement(child, const_cast<tinyxml2::XMLDocument*>(doc), object_index, scene, base_dir);
-  }
-
-  for (auto& [id, obj] : scene)
-  {
-    std::cout << "Scene object: " << id << std::endl;
   }
 }
 
