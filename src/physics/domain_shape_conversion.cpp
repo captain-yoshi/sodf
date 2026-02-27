@@ -99,8 +99,8 @@ sodf::physics::DomainShapeBasePtr shapeToDomainShape(const sodf::geometry::Shape
   using sodf::physics::DomainShapeBasePtr;
   using sodf::physics::DomainType;
 
-  // Only Fluids for now
-  if (dtype != DomainType::Fluid)
+  // Only Discrete is excluded from analytic V<->h
+  if (dtype == DomainType::Discrete)
     return nullptr;
 
   switch (s.type)

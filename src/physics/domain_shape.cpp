@@ -157,29 +157,92 @@ double DomainShape::maxFillVolume(const std::optional<FillEnv>& /*env*/) const
   return hasMesh() ? mesh_cache_->getMaxFillVolume() : 0.0;
 }
 
-double DomainShape::heightFromVolume(double V, const FillEnv& env, double tol)
+double DomainShape::heightFromVolume(double V, const std::optional<FillEnv>& env, double tol) const
 {
-  if (type != DomainType::Fluid)
-    throw std::logic_error("heightFromVolume only valid for Fluid domains.");
+  V = std::max(0.0, V);
 
-  if (hasSegments() && canUseAnalyticNow(env))
-    return physics::getFillHeight(segments_, V, tol);
+  // Discrete domains: no V <-> h
+  if (type == DomainType::Discrete)
+    throw std::logic_error("heightFromVolume not valid for Discrete domains.");
+
+  // -------------------------------
+  // BulkSolid: ignore gravity/env
+  // -------------------------------
+  if (type == DomainType::BulkSolid)
+  {
+    if (hasSegments())
+      return physics::getFillHeight(segments_, V, tol);
+
+    throw std::runtime_error("BulkSolid heightFromVolume requires analytic segments (mesh V->h not implemented).");
+  }
+
+  // -------------------------------
+  // Fluid: gravity-aware
+  // -------------------------------
+  if (type != DomainType::Fluid)
+    throw std::logic_error("heightFromVolume only valid for Fluid/BulkSolid domains.");
+
+  // Analytic path requires env to validate tilt
+  if (hasSegments())
+  {
+    if (!env.has_value())
+      throw std::logic_error("Fluid heightFromVolume requires FillEnv to account for gravity.");
+
+    if (canUseAnalyticNow(*env))
+      return physics::getFillHeight(segments_, V, tol);
+  }
+
+  // Mesh path requires env
+  if (!env.has_value())
+    throw std::logic_error("Fluid heightFromVolume requires FillEnv for mesh (tilt-aware) path.");
 
   const auto* i = getTiltAwareIfSupported(mesh_cache_);
   if (!i)
     throw std::runtime_error("Mesh exists but is not tilt-aware (stateless)!");
-  return i->getFillHeightWithEnv(V, env);
+
+  return i->getFillHeightWithEnv(V, *env);
 }
 
-double DomainShape::volumeFromHeight(double h, const FillEnv& env, double tol)
+double DomainShape::volumeFromHeight(double h, const std::optional<FillEnv>& env, double tol) const
 {
-  if (hasSegments() && canUseAnalyticNow(env))
-    return physics::getFillVolume(segments_, h, tol);
+  // Discrete domains: no V <-> h
+  if (type == DomainType::Discrete)
+    throw std::logic_error("volumeFromHeight not valid for Discrete domains.");
+
+  // -------------------------------
+  // BulkSolid: ignore gravity/env
+  // -------------------------------
+  if (type == DomainType::BulkSolid)
+  {
+    if (hasSegments())
+      return physics::getFillVolume(segments_, h, tol);
+
+    throw std::runtime_error("BulkSolid volumeFromHeight requires analytic segments (mesh V->h not implemented).");
+  }
+
+  // -------------------------------
+  // Fluid: gravity-aware
+  // -------------------------------
+  if (type != DomainType::Fluid)
+    throw std::logic_error("volumeFromHeight only valid for Fluid/BulkSolid domains.");
+
+  if (hasSegments())
+  {
+    if (!env.has_value())
+      throw std::logic_error("Fluid volumeFromHeight requires FillEnv to account for gravity.");
+
+    if (canUseAnalyticNow(*env))
+      return physics::getFillVolume(segments_, h, tol);
+  }
+
+  if (!env.has_value())
+    throw std::logic_error("Fluid volumeFromHeight requires FillEnv for mesh (tilt-aware) path.");
 
   const auto* i = getTiltAwareIfSupported(mesh_cache_);
   if (!i)
     throw std::runtime_error("Mesh exists but is not tilt-aware (stateless)!");
-  return i->getFillVolumeWithEnv(h, env);
+
+  return i->getFillVolumeWithEnv(h, *env);
 }
 
 bool DomainShape::buildFilledVolumeAtHeight(double h, std::vector<Eigen::Vector3d>& tris_world, const FillEnv& env) const

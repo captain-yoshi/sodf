@@ -115,8 +115,8 @@ public:
   double maxFillVolume(const std::optional<FillEnv>& env = std::nullopt) const;
 
   // --- V ↔ h stateless (hybrid) ---------------------------------------------
-  double heightFromVolume(double V, const FillEnv& env, double tol = 1e-15);
-  double volumeFromHeight(double h, const FillEnv& env, double tol = 1e-15);
+  double heightFromVolume(double V, const std::optional<FillEnv>& env = std::nullopt, double tol = 1e-15) const;
+  double volumeFromHeight(double h, const std::optional<FillEnv>& env = std::nullopt, double tol = 1e-15) const;
 
   // --- optional geometry hooks (mesh path only) ------------------------------
   bool buildFilledVolumeAtHeight(double h, std::vector<Eigen::Vector3d>& tris_world, const FillEnv& env) const;
