@@ -167,10 +167,9 @@ void parseDomainShapeComponent(const tinyxml2::XMLElement* elem, const XMLParseC
                                database::EntityID eid)
 {
   using namespace components;
+
   if (!elem)
-  {
     throw_xml_error(nullptr, ctx, "parseDomainShapeComponent: null <DomainShape> element");
-  }
 
   // ----- id (required) -----
   const std::string id = evalElementIdRequired(elem, ctx);
@@ -179,24 +178,32 @@ void parseDomainShapeComponent(const tinyxml2::XMLElement* elem, const XMLParseC
   auto parseDomainType = [&](const char* t) -> physics::DomainType {
     if (!t || !*t)
       return physics::DomainType::Fluid;
+
     std::string s(t);
-    for (auto& c : s)
-      c = static_cast<char>(std::tolower(c));
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+
     if (s == "fluid")
       return physics::DomainType::Fluid;
-    throw_xml_error(elem, ctx, "Unsupported DomainShape type='" + std::string(t) + "' for id='" + id + "'");
+    if (s == "bulksolid" || s == "bulk_solid" || s == "solid")
+      return physics::DomainType::BulkSolid;
+    if (s == "discrete")
+      return physics::DomainType::Discrete;
+
+    throw_xml_error(elem, ctx,
+                    "Unsupported DomainShape type='" + std::string(t) + "' for id='" + id +
+                        "'. Supported: Fluid, BulkSolid, Discrete.");
   };
+
   const physics::DomainType dtype = parseDomainType(elem->Attribute("type"));
 
-  // ----- <StackedShapeRef id="..."/> (optional but validated if present) -----
-  std::string stacked_shape_id;
+  // ----- <StackedShapeID id="..."/> -----
   const auto* ssr = elem->FirstChildElement("StackedShapeID");
   if (!ssr)
   {
     throw_xml_error(elem, ctx, "<DomainShape id='" + id + "'> requires a <StackedShapeID> child element");
   }
 
-  stacked_shape_id = evalTextAttributeRequired(ssr, "id", ctx);
+  const std::string stacked_shape_id = evalTextAttributeRequired(ssr, "id", ctx);
   if (stacked_shape_id.empty())
   {
     throw_xml_error(ssr, ctx, "Empty 'id' in <StackedShapeID> for DomainShape '" + id + "'");
@@ -212,9 +219,9 @@ void parseDomainShapeComponent(const tinyxml2::XMLElement* elem, const XMLParseC
                         id + "')");
   }
 
-  // ----- Build component payload -----
+  // ----- Build physics DomainShape -----
   physics::DomainShape ds(*stacked_shape, dtype);
-  ds.type = dtype;
+  ds.type = dtype;  // explicit, even though ctor sets it
   ds.stacked_shape_id = stacked_shape_id;
 
   // ----- Store to ECS -----
@@ -223,6 +230,7 @@ void parseDomainShapeComponent(const tinyxml2::XMLElement* elem, const XMLParseC
   {
     throw_xml_error(elem, ctx, "Failed to create DomainShapeComponent for id='" + id + "'");
   }
+
   comp->elements.emplace_back(id, std::move(ds));
 }
 
@@ -694,19 +702,6 @@ static void buildBulkSolidContainer(const tinyxml2::XMLElement* elem, const tiny
       bulk.surface_frame_id = evalTextAttributeRequired(sf, "id", ctx);
   }
 
-  // Compute max height from stacked shape (same logic as Fluid)
-  double q_max = 0.0;
-  if (!domain_shape.stacked_shape_id.empty())
-  {
-    auto* stack = db.get_element<StackedShapeComponent>(eid, domain_shape.stacked_shape_id);
-    if (!stack)
-      throw_xml_error(elem, ctx,
-                      "StackedShape '" + domain_shape.stacked_shape_id + "' not found for BulkSolid DomainShape");
-
-    for (const auto& e : stack->shapes)
-      q_max += sodf::geometry::getShapeHeight(e.shape);
-  }
-
   container.runtime = bulk;
 
   // Ensure TransformComponent exists
@@ -714,17 +709,34 @@ static void buildBulkSolidContainer(const tinyxml2::XMLElement* elem, const tiny
   if (!tfc)
     throw_xml_error(elem, ctx, "Failed to create TransformComponent for Container '" + id + "'");
 
-  // Materialize surface frame at "top" of the domain
+  // --- Compute current height from payload volume ---
+  double h = 0.0;
+
+  try
+  {
+    const double V = std::max(0.0, container.payload.volume);
+    h = domain_shape.heightFromVolume(V, std::nullopt, 1e-15);
+  }
+  catch (const std::exception& e)
+  {
+    throw_xml_error(elem, ctx,
+                    "Failed to compute BulkSolid height from volume for container '" + id +
+                        "': " + std::string(e.what()));
+  }
+
+  // --- Materialize surface frame at current height ---
   if (!bulk.surface_frame_id.empty())
   {
     geometry::TransformNode tf;
     tf.parent = id;
     tf.local = Eigen::Isometry3d::Identity();
 
-    // Consistent with FluidDomain joint axis being -X:
-    tf.local.translation() = Eigen::Vector3d(-q_max, 0.0, 0.0);
+    // Consistent with your convention:
+    // Height axis is +X, so top surface is at -h
+    tf.local.translation() = Eigen::Vector3d(-h, 0.0, 0.0);
 
-    tf.is_static = true;
+    tf.is_static = true;  // parse-time fixed for now
+
     tfc->elements.emplace_back(bulk.surface_frame_id, std::move(tf));
   }
 }
@@ -764,7 +776,6 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, const XMLParseCon
 
   Container container;
   const std::string id = evalElementIdRequired(elem, ctx);
-
 
   container.material_id = evalTextAttribute(elem, "material", "", ctx);
 
