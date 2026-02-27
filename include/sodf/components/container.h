@@ -1,7 +1,10 @@
 #ifndef SODF_COMPONENTS_CONTAINER_H_
 #define SODF_COMPONENTS_CONTAINER_H_
 
+#include <string>
+#include <variant>
 #include <vector>
+
 #include <sodf/components/data_type.h>
 
 #include <Eigen/Geometry>
@@ -9,19 +12,40 @@
 namespace sodf {
 namespace components {
 
+// -----------------------------------------------------------------------------
+// Domain classification (planner-level semantics)
+// -----------------------------------------------------------------------------
+enum class DomainType
+{
+  Fluid,
+  // Continuous, gravity-driven free-surface domain.
+  // Example: water, buffer, liquid reagent.
+
+  BulkSolid,
+  // Continuous, non-flowing material with meaningful surface.
+  // Example: agar plate, gel slab, powder layer (static model).
+
+  Discrete
+  // Countable rigid items.
+  // Example: pipette tips in rack, screws in bin, tubes in rack.
+};
+
+// -----------------------------------------------------------------------------
+// Shared geometric payload description
+// -----------------------------------------------------------------------------
 struct PayloadDomain
 {
-  // Defines the occupied volume of the payload. Must resolve to something
-  // you can turn into a mesh / volume curve (e.g. StackedShape).
-  std::string domain_shape_id;  // e.g. "fluid/well_200ul"
+  // Must resolve to something convertible to DomainShape (StackedShape).
+  std::string domain_shape_id;
 
-  // How much is present.
-  // Fluid:       volume [m^3]
-  // BulkSolid:   bulk volume [m^3]
-  // RigidInsert: 1.0 = present
+  // Continuous volume (Fluid / BulkSolid)
+  // Ignored for Discrete.
   double volume = 0.0;
 };
 
+// -----------------------------------------------------------------------------
+// Runtime domain specializations
+// -----------------------------------------------------------------------------
 struct FluidDomain
 {
   // Virtual prismatic joint that drives the fluid surface height.
@@ -35,24 +59,86 @@ struct FluidDomain
   std::string liquid_level_frame_id;
 };
 
+struct BulkSolidDomain
+{
+  // Static surface frame for interaction
+  std::string surface_frame_id;
+};
+
+struct DiscreteDomain
+{
+  std::size_t count = 0;
+  std::size_t capacity = 0;
+
+  // Approximate envelope volume per item (optional, for bin filling logic)
+  double item_volume = 0.0;
+
+  std::string item_type;
+
+  double occupiedVolume() const
+  {
+    return count * item_volume;
+  }
+
+  bool isFull() const
+  {
+    return capacity > 0 && count >= capacity;
+  }
+};
+
+// Variant holding runtime behavior
+using DomainRuntime = std::variant<std::monostate, FluidDomain, BulkSolidDomain, DiscreteDomain>;
+
+// -----------------------------------------------------------------------------
+// Container
+// -----------------------------------------------------------------------------
 struct Container
 {
-  // Payload geometry and quantity.
   PayloadDomain payload;
 
-  // Fluid-only runtime info (valid if payload_type == Fluid).
-  FluidDomain fluid;
+  DomainRuntime runtime;
 
   std::string stacked_shape_id;
 
-  // Semantic / UI / planning info.
-  // e.g. "PBS", "lysis_buffer", "M3x8_screw", "p20_tip_rack"
   std::string content_type;
-
-  // Material of the container shell (polypropylene, stainless, etc.).
   std::string material_id;
+
+  // --- Convenience helpers ---------------------------------------------------
+
+  bool isFluid() const
+  {
+    return std::holds_alternative<FluidDomain>(runtime);
+  }
+
+  bool isBulkSolid() const
+  {
+    return std::holds_alternative<BulkSolidDomain>(runtime);
+  }
+
+  bool isDiscrete() const
+  {
+    return std::holds_alternative<DiscreteDomain>(runtime);
+  }
+
+  FluidDomain* fluid()
+  {
+    return std::get_if<FluidDomain>(&runtime);
+  }
+
+  BulkSolidDomain* bulk()
+  {
+    return std::get_if<BulkSolidDomain>(&runtime);
+  }
+
+  DiscreteDomain* discrete()
+  {
+    return std::get_if<DiscreteDomain>(&runtime);
+  }
 };
 
+// -----------------------------------------------------------------------------
+// ECS component
+// -----------------------------------------------------------------------------
 struct ContainerComponent
 {
   ElementMap<std::string, Container> elements;

@@ -134,6 +134,9 @@ bool DomainShape::nearlyParallelWorld(const Eigen::Vector3d& height_axis_world, 
 
 bool DomainShape::canUseAnalyticNow(const FillEnv& env) const
 {
+  if (type != DomainType::Fluid)
+    return false;
+
   if (!segments_locally_axis_aligned_ || segments_.empty())
     return false;
   const Eigen::Vector3d axis_w = heightAxisWorld(env);  // +X mapped to world
@@ -156,6 +159,9 @@ double DomainShape::maxFillVolume(const std::optional<FillEnv>& /*env*/) const
 
 double DomainShape::heightFromVolume(double V, const FillEnv& env, double tol)
 {
+  if (type != DomainType::Fluid)
+    throw std::logic_error("heightFromVolume only valid for Fluid domains.");
+
   if (hasSegments() && canUseAnalyticNow(env))
     return physics::getFillHeight(segments_, V, tol);
 
@@ -178,6 +184,9 @@ double DomainShape::volumeFromHeight(double h, const FillEnv& env, double tol)
 
 bool DomainShape::buildFilledVolumeAtHeight(double h, std::vector<Eigen::Vector3d>& tris_world, const FillEnv& env) const
 {
+  if (type != DomainType::Fluid)
+    return false;
+
   const auto* i = getTiltAwareIfSupported(mesh_cache_);
   if (!i)
     return false;
@@ -186,6 +195,9 @@ bool DomainShape::buildFilledVolumeAtHeight(double h, std::vector<Eigen::Vector3
 
 bool DomainShape::buildFilledVolumeAtVolume(double V, std::vector<Eigen::Vector3d>& tris_world, const FillEnv& env) const
 {
+  if (type != DomainType::Fluid)
+    return false;
+
   const auto* i = getTiltAwareIfSupported(mesh_cache_);
   if (!i)
     return false;

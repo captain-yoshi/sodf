@@ -588,175 +588,250 @@ void parseActionMapComponent(const tinyxml2::XMLElement* elem, const XMLParseCon
   }
 }
 
-void parseContainerComponent(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, database::Database& db,
-                             database::EntityID eid)
+static void buildFluidContainer(const tinyxml2::XMLElement* elem, const tinyxml2::XMLElement* pd,
+                                const XMLParseContext& ctx, database::Database& db, database::EntityID eid,
+                                const std::string& id, sodf::components::Container& container,
+                                const physics::DomainShape& domain_shape)
 {
-  if (!elem)
-  {
-    throw_xml_error(nullptr, ctx, "parseContainerComponent: null <Container> element");
-  }
-
   using namespace sodf;
   using namespace sodf::components;
 
-  Container container;
+  FluidDomain fluid;
 
-  const std::string id = evalElementIdRequired(elem, ctx);
+  // Optional liquid level frame
+  if (pd)
+  {
+    if (const auto* lvl = pd->FirstChildElement("LiquidLevelFrame"))
+    {
+      fluid.liquid_level_frame_id = evalTextAttributeRequired(lvl, "id", ctx);
+    }
+  }
 
-  // Optional direct attributes
-  container.stacked_shape_id = evalTextAttribute(elem, "stacked_shape", "", ctx);
-  container.material_id = evalTextAttribute(elem, "material", "", ctx);
+  // Compute max height from stacked shape
+  double q_max = 0.0;
 
+  if (!domain_shape.stacked_shape_id.empty())
+  {
+    auto* stack = db.get_element<StackedShapeComponent>(eid, domain_shape.stacked_shape_id);
+
+    if (!stack)
+    {
+      throw_xml_error(elem, ctx, "StackedShape '" + domain_shape.stacked_shape_id + "' not found for Fluid DomainShape");
+    }
+
+    for (const auto& e : stack->shapes)
+      q_max += sodf::geometry::getShapeHeight(e.shape);
+  }
+
+  // Build virtual prismatic joint
+  Joint joint;
+  joint.type = JointType::PRISMATIC;
+  joint.actuation = JointActuation::VIRTUAL;
+  joint.initialize_for_type();
+
+  // Canonical height axis = +X
+  joint.axes.col(0) = Eigen::Vector3d(-1.0, 0.0, 0.0);
+
+  joint.position[0] = 0.0;
+  joint.limit.min_position[0] = 0.0;
+  joint.limit.max_position[0] = q_max;
+
+  std::string joint_id =
+      fluid.liquid_level_frame_id.empty() ? "joint/" + id + "/liquid_level" : "joint/" + fluid.liquid_level_frame_id;
+
+  fluid.liquid_level_joint_id = joint_id;
+
+  auto* jc = db.get_or_add<JointComponent>(eid);
+  if (!jc)
+    throw_xml_error(elem, ctx, "Failed to create JointComponent for Container '" + id + "'");
+
+  jc->elements.emplace_back(joint_id, std::move(joint));
+
+  container.runtime = fluid;
+
+  // Create transform frames for joint and optional liquid level frame
   auto* tfc = db.get_or_add<TransformComponent>(eid);
   if (!tfc)
   {
     throw_xml_error(elem, ctx, "Failed to create TransformComponent for Container '" + id + "'");
   }
 
-  // <Content>
-  if (const auto* cont = elem->FirstChildElement("Content"))
-  {
-    container.content_type = evalTextAttribute(cont, "type", "", ctx);
-    const double vol_raw = evalNumberAttribute(cont, "volume", 0.0, ctx);
-    const std::string units = evalTextAttribute(cont, "units", "m^3", ctx);
-    container.payload.volume = convertVolumeToSI(vol_raw, units.c_str());
-  }
-
-  // <StackedShapeID> (optional usage-site reference)
-  if (const auto* ssid = elem->FirstChildElement("StackedShapeID"))
-  {
-    container.stacked_shape_id = evalTextAttributeRequired(ssid, "id", ctx);
-  }
-
-  // <MaterialID> (optional usage-site reference)
-  if (const auto* mid = elem->FirstChildElement("MaterialID"))
-  {
-    container.material_id = evalTextAttributeRequired(mid, "id", ctx);
-  }
-
-  // <PayloadDomain>
-  const auto* pd = elem->FirstChildElement("PayloadDomain");
-  if (pd)
-  {
-    // Optional override of volume at payload level
-    if (pd->Attribute("volume"))
-    {
-      const double vol_raw = evalNumberAttribute(pd, "volume", container.payload.volume, ctx);
-      const std::string units = evalTextAttribute(pd, "units", "m^3", ctx);
-      container.payload.volume = convertVolumeToSI(vol_raw, units.c_str());
-    }
-
-    // REQUIRED for fluid logic: <DomainShapeID id="..."/>
-    if (const auto* dsid = pd->FirstChildElement("DomainShapeID"))
-    {
-      container.payload.domain_shape_id = evalTextAttributeRequired(dsid, "id", ctx);
-    }
-
-    // Optional live liquid-level frame id (authored frame name)
-    if (const auto* lvl = pd->FirstChildElement("LiquidLevelFrame"))
-    {
-      container.fluid.liquid_level_frame_id = evalTextAttributeRequired(lvl, "id", ctx);
-    }
-  }
-
-  // Without a domain id we can't build a fluid joint.
-  // Still allow the container to exist as a pure logical/static container.
-  if (container.payload.domain_shape_id.empty())
-  {
-    auto* cc = db.get_or_add<ContainerComponent>(eid);
-    if (!cc)
-    {
-      throw_xml_error(elem, ctx, "Failed to create ContainerComponent for Container '" + id + "'");
-    }
-    cc->elements.emplace_back(id, std::move(container));
-    return;
-  }
-
-  // --- Use the DomainShape instance to build a PRISMATIC(VIRTUAL) joint ---
-
-  auto* dsc = db.get_element<DomainShapeComponent>(eid, container.payload.domain_shape_id);
-  if (!dsc)
-  {
-    throw_xml_error(elem, ctx,
-                    "DomainShape '" + container.payload.domain_shape_id + "' not found for Container '" + id + "'");
-  }
-
-  // If this domain shape references a stacked shape, compute total height from it.
-  double q_max = 0.0;
-
-  if (!dsc->stacked_shape_id.empty())
-  {
-    auto* stack = db.get_element<StackedShapeComponent>(eid, dsc->stacked_shape_id);
-    if (!stack)
-    {
-      throw_xml_error(elem, ctx,
-                      "StackedShape '" + dsc->stacked_shape_id + "' not found for DomainShape '" +
-                          container.payload.domain_shape_id + "'");
-    }
-
-    double H = 0.0;
-    for (const auto& e : stack->shapes)
-    {
-      H += sodf::geometry::getShapeHeight(e.shape);
-    }
-    q_max = H;
-  }
-
-  Joint joint;
-  joint.type = JointType::PRISMATIC;
-  joint.actuation = JointActuation::VIRTUAL;
-  joint.initialize_for_type();  // 1 DOF
-
-  // Canonical convention: Domain height axis is +X in the domain local frame.
-  // We store the prismatic axis in joint local frame.
-  joint.axes.col(0) = Eigen::Vector3d(-1.0, 0.0, 0.0);
-
-  const double q_min = 0.0;
-  joint.position[0] = q_min;
-  joint.limit.min_position[0] = q_min;
-  joint.limit.max_position[0] = q_max;
-
-  // Build a stable joint id.
-  std::string joint_id;
-  if (!container.fluid.liquid_level_frame_id.empty())
-    joint_id = "joint/" + container.fluid.liquid_level_frame_id;
-  else
-    joint_id = "joint/" + id + "/liquid_level";
-
-  container.fluid.liquid_level_joint_id = joint_id;
-
-  auto* jc = db.get_or_add<JointComponent>(eid);
-  if (!jc)
-  {
-    throw_xml_error(elem, ctx, "Failed to create JointComponent for Container '" + id + "'");
-  }
-  jc->elements.emplace_back(joint_id, std::move(joint));
-
-  // Joint frame under the DOMAIN frame (not under the container)
+  // Joint frame under container
   {
     geometry::TransformNode jtf;
     jtf.parent = id;
     jtf.local = Eigen::Isometry3d::Identity();
     jtf.is_static = false;
+
     tfc->elements.emplace_back(joint_id, std::move(jtf));
   }
 
   // Liquid level frame under joint (if authored)
-  if (!container.fluid.liquid_level_frame_id.empty())
+  if (!fluid.liquid_level_frame_id.empty())
   {
     geometry::TransformNode ltf;
     ltf.parent = joint_id;
     ltf.local = Eigen::Isometry3d::Identity();
     ltf.is_static = true;
-    tfc->elements.emplace_back(container.fluid.liquid_level_frame_id, std::move(ltf));
+
+    tfc->elements.emplace_back(fluid.liquid_level_frame_id, std::move(ltf));
+  }
+}
+
+static void buildBulkSolidContainer(const tinyxml2::XMLElement* elem, const tinyxml2::XMLElement* pd,
+                                    const XMLParseContext& ctx, database::Database& db, database::EntityID eid,
+                                    const std::string& id, sodf::components::Container& container,
+                                    const physics::DomainShape& domain_shape)
+{
+  using namespace sodf;
+  using namespace sodf::components;
+
+  BulkSolidDomain bulk;
+
+  if (pd)
+  {
+    if (const auto* sf = pd->FirstChildElement("SurfaceFrame"))
+      bulk.surface_frame_id = evalTextAttributeRequired(sf, "id", ctx);
   }
 
-  // Persist container
-  auto* cc = db.get_or_add<ContainerComponent>(eid);
-  if (!cc)
+  // Compute max height from stacked shape (same logic as Fluid)
+  double q_max = 0.0;
+  if (!domain_shape.stacked_shape_id.empty())
   {
-    throw_xml_error(elem, ctx, "Failed to create ContainerComponent for Container '" + id + "'");
+    auto* stack = db.get_element<StackedShapeComponent>(eid, domain_shape.stacked_shape_id);
+    if (!stack)
+      throw_xml_error(elem, ctx,
+                      "StackedShape '" + domain_shape.stacked_shape_id + "' not found for BulkSolid DomainShape");
+
+    for (const auto& e : stack->shapes)
+      q_max += sodf::geometry::getShapeHeight(e.shape);
   }
+
+  container.runtime = bulk;
+
+  // Ensure TransformComponent exists
+  auto* tfc = db.get_or_add<TransformComponent>(eid);
+  if (!tfc)
+    throw_xml_error(elem, ctx, "Failed to create TransformComponent for Container '" + id + "'");
+
+  // Materialize surface frame at "top" of the domain
+  if (!bulk.surface_frame_id.empty())
+  {
+    geometry::TransformNode tf;
+    tf.parent = id;
+    tf.local = Eigen::Isometry3d::Identity();
+
+    // Consistent with FluidDomain joint axis being -X:
+    tf.local.translation() = Eigen::Vector3d(-q_max, 0.0, 0.0);
+
+    tf.is_static = true;
+    tfc->elements.emplace_back(bulk.surface_frame_id, std::move(tf));
+  }
+}
+
+static void buildDiscreteContainer(const tinyxml2::XMLElement* pd, const XMLParseContext& ctx,
+                                   sodf::components::Container& container)
+{
+  using namespace sodf::components;
+
+  DiscreteDomain disc;
+
+  if (pd)
+  {
+    if (const auto* d = pd->FirstChildElement("Discrete"))
+    {
+      disc.count = static_cast<std::size_t>(evalNumberAttribute(d, "count", 0, ctx));
+
+      disc.capacity = static_cast<std::size_t>(evalNumberAttribute(d, "capacity", 0, ctx));
+
+      disc.item_volume = evalNumberAttribute(d, "item_volume", 0.0, ctx);
+
+      disc.item_type = evalTextAttribute(d, "item_type", "", ctx);
+    }
+  }
+
+  container.runtime = disc;
+}
+
+void parseContainerComponent(const tinyxml2::XMLElement* elem, const XMLParseContext& ctx, database::Database& db,
+                             database::EntityID eid)
+{
+  if (!elem)
+    throw_xml_error(nullptr, ctx, "parseContainerComponent: null <Container>");
+
+  using namespace sodf;
+  using namespace sodf::components;
+
+  Container container;
+  const std::string id = evalElementIdRequired(elem, ctx);
+
+  container.stacked_shape_id = evalTextAttribute(elem, "stacked_shape", "", ctx);
+
+  container.material_id = evalTextAttribute(elem, "material", "", ctx);
+
+  auto* tfc = db.get_or_add<TransformComponent>(eid);
+  if (!tfc)
+    throw_xml_error(elem, ctx, "Failed to create TransformComponent for Container '" + id + "'");
+
+  // ---------------- Content ----------------
+  if (const auto* cont = elem->FirstChildElement("Content"))
+  {
+    container.content_type = evalTextAttribute(cont, "type", "", ctx);
+
+    const double vol_raw = evalNumberAttribute(cont, "volume", 0.0, ctx);
+
+    const std::string units = evalTextAttribute(cont, "units", "m^3", ctx);
+
+    container.payload.volume = convertVolumeToSI(vol_raw, units.c_str());
+  }
+
+  // ---------------- PayloadDomain ----------------
+  const tinyxml2::XMLElement* pd = elem->FirstChildElement("PayloadDomain");
+
+  if (pd)
+  {
+    if (const auto* dsid = pd->FirstChildElement("DomainShapeID"))
+    {
+      container.payload.domain_shape_id = evalTextAttributeRequired(dsid, "id", ctx);
+    }
+  }
+
+  // No domain → purely logical container
+  if (container.payload.domain_shape_id.empty())
+  {
+    auto* cc = db.get_or_add<ContainerComponent>(eid);
+    cc->elements.emplace_back(id, std::move(container));
+    return;
+  }
+
+  // ---------------- Infer behavior from DomainShape ----------------
+  physics::DomainShape* domain_shape = db.get_element<DomainShapeComponent>(eid, container.payload.domain_shape_id);
+
+  if (!domain_shape)
+  {
+    throw_xml_error(elem, ctx,
+                    "DomainShape '" + container.payload.domain_shape_id + "' not found for Container '" + id + "'");
+  }
+
+  switch (domain_shape->type)
+  {
+    case physics::DomainType::Fluid:
+      buildFluidContainer(elem, pd, ctx, db, eid, id, container, *domain_shape);
+      break;
+
+    case physics::DomainType::BulkSolid:
+      buildBulkSolidContainer(elem, pd, ctx, db, eid, id, container, *domain_shape);
+      break;
+
+    case physics::DomainType::Discrete:
+      buildDiscreteContainer(pd, ctx, container);
+      break;
+
+    default:
+      throw_xml_error(elem, ctx, "Unsupported DomainType for DomainShape '" + container.payload.domain_shape_id + "'");
+  }
+
+  auto* cc = db.get_or_add<ContainerComponent>(eid);
   cc->elements.emplace_back(id, std::move(container));
 }
 

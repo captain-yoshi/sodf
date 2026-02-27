@@ -19,7 +19,47 @@ namespace physics {
 // High-level orchestrator that picks analytic fast-path vs mesh fallback
 enum class DomainType
 {
-  Fluid /*, Solid, Granular*/
+  Fluid,
+  // Continuous, gravity-driven free-surface domain.
+  // Examples:
+  //   - Water in a beaker
+  //   - Buffer in PCR well
+  //   - Oil in reservoir
+  //   - Liquid reagent in tube
+  //
+  // Supports:
+  //   - V <-> h mapping
+  //   - Aspirate / dispense
+  //   - Dynamic surface height
+
+  BulkSolid,
+  // Continuous, non-flowing material with a meaningful surface.
+  // Geometry is static (no gravity fill solver).
+  // Examples:
+  //   - Agar plate
+  //   - Gel block
+  //   - Powder layer (modeled as static)
+  //   - Silicone slab
+  //
+  // Supports:
+  //   - Surface contact
+  //   - Touch / dispense onto surface
+  //   - No aspirate
+  //   - No V <-> h solver
+
+  Discrete,
+  // Countable rigid items stored inside a container.
+  // Occupancy is discrete (count-based), not continuous.
+  // Examples:
+  //   - Pipette tips in rack
+  //   - Screws in bin
+  //   - Tubes in rack
+  //   - Detached tips in waste bin
+  //
+  // Supports:
+  //   - Add / remove items
+  //   - Capacity checks (count or approximate volume)
+  //   - No surface solver
 };
 
 class DomainShape

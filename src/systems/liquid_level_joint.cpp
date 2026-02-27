@@ -75,7 +75,13 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
               components::StackedShapeComponent& /*scomp*/) {
     for (auto& [name, c] : containers.elements)
     {
-      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty())
+      auto* fluid = std::get_if<components::FluidDomain>(&c.runtime);
+      if (!fluid)
+      {
+        continue;
+      }
+
+      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || fluid->liquid_level_joint_id.empty())
       {
         continue;
       }
@@ -91,29 +97,28 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
       }
 
       // Joint
-      auto* joint = database::get_element(jcomp.elements, c.fluid.liquid_level_joint_id);
+      auto* joint = database::get_element(jcomp.elements, fluid->liquid_level_joint_id);
       if (!joint)
       {
         std::ostringstream os;
-        os << "[liquid_level] Joint '" << c.fluid.liquid_level_joint_id << "' not found for container '" << name
-           << "'.";
+        os << "[liquid_level] Joint '" << fluid->liquid_level_joint_id << "' not found for container '" << name << "'.";
         throw std::runtime_error(os.str());
       }
       if (joint->actuation != components::JointActuation::VIRTUAL)
       {
         std::ostringstream os;
-        os << "[liquid_level] Joint '" << c.fluid.liquid_level_joint_id << "' must be VIRTUAL (is "
+        os << "[liquid_level] Joint '" << fluid->liquid_level_joint_id << "' must be VIRTUAL (is "
            << components::jointActuationToString(joint->actuation) << ").";
         throw std::runtime_error(os.str());
       }
       if (joint->type != components::JointType::PRISMATIC || joint->dof() != 1)
       {
         std::ostringstream os;
-        os << "[liquid_level] Joint '" << c.fluid.liquid_level_joint_id << "' must be 1-DOF PRISMATIC.";
+        os << "[liquid_level] Joint '" << fluid->liquid_level_joint_id << "' must be 1-DOF PRISMATIC.";
         throw std::runtime_error(os.str());
       }
 
-      // NEW: payload/domain frame is keyed by domain_shape_id
+      // payload/domain frame is keyed by domain_shape_id
       auto* tf_payload = database::get_element(tcomp.elements, c.payload.domain_shape_id);
       if (!tf_payload)
       {
@@ -235,25 +240,25 @@ void update_liquid_level_joints_from_domain(database::Database& db, Eigen::Vecto
       joint->position[0] = h;
 
       // Mark dependent frames dirty
-      if (!c.fluid.liquid_level_frame_id.empty())
+      if (!fluid->liquid_level_frame_id.empty())
       {
-        if (auto* tf_ll = database::get_element(tcomp.elements, c.fluid.liquid_level_frame_id))
+        if (auto* tf_ll = database::get_element(tcomp.elements, fluid->liquid_level_frame_id))
           tf_ll->dirty = true;
         else
         {
           std::ostringstream os;
-          os << "[liquid_level] liquid_level_frame_id '" << c.fluid.liquid_level_frame_id
+          os << "[liquid_level] liquid_level_frame_id '" << fluid->liquid_level_frame_id
              << "' not found for container '" << name << "'.";
           throw std::runtime_error(os.str());
         }
       }
 
-      if (auto* tf_joint = database::get_element(tcomp.elements, c.fluid.liquid_level_joint_id))
+      if (auto* tf_joint = database::get_element(tcomp.elements, fluid->liquid_level_joint_id))
         tf_joint->dirty = true;
       else
       {
         std::ostringstream os;
-        os << "[liquid_level] transform for joint '" << c.fluid.liquid_level_joint_id << "' not found for container '"
+        os << "[liquid_level] transform for joint '" << fluid->liquid_level_joint_id << "' not found for container '"
            << name << "'.";
         throw std::runtime_error(os.str());
       }
@@ -285,7 +290,13 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
       const std::string& name = kv.first;
       const auto& c = kv.second;
 
-      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || c.fluid.liquid_level_joint_id.empty())
+      const auto* fluid = std::get_if<components::FluidDomain>(&c.runtime);
+      if (!fluid)
+      {
+        continue;
+      }
+
+      if (c.payload.volume <= 0.0 || c.payload.domain_shape_id.empty() || fluid->liquid_level_joint_id.empty())
       {
         continue;
       }
@@ -295,19 +306,19 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
       const auto& dom_base =
           require_elem_const<DomainShapeComponent>(diff, eid, c.payload.domain_shape_id, "DomainShape");
 
-      const auto& joint_base = require_elem_const<JointComponent>(diff, eid, c.fluid.liquid_level_joint_id, "Joint");
+      const auto& joint_base = require_elem_const<JointComponent>(diff, eid, fluid->liquid_level_joint_id, "Joint");
 
       if (joint_base.actuation != components::JointActuation::VIRTUAL)
       {
         std::ostringstream os;
-        os << "[liquid_level/diff] Joint '" << c.fluid.liquid_level_joint_id << "' must be VIRTUAL (is "
+        os << "[liquid_level/diff] Joint '" << fluid->liquid_level_joint_id << "' must be VIRTUAL (is "
            << components::jointActuationToString(joint_base.actuation) << ").";
         throw std::runtime_error(os.str());
       }
       if (joint_base.type != components::JointType::PRISMATIC || joint_base.dof() != 1)
       {
         std::ostringstream os;
-        os << "[liquid_level/diff] Joint '" << c.fluid.liquid_level_joint_id << "' must be 1-DOF PRISMATIC.";
+        os << "[liquid_level/diff] Joint '" << fluid->liquid_level_joint_id << "' must be 1-DOF PRISMATIC.";
         throw std::runtime_error(os.str());
       }
 
@@ -436,14 +447,14 @@ void update_liquid_level_joints_from_domain(database::DatabaseDiff& diff, Eigen:
         joint_work.resize(1);
       joint_work.position[0] = h;
 
-      diff.add_or_replace<JointComponent>(eid, c.fluid.liquid_level_joint_id, joint_work);
+      diff.add_or_replace<JointComponent>(eid, fluid->liquid_level_joint_id, joint_work);
 
       // ---------------- Patch dirty flags on relevant frames ----------------
 
-      if (!c.fluid.liquid_level_frame_id.empty())
-        mark_tf_dirty(diff, eid, c.fluid.liquid_level_frame_id);
+      if (!fluid->liquid_level_frame_id.empty())
+        mark_tf_dirty(diff, eid, fluid->liquid_level_frame_id);
 
-      mark_tf_dirty(diff, eid, c.fluid.liquid_level_joint_id);
+      mark_tf_dirty(diff, eid, fluid->liquid_level_joint_id);
     }
   });
 }
