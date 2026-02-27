@@ -256,7 +256,7 @@ void add_parallel_axis_ls(const sodf::assembly::Ref& H, const sodf::assembly::Re
                           Accum&& accum)
 {
   using namespace sodf::assembly;
-  using Eigen::Vector3d;
+  using namespace Eigen;
 
   Axis aH = resolveAxis(H, ctx);
   Axis aG = resolveAxis(G, ctx);
@@ -264,10 +264,15 @@ void add_parallel_axis_ls(const sodf::assembly::Ref& H, const sodf::assembly::Re
   const Vector3d h = aH.direction.normalized();
   const Vector3d g = aG.direction.normalized();
 
-  Vector3d r_ang = g.cross(h);
-  Eigen::Matrix<double, 3, 6> J = Eigen::Matrix<double, 3, 6>::Zero();
+  // IMPORTANT: correct ordering
+  Vector3d r_ang = h.cross(g);
+
+  Matrix<double, 3, 6> J = Matrix<double, 3, 6>::Zero();
+
+  // rotational part only
   J.block<3, 3>(0, 0) = -sodf::geometry::skew(h) * sodf::geometry::skew(g);
-  accum(J, Eigen::Map<Eigen::Vector3d>(r_ang.data()), P.w_ang);
+
+  accum(J, r_ang, P.w_ang);
 }
 
 template <typename Accum>
