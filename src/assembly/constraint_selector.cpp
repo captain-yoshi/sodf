@@ -86,7 +86,16 @@ Axis resolveAxis(const Ref& r, const SelectorContext& ctx)
       SelectorContext::InsertionData ins;
       if (!ctx.getInsertion(r, ins))
         throw std::runtime_error("resolveAxis: insertion not found for '" + r.raw + "'");
-      return Axis{ ins.mouth.translation(), ins.axis.normalized() };
+      // return Axis{ ins.mouth.translation(), ins.axis.normalized() };
+
+      // Choose direction based on selector
+      Eigen::Vector3d dir = ins.axis;
+      if (r.selector == "ref")  // handles "...#ref"
+        dir = ins.ref;
+      else if (r.selector == "axis")  // "...#axis" (or default)
+        dir = ins.axis;
+
+      return Axis{ ins.mouth.translation(), dir.normalized() };
     }
 
     case NamespaceKind::Shape:
