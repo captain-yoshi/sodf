@@ -98,8 +98,6 @@ struct Container
 
   DomainRuntime runtime;
 
-  std::string stacked_shape_id;
-
   std::string content_type;
   std::string material_id;
 

@@ -765,7 +765,6 @@ void parseContainerComponent(const tinyxml2::XMLElement* elem, const XMLParseCon
   Container container;
   const std::string id = evalElementIdRequired(elem, ctx);
 
-  container.stacked_shape_id = evalTextAttribute(elem, "stacked_shape", "", ctx);
 
   container.material_id = evalTextAttribute(elem, "material", "", ctx);
 
