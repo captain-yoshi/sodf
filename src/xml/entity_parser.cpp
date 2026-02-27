@@ -940,7 +940,7 @@ bool EntityParser::loadEntities(tinyxml2::XMLDocument* doc, const std::string& b
 
   for (const auto& scene : scene_map)
   {
-    auto eid = db.create();
+    auto eid = db.create_object(scene.second.id);
 
     components::ObjectComponent obj_comp{ .id = scene.second.id };
     db.add(eid, std::move(obj_comp));

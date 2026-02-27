@@ -767,12 +767,12 @@ void print_jacobian_report(const JacobianReport& j)
 
 // ---------------- Gauss–Newton (one step) in WORLD ----------------
 
-Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const database::ObjectEntityMap& map,
-                                                  database::EntityID /*eid*/, components::OriginComponent& origin,
-                                                  const LSSolveParams& P, LSLinearStats* out_stats)
+Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, database::EntityID /*eid*/,
+                                                  components::OriginComponent& origin, const LSSolveParams& P,
+                                                  LSLinearStats* out_stats)
 {
   // WORLD-only selector context
-  auto ctx = sodf::assembly::makeSelectorContext(db, map);
+  auto ctx = sodf::assembly::makeSelectorContext(db);
 
   Eigen::Matrix<double, 6, 6> JTJ = Eigen::Matrix<double, 6, 6>::Zero();
   Eigen::Matrix<double, 6, 1> JTr = Eigen::Matrix<double, 6, 1>::Zero();
@@ -907,11 +907,10 @@ Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const 
 
 // ----------------------- diagnostics (WORLD) -------------------------
 std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& db,
-                                                            const database::ObjectEntityMap& map,
                                                             const components::OriginComponent& origin)
 {
   using namespace sodf::assembly;
-  auto ctx = sodf::assembly::makeSelectorContext(db, map);
+  auto ctx = sodf::assembly::makeSelectorContext(db);
 
   std::vector<ResidualEntry> out;
   out.reserve(origin.constraints.size());

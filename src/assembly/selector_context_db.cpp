@@ -53,8 +53,7 @@ static inline Eigen::Vector3d transformAxis(const Eigen::Isometry3d& T, const Ei
   return v / std::sqrt(n2);
 }
 
-static database::Database::entity_type must_entity(const database::ObjectEntityMap& objects,
-                                                   const std::string& object_id)
+static database::Database::entity_type must_entity(database::Database& db, const std::string& object_id)
 {
   if (object_id.empty())
   {
@@ -62,10 +61,12 @@ static database::Database::entity_type must_entity(const database::ObjectEntityM
         "Unknown object/entity: ''. A local reference was likely used without scope.\n"
         "Ensure OriginComponent.host_object / guest_object are set, or add <Scope host=\"...\" guest=\"...\"/>.");
   }
-  auto it = objects.find(object_id);
-  if (it == objects.end())
+
+  auto maybe = db.find_object(object_id);
+  if (!maybe)
     throw std::runtime_error("Unknown object/entity: '" + object_id + "'");
-  return it->second;
+
+  return *maybe;
 }
 
 // STRICT transform accessor with contextual error
@@ -586,14 +587,14 @@ static SelectorContext::InsertionData read_insertion(Database& db, database::Dat
 // Public factory
 // -----------------------------------------------------------------------------
 
-SelectorContext makeSelectorContext(database::Database& db, const database::ObjectEntityMap& objects)
+SelectorContext makeSelectorContext(database::Database& db)
 {
   SelectorContext ctx;
 
   // FRAMES  ── bool (Ref, Pose& out)
   // STRICT: throws if transform not found.
-  ctx.getFrame = [&db, &objects](const Ref& r, Pose& out) -> bool {
-    auto e = must_entity(objects, r.entity);
+  ctx.getFrame = [&db](const Ref& r, Pose& out) -> bool {
+    auto e = must_entity(db, r.entity);
     const std::string key = ref_key(r);
     const Eigen::Isometry3d T = must_global_transform(db, e, key, "frame");
     out = Pose{ T };
@@ -601,17 +602,16 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
   };
 
   // INSERTION  ── bool (Ref, InsertionData& out)
-  // STRICT: read_insertion throws on missing transforms.
-  ctx.getInsertion = [&db, &objects](const Ref& r, SelectorContext::InsertionData& out) -> bool {
-    auto e = must_entity(objects, r.entity);
+  ctx.getInsertion = [&db](const Ref& r, SelectorContext::InsertionData& out) -> bool {
+    auto e = must_entity(db, r.entity);
     const std::string key = ref_key(r);
     out = read_insertion(db, e, key);
     return true;
   };
 
-  // SHAPE: cylinder (supports Shape + Domain + StackedShape)
-  ctx.getCylinder = [&db, &objects](const Ref& r, Axis& out_axis, double& radius, double& height) -> bool {
-    auto e = must_entity(objects, r.entity);
+  // SHAPE: cylinder
+  ctx.getCylinder = [&db](const Ref& r, Axis& out_axis, double& radius, double& height) -> bool {
+    auto e = must_entity(db, r.entity);
     const std::string key = ref_key(r);
 
     if (read_cylinder_from_shape(db, e, key, out_axis, radius, height))
@@ -626,9 +626,9 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
     return false;
   };
 
-  // SHAPE: cone (supports Shape + Domain + StackedShape)
-  ctx.getCone = [&db, &objects](const Ref& r, Axis& out_axis, double& r0, double& r1, double& height) -> bool {
-    auto e = must_entity(objects, r.entity);
+  // SHAPE: cone
+  ctx.getCone = [&db](const Ref& r, Axis& out_axis, double& r0, double& r1, double& height) -> bool {
+    auto e = must_entity(db, r.entity);
     const std::string key = ref_key(r);
 
     if (read_cone_from_shape(db, e, key, out_axis, r0, r1, height))
@@ -644,14 +644,13 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
   };
 
   // SHAPE: plane
-  ctx.getPlane = [&db, &objects, &ctx](const Ref& r, Plane& out_plane) -> bool {
-    auto e = must_entity(objects, r.entity);
+  ctx.getPlane = [&db, &ctx](const Ref& r, Plane& out_plane) -> bool {
+    auto e = must_entity(db, r.entity);
     const std::string key = ref_key(r);
 
     if (read_plane_from_shape(db, e, key, out_plane))
       return true;
 
-    // Fallback to frame plane (+Z), STRICT on transform presence
     Pose F;
     (void)ctx.getFrame(r, F);
     out_plane.point = F.translation();
@@ -660,26 +659,24 @@ SelectorContext makeSelectorContext(database::Database& db, const database::Obje
   };
 
   // STACKED_SHAPE: primary axis
-  ctx.getStackedPrimaryAxis = [&db, &objects](const Ref& r, Axis& out_axis) -> bool {
+  ctx.getStackedPrimaryAxis = [&db](const Ref& r, Axis& out_axis) -> bool {
     using components::StackedShapeComponent;
 
-    auto e = must_entity(objects, r.entity);
+    auto e = must_entity(db, r.entity);
     const std::string key = ref_key(r);
 
-    // If this key refers to a stacked-shape element, its canonical axis is +X by convention
     if (auto* ss = db.get_element<StackedShapeComponent>(e, key))
     {
-      (void)ss;  // existence check
+      (void)ss;
       const Eigen::Isometry3d T = must_global_transform(db, e, key, "stacked_shape");
       out_axis.point = T.translation();
-      out_axis.direction = T.linear().col(0).normalized();  // +X (canonical)
+      out_axis.direction = T.linear().col(0).normalized();
       return true;
     }
 
-    // Fallback: treat any frame as having +X primary axis for stacked-shape queries
     const Eigen::Isometry3d T = must_global_transform(db, e, key, "stacked_primary_axis(frame)");
     out_axis.point = T.translation();
-    out_axis.direction = T.linear().col(0).normalized();  // +X
+    out_axis.direction = T.linear().col(0).normalized();
     return true;
   };
 
@@ -716,22 +713,22 @@ static inline sodf::assembly::Plane to_host_plane(const Eigen::Isometry3d& W_H, 
 }  // namespace
 
 // Public helper: return a SelectorContext whose outputs are expressed in HOST frame
-SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
-                                               const sodf::database::ObjectEntityMap& objects,
-                                               const std::string& host_object_id)
+SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db, const std::string& host_object_id)
 {
   using sodf::systems::get_global_transform;
 
   // base = world-space context
-  sodf::assembly::SelectorContext base = sodf::assembly::makeSelectorContext(db, objects);
+  sodf::assembly::SelectorContext base = sodf::assembly::makeSelectorContext(db);
 
   // resolve host world pose (root)
-  auto it = objects.find(host_object_id);
-  if (it == objects.end())
+  auto maybe_host = db.find_object(host_object_id);
+  if (!maybe_host)
     throw std::runtime_error("makeSelectorContextInHostSpace: unknown host object '" + host_object_id + "'");
 
   sodf::systems::update_all_global_transforms(db);
-  const Eigen::Isometry3d H_W = get_global_transform(db, it->second, "root");
+
+  const Eigen::Isometry3d H_W = get_global_transform(db, *maybe_host, "root");
+
   const Eigen::Isometry3d W_H = H_W.inverse();
 
   sodf::assembly::SelectorContext ctx = base;  // copy & wrap

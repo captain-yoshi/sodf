@@ -42,10 +42,10 @@ constexpr int kOriginMaxSeatConeIters = 20;
 constexpr double kOriginSeatConeEps = 1e-9;
 
 // Evaluate max angular and distance residual (over all constraints that are ok)
-static void eval_origin_residuals(database::Database& db, const database::ObjectEntityMap& map,
-                                  const components::OriginComponent& origin, double& max_ang_rad, double& max_dist_m)
+static void eval_origin_residuals(database::Database& db, const components::OriginComponent& origin,
+                                  double& max_ang_rad, double& max_dist_m)
 {
-  auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
+  auto residuals = sodf::systems::compute_origin_residuals_compact(db, origin);
 
   max_ang_rad = 0.0;
   max_dist_m = 0.0;
@@ -107,8 +107,8 @@ static std::string infer_host_object(const components::OriginComponent& origin)
 }
 
 // Optional two-pin presnap to give LS a good initial guess
-static bool two_pin_presnap(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
-                            components::OriginComponent& origin, Eigen::Isometry3d& T_world)
+static bool two_pin_presnap(database::Database& db, database::EntityID eid, components::OriginComponent& origin,
+                            Eigen::Isometry3d& T_world)
 {
   using namespace sodf::components;
   using sodf::assembly::make_guest_ref;
@@ -171,9 +171,9 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
   root_node.parent = {};  // WORLD
   root_node.local = T_world;
   root_node.dirty = true;
-  sodf::systems::update_entity_global_transforms(db, eid, map);
+  sodf::systems::update_entity_global_transforms(db, eid);
 
-  auto ctx = sodf::assembly::makeSelectorContext(db, map);
+  auto ctx = sodf::assembly::makeSelectorContext(db);
 
   // Resolve host/guest axes in WORLD for both pins
   Ref H1 = make_host_ref(pins[0].host, origin);
@@ -199,7 +199,7 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
     root_node.parent = parent_backup;
     root_node.local = local_backup;
     root_node.dirty = true;
-    sodf::systems::update_entity_global_transforms(db, eid, map);
+    sodf::systems::update_entity_global_transforms(db, eid);
     return false;
   }
 
@@ -230,15 +230,14 @@ static bool two_pin_presnap(database::Database& db, const database::ObjectEntity
   root_node.parent = parent_backup;
   root_node.local = local_backup;
   root_node.dirty = true;
-  sodf::systems::update_entity_global_transforms(db, eid, map);
+  sodf::systems::update_entity_global_transforms(db, eid);
 
   return true;
 }
 
 }  // namespace
 
-static void expand_insertion_mates(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
-                                   components::OriginComponent& origin)
+static void expand_insertion_mates(database::Database& db, database::EntityID eid, components::OriginComponent& origin)
 {
   using namespace sodf::components;
   using ConstraintT = decltype(origin.constraints)::value_type;
@@ -246,7 +245,7 @@ static void expand_insertion_mates(database::Database& db, const database::Objec
   std::vector<ConstraintT> expanded;
   expanded.reserve(origin.constraints.size() * 3);
 
-  auto ctx = sodf::assembly::makeSelectorContext(db, map);
+  auto ctx = sodf::assembly::makeSelectorContext(db);
 
   for (const auto& step_any : origin.constraints)
   {
@@ -351,8 +350,8 @@ static void expand_insertion_mates(database::Database& db, const database::Objec
 
 // ------------------------ single-Origin solver -----------------------------
 
-static void solve_single_origin(database::Database& db, const database::ObjectEntityMap& map, database::EntityID eid,
-                                components::TransformComponent& tcomp, components::OriginComponent& origin)
+static void solve_single_origin(database::Database& db, database::EntityID eid, components::TransformComponent& tcomp,
+                                components::OriginComponent& origin)
 {
   using namespace sodf::components;
 
@@ -364,23 +363,26 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
   auto& root_node = root_pair.second;
 
   // ---------- Pin guest_object to THIS entity (throw if we cannot infer) ----------
-  auto object_id_from_entity_or_empty = [&](database::EntityID q) -> std::string {
-    for (const auto& kv : map)
-      if (kv.second == q)
-        return kv.first;
-    return {};
-  };
+  auto* obj = db.get<ObjectComponent>(eid);
+  if (!obj)
+    throw std::runtime_error("[Origin] Entity has no ObjectComponent; cannot infer guest_object.");
 
-  if (origin.guest_object.empty() || map.find(origin.guest_object) == map.end() || map.at(origin.guest_object) != eid)
+  if (origin.guest_object.empty())
   {
-    const std::string obj = object_id_from_entity_or_empty(eid);
-    if (obj.empty())
-      throw std::runtime_error("[Origin] Cannot infer guest_object for entity.");
-    origin.guest_object = obj;
+    origin.guest_object = obj->id;
+  }
+  else
+  {
+    // Validate consistency
+    auto maybe_eid = db.find_object(origin.guest_object);
+    if (!maybe_eid || *maybe_eid != eid)
+    {
+      throw std::runtime_error("[Origin] guest_object '" + origin.guest_object + "' does not match this entity.");
+    }
   }
 
   // Expand InsertionMate into primitives
-  expand_insertion_mates(db, map, eid, origin);
+  expand_insertion_mates(db, eid, origin);
 
   // host_object is already inferred in apply_origin_constraints (topology phase)
 
@@ -413,7 +415,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
   Eigen::Isometry3d T_world = T0;
 
   // Optional presnap for the two-pin case (good initial guess)
-  two_pin_presnap(db, map, eid, origin, T_world);
+  two_pin_presnap(db, eid, origin, T_world);
 
   // ---------- Solve (WORLD-only LS) ----------
   systems::LSSolveParams lp;
@@ -444,12 +446,12 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
       root_node.parent = {};  // WORLD
       root_node.local = T_world;
       root_node.dirty = true;
-      sodf::systems::update_entity_global_transforms(db, eid, map);
+      sodf::systems::update_entity_global_transforms(db, eid);
 
       // 2) Evaluate residuals at THIS pose
       double max_ang = 0.0;
       double max_dist = 0.0;
-      eval_origin_residuals(db, map, origin, max_ang, max_dist);
+      eval_origin_residuals(db, origin, max_ang, max_dist);
 
       // 3) Track best pose so far
       if (max_dist < best_dist_m || (max_dist == best_dist_m && max_ang < best_ang_rad))
@@ -464,7 +466,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
         break;
 
       // 5) One GN step around *current DB pose*
-      Eigen::Isometry3d dT = systems::solve_origin_least_squares_once(db, map, eid, origin, lp, &stats);
+      Eigen::Isometry3d dT = systems::solve_origin_least_squares_once(db, eid, origin, lp, &stats);
 
       // 6) Apply increment (left-multiply)
       T_world = dT * T_world;
@@ -484,7 +486,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
     root_node.parent = ls_parent_backup;
     root_node.local = ls_local_backup;
     root_node.dirty = true;
-    sodf::systems::update_entity_global_transforms(db, eid, map);
+    sodf::systems::update_entity_global_transforms(db, eid);
   }
 
   // ---------- Discrete SeatCone pass *after* LS ----------
@@ -499,7 +501,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
     root_node.parent = {};  // WORLD
     root_node.local = T_world_seat;
     root_node.dirty = true;
-    sodf::systems::update_entity_global_transforms(db, eid, map);
+    sodf::systems::update_entity_global_transforms(db, eid);
 
     bool has_seatcone = false;
 
@@ -555,7 +557,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
     for (;;)
     {
       bool changed = false;
-      auto ctx = sodf::assembly::makeSelectorContext(db, map);
+      auto ctx = sodf::assembly::makeSelectorContext(db);
 
       for (const auto& step_any : origin.constraints)
       {
@@ -580,7 +582,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
                   // Write back so subsequent SeatCone sees updated pose
                   root_node.local = T_world_seat;
                   root_node.dirty = true;
-                  sodf::systems::update_entity_global_transforms(db, eid, map);
+                  sodf::systems::update_entity_global_transforms(db, eid);
                 }
               }
             },
@@ -596,10 +598,10 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
         root_node.parent = {};           // WORLD for simplicity
         root_node.local = T_world_seat;  // last pose we tried
         root_node.dirty = true;
-        sodf::systems::update_entity_global_transforms(db, eid, map);
+        sodf::systems::update_entity_global_transforms(db, eid);
 
         // --- 2) Compute residuals at this pose
-        auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
+        auto residuals = sodf::systems::compute_origin_residuals_compact(db, origin);
 
         std::ostringstream diag;
         for (const auto& e : residuals)
@@ -617,7 +619,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
         root_node.parent = seat_parent_backup;
         root_node.local = local_backup;
         root_node.dirty = true;
-        sodf::systems::update_entity_global_transforms(db, eid, map);
+        sodf::systems::update_entity_global_transforms(db, eid);
 
         // --- 4) Build error message
         std::ostringstream oss;
@@ -644,7 +646,7 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
     root_node.parent = seat_parent_backup;
     root_node.local = local_backup;
     root_node.dirty = true;
-    sodf::systems::update_entity_global_transforms(db, eid, map);
+    sodf::systems::update_entity_global_transforms(db, eid);
   }
 
   // ---------- Re-express final world pose in host frame (if any) ----------
@@ -652,17 +654,19 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
 
   if (!origin.host_object.empty())
   {
-    // Find host entity
-    auto it = map.find(origin.host_object);
-    if (it == map.end())
-      throw std::runtime_error("[Origin] host_object '" + origin.host_object + "' not found in ObjectEntityMap");
+    // Ensure host exists (optional but good)
+    if (!db.find_object(origin.host_object))
+    {
+      throw std::runtime_error("[Origin] host_object '" + origin.host_object + "' not found");
+    }
 
-    // Get host's global transform W_H
-    const Eigen::Isometry3d W_H = sodf::systems::get_root_global_transform(db, map, origin.host_object);
+    // Get host global transform directly by object id
+    const Eigen::Isometry3d W_H = sodf::systems::get_root_global_transform(db, origin.host_object);
 
     // Express guest pose in host frame
     T_local = W_H.inverse() * T_world;
-    new_parent = origin.host_object;  // parent under host
+
+    new_parent = origin.host_object;
   }
   else
   {
@@ -674,10 +678,10 @@ static void solve_single_origin(database::Database& db, const database::ObjectEn
   root_node.parent = new_parent;
   root_node.dirty = true;
 
-  sodf::systems::update_entity_global_transforms(db, eid, map);
+  sodf::systems::update_entity_global_transforms(db, eid);
 
   // ---------- Validate in WORLD; throw on failure (no rollback) ----------
-  auto residuals = sodf::systems::compute_origin_residuals_compact(db, map, origin);
+  auto residuals = sodf::systems::compute_origin_residuals_compact(db, origin);
 
   std::size_t bad = 0;
   for (const auto& e : residuals)
@@ -721,7 +725,7 @@ struct OriginNode
 
 }  // namespace
 
-void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& obj_map)
+void apply_origin_constraints(database::Database& db)
 {
   using EntityID = database::EntityID;
   using components::ObjectComponent;
@@ -756,14 +760,17 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
     if (host_id.empty())
       continue;
 
-    auto it_host = obj_map.find(host_id);
-    if (it_host == obj_map.end())
+    // Resolve host entity via Database
+    auto maybe_host = db.find_object(host_id);
+    if (!maybe_host)
     {
+      // Host exists semantically but not in DB — treat as external / WORLD
       continue;
     }
 
-    EntityID host_eid = it_host->second;
+    EntityID host_eid = *maybe_host;
 
+    // Only create dependency if host also has an Origin node
     auto it_node_host = nodes.find(host_eid);
     if (it_node_host == nodes.end())
       continue;
@@ -800,7 +807,7 @@ void apply_origin_constraints(database::Database& db, const database::ObjectEnti
     {
       try
       {
-        solve_single_origin(db, obj_map, eid, *tcomp, *origin);
+        solve_single_origin(db, eid, *tcomp, *origin);
         last_error.erase(eid);
       }
       catch (const std::exception& ex)

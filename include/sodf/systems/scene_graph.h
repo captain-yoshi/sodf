@@ -29,14 +29,6 @@ namespace systems {
 /// This lets us support Database and DatabaseDiff without duplicating logic.
 /// ---------------------------------------------------------------------------
 
-template <class DBLike>
-database::ObjectEntityMap make_object_entity_map(DBLike& db)
-{
-  database::ObjectEntityMap map;
-  db.each([&](database::EntityID id, const components::ObjectComponent& obj) { map.emplace(obj.id, id); });
-  return map;
-}
-
 // Local transform from root → named frame (within one entity)
 template <class DBLike>
 Eigen::Isometry3d get_local_to_root(DBLike& db, database::EntityID eid, const std::string& frame_name)
@@ -88,11 +80,9 @@ std::optional<database::EntityID> find_root_frame_entity(database::Database& db)
 /// Base (Database) scene graph API
 /// ---------------------------------------------------------------------------
 
-Eigen::Isometry3d get_root_global_transform(database::Database& db, const database::ObjectEntityMap& obj_map,
-                                            const std::string& object_id);
+Eigen::Isometry3d get_root_global_transform(database::Database& db, const std::string& object_id);
 
-void update_entity_global_transforms(database::Database& db, database::EntityID eid,
-                                     const database::ObjectEntityMap& obj_map);
+void update_entity_global_transforms(database::Database& db, database::EntityID eid);
 
 void update_all_global_transforms(database::Database& db);
 
@@ -131,10 +121,8 @@ public:
   }
 
 private:
-  friend Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const database::ObjectEntityMap& obj_map,
-                                                     const std::string& object_id);
-  friend void update_entity_global_transforms(SceneGraphCache& cache, EntityID eid,
-                                              const database::ObjectEntityMap& obj_map);
+  friend Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const std::string& object_id);
+  friend void update_entity_global_transforms(SceneGraphCache& cache, EntityID eid);
   friend void update_all_global_transforms(SceneGraphCache& cache);
   friend Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, EntityID eid, const std::string& frame_name);
   friend Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, const std::string& abs_path);
@@ -160,11 +148,9 @@ private:
 /// Diff-aware Scene Graph API using SceneGraphCache
 /// ---------------------------------------------------------------------------
 
-Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const database::ObjectEntityMap& obj_map,
-                                            const std::string& object_id);
+Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const std::string& object_id);
 
-void update_entity_global_transforms(SceneGraphCache& cache, database::EntityID eid,
-                                     const database::ObjectEntityMap& obj_map);
+void update_entity_global_transforms(SceneGraphCache& cache, database::EntityID eid);
 
 void update_all_global_transforms(SceneGraphCache& cache);
 
@@ -176,19 +162,16 @@ Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, const std::string
 /// Convenience overloads for DatabaseDiff users (thin wrappers)
 /// ---------------------------------------------------------------------------
 
-inline Eigen::Isometry3d get_root_global_transform(database::DatabaseDiff& diff,
-                                                   const database::ObjectEntityMap& obj_map,
-                                                   const std::string& object_id)
+inline Eigen::Isometry3d get_root_global_transform(database::DatabaseDiff& diff, const std::string& object_id)
 {
   SceneGraphCache cache(diff);
-  return get_root_global_transform(cache, obj_map, object_id);
+  return get_root_global_transform(cache, object_id);
 }
 
-inline void update_entity_global_transforms(database::DatabaseDiff& diff, database::EntityID eid,
-                                            const database::ObjectEntityMap& obj_map)
+inline void update_entity_global_transforms(database::DatabaseDiff& diff, database::EntityID eid)
 {
   SceneGraphCache cache(diff);
-  update_entity_global_transforms(cache, eid, obj_map);
+  update_entity_global_transforms(cache, eid);
 }
 
 inline void update_all_global_transforms(database::DatabaseDiff& diff)

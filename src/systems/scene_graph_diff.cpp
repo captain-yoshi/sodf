@@ -38,7 +38,7 @@ inline const geometry::TransformNode* get_diff_element_node(database::DatabaseDi
 // This directly addresses RootGlobalReflectsDiffOverride without requiring
 // materialize_component to merge element patches.
 static bool update_global_transform(SceneGraphCache& cache, EntityID id, components::TransformComponent& tf,
-                                    std::size_t frame_idx, const database::ObjectEntityMap& obj_map, bool force)
+                                    std::size_t frame_idx, bool force)
 {
   if (frame_idx >= tf.elements.size())
     return false;
@@ -58,19 +58,21 @@ static bool update_global_transform(SceneGraphCache& cache, EntityID id, compone
 
   if (frame_idx == 0)
   {
-    // Root can have an external parent object
     if (!frame_src.parent.empty())
     {
-      auto it = obj_map.find(frame_src.parent);
-      if (it == obj_map.end())
+      auto& base = cache.diff().base();  // resolve via base DB
+
+      auto maybe_parent = base.find_object(frame_src.parent);
+      if (!maybe_parent)
         throw std::runtime_error("Parent object id '" + frame_src.parent + "' not found.");
 
-      const EntityID parent_eid = it->second;
+      const EntityID parent_eid = *maybe_parent;
 
       auto& ptf = cache.get_or_materialize_transform(parent_eid);
       if (!ptf.elements.empty())
       {
-        parent_recomputed = update_global_transform(cache, parent_eid, ptf, 0, obj_map, /*force=*/false);
+        parent_recomputed = update_global_transform(cache, parent_eid, ptf, 0, /*force=*/false);
+
         parent_global = ptf.elements[0].second.global;
       }
     }
@@ -85,7 +87,7 @@ static bool update_global_transform(SceneGraphCache& cache, EntityID id, compone
     if (pit != tf.elements.end())
     {
       std::size_t pidx = static_cast<std::size_t>(std::distance(tf.elements.begin(), pit));
-      parent_recomputed = update_global_transform(cache, id, tf, pidx, obj_map, /*force=*/force);
+      parent_recomputed = update_global_transform(cache, id, tf, pidx, /*force=*/force);
       parent_global = pit->second.global;
     }
     else
@@ -134,15 +136,17 @@ components::TransformComponent& SceneGraphCache::get_or_materialize(EntityID eid
 
 // ---- Cached API ----
 
-Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const database::ObjectEntityMap& obj_map,
-                                            const std::string& object_id)
+Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const std::string& object_id)
 {
-  auto it = obj_map.find(object_id);
-  if (it == obj_map.end())
+  auto& base = cache.diff().base();  // identity lives in base DB
+
+  auto maybe = base.find_object(object_id);
+  if (!maybe)
     throw std::runtime_error("[scene_graph_diff] get_root_global_transform: object id '" + object_id + "' not found");
 
-  const EntityID eid = it->second;
-  update_entity_global_transforms(cache, eid, obj_map);
+  const EntityID eid = *maybe;
+
+  update_entity_global_transforms(cache, eid);
 
   auto& tf = cache.get_or_materialize_transform(eid);
   if (tf.elements.empty())
@@ -151,7 +155,7 @@ Eigen::Isometry3d get_root_global_transform(SceneGraphCache& cache, const databa
   return tf.elements.front().second.global;
 }
 
-void update_entity_global_transforms(SceneGraphCache& cache, EntityID eid, const database::ObjectEntityMap& obj_map)
+void update_entity_global_transforms(SceneGraphCache& cache, EntityID eid)
 {
   auto& tf = cache.get_or_materialize_transform(eid);
   if (tf.elements.empty())
@@ -160,21 +164,18 @@ void update_entity_global_transforms(SceneGraphCache& cache, EntityID eid, const
   const bool force_subtree = tf.elements[0].second.dirty;
 
   for (std::size_t i = 0; i < tf.elements.size(); ++i)
-    update_global_transform(cache, eid, tf, i, obj_map, /*force=*/force_subtree);
+    update_global_transform(cache, eid, tf, i, /*force=*/force_subtree);
 }
 
 void update_all_global_transforms(SceneGraphCache& cache)
 {
-  auto obj_map = make_object_entity_map(cache.diff());
-
   cache.diff().each(
-      [&](EntityID id, const components::TransformComponent&) { update_entity_global_transforms(cache, id, obj_map); });
+      [&](EntityID id, const components::TransformComponent&) { update_entity_global_transforms(cache, id); });
 }
 
 Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, EntityID eid, const std::string& frame_name)
 {
-  auto obj_map = make_object_entity_map(cache.diff());
-  update_entity_global_transforms(cache, eid, obj_map);
+  update_entity_global_transforms(cache, eid);
 
   auto& tf = cache.get_or_materialize_transform(eid);
   const int idx = find_idx(tf, frame_name);
@@ -196,12 +197,13 @@ Eigen::Isometry3d get_global_transform(SceneGraphCache& cache, const std::string
   const std::string object_id = abs_path.substr(1, slash_pos - 1);
   const std::string frame_name = abs_path.substr(slash_pos + 1);
 
-  auto map = make_object_entity_map(cache.diff());
-  auto it = map.find(object_id);
-  if (it == map.end())
+  auto& base = cache.diff().base();  // identity authority
+
+  auto maybe = base.find_object(object_id);
+  if (!maybe)
     throw std::runtime_error("get_global_transform(diff): object id '" + object_id + "' not found");
 
-  return get_global_transform(cache, it->second, frame_name);
+  return get_global_transform(cache, *maybe, frame_name);
 }
 
 }  // namespace systems

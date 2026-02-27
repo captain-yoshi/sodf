@@ -10,16 +10,15 @@ namespace systems {
 // Database-only global-cache implementation
 // -----------------------------------------------------------------------------
 
-Eigen::Isometry3d get_root_global_transform(database::Database& db, const database::ObjectEntityMap& obj_map,
-                                            const std::string& object_id)
+Eigen::Isometry3d get_root_global_transform(database::Database& db, const std::string& object_id)
 {
-  auto it = obj_map.find(object_id);
-  if (it == obj_map.end())
+  auto maybe = db.find_object(object_id);
+  if (!maybe)
     throw std::runtime_error("[scene_graph] get_root_global_transform: object id '" + object_id + "' not found");
 
-  const database::EntityID eid = it->second;
+  const database::EntityID eid = *maybe;
 
-  update_entity_global_transforms(db, eid, obj_map);
+  update_entity_global_transforms(db, eid);
 
   auto* tf = db.get<components::TransformComponent>(eid);
   if (!tf || tf->elements.empty())
@@ -30,7 +29,7 @@ Eigen::Isometry3d get_root_global_transform(database::Database& db, const databa
 
 // Recursively update one frame’s global transform (returns true if recomputed)
 static bool update_global_transform(database::Database& db, database::EntityID id, components::TransformComponent& tf,
-                                    std::size_t frame_idx, const database::ObjectEntityMap& obj_map, bool force)
+                                    std::size_t frame_idx, bool force)
 {
   auto& kv = tf.elements[frame_idx];
   const std::string& frame_name = kv.first;
@@ -43,16 +42,17 @@ static bool update_global_transform(database::Database& db, database::EntityID i
   {
     if (!frame.parent.empty())
     {
-      auto it = obj_map.find(frame.parent);
-      if (it == obj_map.end())
+      auto maybe_parent = db.find_object(frame.parent);
+      if (!maybe_parent)
         throw std::runtime_error("Parent object id '" + frame.parent + "' not found.");
-      auto parent_eid = it->second;
+
+      auto parent_eid = *maybe_parent;
 
       if (auto* ptf = db.get<components::TransformComponent>(parent_eid))
       {
         if (!ptf->elements.empty())
         {
-          parent_recomputed = update_global_transform(db, parent_eid, *ptf, 0, obj_map, /*force=*/false);
+          parent_recomputed = update_global_transform(db, parent_eid, *ptf, 0, /*force=*/false);
           parent_global = ptf->elements[0].second.global;
         }
       }
@@ -67,7 +67,7 @@ static bool update_global_transform(database::Database& db, database::EntityID i
     if (pit != tf.elements.end())
     {
       std::size_t pidx = static_cast<std::size_t>(std::distance(tf.elements.begin(), pit));
-      parent_recomputed = update_global_transform(db, id, tf, pidx, obj_map, /*force=*/force);
+      parent_recomputed = update_global_transform(db, id, tf, pidx, /*force=*/force);
       parent_global = pit->second.global;
     }
     else
@@ -188,8 +188,7 @@ static bool update_global_transform(database::Database& db, database::EntityID i
   return true;
 }
 
-void update_entity_global_transforms(database::Database& db, database::EntityID eid,
-                                     const database::ObjectEntityMap& obj_map)
+void update_entity_global_transforms(database::Database& db, database::EntityID eid)
 {
   auto* tf = db.get<components::TransformComponent>(eid);
   if (!tf)
@@ -202,18 +201,16 @@ void update_entity_global_transforms(database::Database& db, database::EntityID 
   const bool force_subtree = tf->elements[0].second.dirty;
 
   for (std::size_t i = 0; i < tf->elements.size(); ++i)
-    update_global_transform(db, eid, *tf, i, obj_map, /*force=*/force_subtree);
+    update_global_transform(db, eid, *tf, i, /*force=*/force_subtree);
 }
 
 void update_all_global_transforms(database::Database& db)
 {
-  auto obj_map = make_object_entity_map(db);
-
   db.each([&](database::EntityID id, components::TransformComponent& tf) {
     const bool force_subtree = (!tf.elements.empty() && tf.elements[0].second.dirty);
 
     for (std::size_t i = 0; i < tf.elements.size(); ++i)
-      update_global_transform(db, id, tf, i, obj_map, force_subtree);
+      update_global_transform(db, id, tf, i, force_subtree);
   });
 }
 
@@ -237,12 +234,11 @@ Eigen::Isometry3d get_global_transform(database::Database& db, const std::string
   const std::string object_id = abs_path.substr(1, slash_pos - 1);
   const std::string frame_name = abs_path.substr(slash_pos + 1);
 
-  auto map = make_object_entity_map(db);
-  auto it = map.find(object_id);
-  if (it == map.end())
+  auto maybe = db.find_object(object_id);
+  if (!maybe)
     throw std::runtime_error("get_global_transform: object id '" + object_id + "' not found");
 
-  return get_global_transform(db, it->second, frame_name);
+  return get_global_transform(db, *maybe, frame_name);
 }
 
 }  // namespace systems

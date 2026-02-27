@@ -281,10 +281,32 @@ using component_stored_value_t = typename component_stored_value<C>::type;
 class Database : public Registry<GinsengBackend>
 {
 public:
+  using Base = Registry<GinsengBackend>;
   using entity_type = Registry<GinsengBackend>::entity_type;
 
   Database() : Registry<GinsengBackend>(backend_)
   {
+  }
+
+  entity_type create_object(std::string name)
+  {
+    entity_type e = create();
+    object_index_[name] = e;
+    return e;
+  }
+
+  std::optional<entity_type> find_object(std::string_view name) const
+  {
+    auto it = object_index_.find(std::string(name));
+    if (it == object_index_.end())
+      return std::nullopt;
+    return it->second;
+  }
+
+  void clear()
+  {
+    Base::clear();          // clear ECS storage
+    object_index_.clear();  // clear name index
   }
 
   GinsengBackend& backend()
@@ -324,10 +346,11 @@ public:
 
 private:
   GinsengBackend backend_;
+
+  std::unordered_map<std::string, entity_type, std::hash<std::string_view>, std::equal_to<>> object_index_;
 };
 
 using EntityID = Database::entity_type;
-using ObjectEntityMap = std::unordered_map<std::string, EntityID>;
 
 /// ---------------------------------------------------------------------------
 /// Internal diff machinery (not part of the public API)

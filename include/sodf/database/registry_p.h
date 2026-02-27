@@ -29,6 +29,7 @@ public:
   {
   }
 
+protected:
   // entity lifecycle
   entity_type create()
   {
@@ -43,6 +44,7 @@ public:
     traits::clear(impl_);
   }
 
+public:
   // components
 
   template <class C>

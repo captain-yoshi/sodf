@@ -54,15 +54,14 @@ struct ResidualEntry
  * @param P    solver params
  * @return     updated local pose T = exp(xi) * T0
  */
-Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, const database::ObjectEntityMap& map,
-                                                  database::EntityID eid, components::OriginComponent& origin,
-                                                  const LSSolveParams& P = {}, LSLinearStats* out_stats = nullptr);
+Eigen::Isometry3d solve_origin_least_squares_once(database::Database& db, database::EntityID eid,
+                                                  components::OriginComponent& origin, const LSSolveParams& P = {},
+                                                  LSLinearStats* out_stats = nullptr);
 
 JacobianReport summarize_linear_system(const LSLinearStats& S);
 void print_jacobian_report(const JacobianReport& j);
 
 std::vector<ResidualEntry> compute_origin_residuals_compact(database::Database& db,
-                                                            const database::ObjectEntityMap& map,
                                                             const components::OriginComponent& origin);
 std::string format_origin_residual_errors(const std::vector<ResidualEntry>& residuals, double tol_ang_rad,
                                           double tol_dist_m);

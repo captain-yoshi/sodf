@@ -12,7 +12,7 @@ namespace systems {
  * - Supports constraint leaves: Coincident, Concentric, Parallel, Angle, Distance, SeatConeOnCylinder
  * - Uses selector_context_db to resolve strings like "table/insert/M24#axis"
  */
-void apply_origin_constraints(database::Database& db, const database::ObjectEntityMap& object_map);
+void apply_origin_constraints(database::Database& db);
 
 }  // namespace systems
 }  // namespace sodf

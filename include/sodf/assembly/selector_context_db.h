@@ -13,11 +13,9 @@ namespace assembly {
  * @param db        Your database::Database
  * @param objects   Map from object id string -> entity id (database::ObjectEntityMap)
  */
-SelectorContext makeSelectorContext(database::Database& db, const database::ObjectEntityMap& objects);
+SelectorContext makeSelectorContext(database::Database& db);
 
-SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db,
-                                               const sodf::database::ObjectEntityMap& objects,
-                                               const std::string& host_object_id);
+SelectorContext makeSelectorContextInHostSpace(sodf::database::Database& db, const std::string& host_object_id);
 
 }  // namespace assembly
 }  // namespace sodf
