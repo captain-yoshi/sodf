@@ -23,7 +23,8 @@ if(ament_cmake_FOUND)
     target_link_libraries(${SODF_LIBRARY}_test
         ${TEST_DEPENDECIES}
         ${ament_LIBRARIES}
-        GTest::gtest_main)
+        GTest::gtest_main
+        Eigen3::Eigen)
 
 elseif(catkin_FOUND AND CATKIN_ENABLE_TESTING)
     catkin_add_gtest(${SODF_LIBRARY}_test ${SODF_TESTS})
@@ -31,7 +32,8 @@ elseif(catkin_FOUND AND CATKIN_ENABLE_TESTING)
         ${TEST_DEPENDECIES}
         Threads::Threads
         ${catkin_LIBRARIES}
-        gtest_main)
+        gtest_main
+        Eigen3::Eigen)
 
 else()
 
@@ -51,7 +53,8 @@ else()
     target_link_libraries(${SODF_LIBRARY}_test
         ${TEST_DEPENDECIES}
         Threads::Threads
-        GTest::gtest_main)
+        GTest::gtest_main
+        Eigen3::Eigen)
 
 endif()
 
