@@ -24,6 +24,8 @@ using namespace sodf::components;
 using namespace sodf::geometry;
 namespace fs = std::filesystem;
 
+namespace {
+
 static std::string writeTempFile(const std::string& filename, const std::string& contents)
 {
   fs::path dir = fs::temp_directory_path() / "sodf_min_xml_tests";
@@ -40,6 +42,40 @@ static std::vector<std::string> collectObjectIds(database::Database& db)
   return ids;
 }
 
+inline sodf::xml::XMLParseContext makeContext(tinyxml2::XMLDocument& doc, const char* filename = "test.xml")
+{
+  sodf::xml::XMLParseContext ctx;
+  ctx.doc = &doc;
+  ctx.filename = filename;
+
+  auto* root = doc.RootElement();
+
+  if (!root)
+  {
+    ctx.object_root = nullptr;
+    return ctx;
+  }
+
+  // If root is Object, use it
+  if (std::string(root->Name()) == "Object")
+  {
+    ctx.object_root = root;
+    return ctx;
+  }
+
+  // If child Object exists, use it
+  if (auto* object = root->FirstChildElement("Object"))
+  {
+    ctx.object_root = object;
+    return ctx;
+  }
+
+  // Otherwise fall back to document root
+  ctx.object_root = root;
+  return ctx;
+}
+
+}  // namespace
 TEST(XMLParser, IncludeMissingFile)
 {
   const std::string scene_xml = R"(
@@ -378,7 +414,8 @@ TEST(XMLParser, ParseRectangleShape)
   const tinyxml2::XMLElement* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Rectangle);
   ASSERT_EQ(shape.dimensions.size(), 2u);
@@ -403,7 +440,8 @@ TEST(XMLParser, ParseCircleShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Circle);
   ASSERT_EQ(shape.dimensions.size(), 1u);
@@ -431,7 +469,8 @@ TEST(XMLParser, ParseTriangleShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Triangle);
   ASSERT_EQ(shape.vertices.size(), 3u);
@@ -459,7 +498,8 @@ TEST(XMLParser, ParsePolygonShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Polygon);
   ASSERT_EQ(shape.vertices.size(), 4u);
@@ -482,7 +522,8 @@ TEST(XMLParser, ParseBoxShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Box);
   ASSERT_EQ(shape.dimensions.size(), 3u);
@@ -508,7 +549,8 @@ TEST(XMLParser, ParseCylinderShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Cylinder);
   ASSERT_EQ(shape.dimensions.size(), 2u);
@@ -533,7 +575,8 @@ TEST(XMLParser, ParseSphereShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Sphere);
   ASSERT_EQ(shape.axes.size(), 0);  // No axes for spheres
@@ -551,7 +594,8 @@ TEST(XMLParser, ParseMeshShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Mesh);
 }
@@ -568,7 +612,8 @@ TEST(XMLParser, ParsePlaneShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Plane);
   ASSERT_EQ(shape.dimensions.size(), 2u);
@@ -593,7 +638,8 @@ TEST(XMLParser, ParseConeShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Cone);
   ASSERT_EQ(shape.dimensions.size(), 3u);
@@ -620,7 +666,8 @@ TEST(XMLParser, ParseLineShapeAnchor)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 1);
@@ -641,7 +688,8 @@ TEST(XMLParser, ParseLine2DShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
@@ -664,7 +712,8 @@ TEST(XMLParser, ParseLine3DShape)
   const auto* elem = doc.RootElement();
   ASSERT_TRUE(elem);
 
-  Shape shape = xml::parseShape(&doc, elem);
+  auto ctx = makeContext(doc);
+  Shape shape = xml::parseShape(elem, ctx);
 
   EXPECT_EQ(shape.type, ShapeType::Line);
   ASSERT_EQ(shape.axes.size(), 0);
@@ -719,11 +768,12 @@ TEST(XMLParser, DomainShapeComponent_Fluid_Well200uL)
   )XML";
 
   database::Database db;
-  auto eid = db.create();
+  auto eid = db.create_object("");
 
   // 1) Parse string as XML document
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml_txt.c_str()), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
 
   // 2) Get root element
   const tinyxml2::XMLElement* root = doc.RootElement();
@@ -735,11 +785,11 @@ TEST(XMLParser, DomainShapeComponent_Fluid_Well200uL)
     const std::string tag = child->Name();
     if (tag == "StackedShape")
     {
-      xml::parseStackedShapeComponent(&doc, child, db, eid);
+      xml::parseStackedShapeComponent(child, ctx, db, eid);
     }
     else if (tag == "DomainShape")
     {
-      xml::parseDomainShapeComponent(&doc, child, db, eid);
+      xml::parseDomainShapeComponent(child, ctx, db, eid);
     }
   }
 
@@ -857,10 +907,11 @@ TEST(XMLParser, ContainerComponent)
   )XML";
 
   database::Database db;
-  auto eid = db.create();
+  auto eid = db.create_object("");
 
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml_txt.c_str()), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   const tinyxml2::XMLElement* root = doc.RootElement();
   ASSERT_TRUE(root);
 
@@ -869,9 +920,9 @@ TEST(XMLParser, ContainerComponent)
   {
     const std::string tag = child->Name();
     if (tag == "StackedShape")
-      xml::parseStackedShapeComponent(&doc, child, db, eid);
+      xml::parseStackedShapeComponent(child, ctx, db, eid);
     else if (tag == "DomainShape")
-      xml::parseDomainShapeComponent(&doc, child, db, eid);
+      xml::parseDomainShapeComponent(child, ctx, db, eid);
   }
 
   // Pass 2: parse instances/refs and dependent components
@@ -882,15 +933,15 @@ TEST(XMLParser, ContainerComponent)
     {
       // Use the dedicated ref parser if available in your codebase.
       // This is the crucial fix vs. calling parseDomainShapeComponent on a Ref element.
-      xml::parseDomainShapeRefComponent(&doc, child, db, eid);
+      xml::parseDomainShapeRefComponent(child, ctx, db, eid);
     }
     else if (tag == "Insertion")
     {
-      xml::parseInsertionComponent(&doc, child, db, eid);
+      xml::parseInsertionComponent(child, ctx, db, eid);
     }
     else if (tag == "Container")
     {
-      xml::parseContainerComponent(&doc, child, db, eid);
+      xml::parseContainerComponent(child, ctx, db, eid);
     }
   }
 
@@ -931,7 +982,7 @@ TEST(XMLParser, ContainerComponent)
   EXPECT_EQ(cont->payload.domain_shape_id, std::string("domain_shape/container/A1"));
 
   // Fluid runtime linkage
-  EXPECT_EQ(cont->fluid.liquid_level_frame_id, std::string("container/A1/liquid_level"));
+  EXPECT_EQ(cont->fluid()->liquid_level_frame_id, std::string("container/A1/liquid_level"));
 
   // Optional: enable if your unit conversion is implemented
   // EXPECT_NEAR(cont->payload.volume, 100.0e-9, 1e-12);
@@ -1456,7 +1507,7 @@ TEST(XMLParser, ComponentsForLoop)
     EXPECT_DOUBLE_EQ(cont->payload.volume, 0.0);
 
     // Fluid runtime frame
-    EXPECT_EQ(cont->fluid.liquid_level_frame_id, cid + std::string("/liquid_level"));
+    EXPECT_EQ(cont->fluid()->liquid_level_frame_id, cid + std::string("/liquid_level"));
 
     // And ensure the domain instance exists and resolves to the same stacked shape
     auto* dom_inst = db.get_element<components::DomainShapeComponent>(eid, domain_inst_id);

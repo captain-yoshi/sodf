@@ -4,6 +4,41 @@
 
 using namespace sodf::xml;
 
+namespace {
+inline sodf::xml::XMLParseContext makeContext(tinyxml2::XMLDocument& doc, const char* filename = "test.xml")
+{
+  XMLParseContext ctx;
+  ctx.doc = &doc;
+  ctx.filename = filename;
+
+  auto* root = doc.RootElement();
+
+  if (!root)
+  {
+    ctx.object_root = nullptr;
+    return ctx;
+  }
+
+  // If root is Object, use it
+  if (std::string(root->Name()) == "Object")
+  {
+    ctx.object_root = root;
+    return ctx;
+  }
+
+  // If child Object exists, use it
+  if (auto* object = root->FirstChildElement("Object"))
+  {
+    ctx.object_root = object;
+    return ctx;
+  }
+
+  // Otherwise fall back to document root
+  ctx.object_root = root;
+  return ctx;
+}
+}  // namespace
+
 TEST(ExpressionRefs, RelativeParentAndMath)
 {
   const char* xml = R"(
@@ -17,8 +52,9 @@ TEST(ExpressionRefs, RelativeParentAndMath)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* test = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Test");
-  double x = evalNumberAttributeRequired(test->FirstChildElement("Position"), "x");  // uses internal context
+  double x = evalNumberAttributeRequired(test->FirstChildElement("Position"), "x", ctx);  // uses internal context
   EXPECT_NEAR(x, 6.5, 1e-12);
 }
 
@@ -37,8 +73,9 @@ TEST(ExpressionRefs, IndexingAndFields)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Block")->FirstChildElement("Use");
-  double a = evalNumberAttributeRequired(use, "a");
+  double a = evalNumberAttributeRequired(use, "a", ctx);
   EXPECT_NEAR(a, 1.2 + 10.0, 1e-12);
 }
 
@@ -55,8 +92,9 @@ TEST(ExpressionRefs, IdWithSlash)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  double h = evalNumberAttributeRequired(use, "h");
+  double h = evalNumberAttributeRequired(use, "h", ctx);
   EXPECT_NEAR(h, 0.15, 1e-12);
 }
 
@@ -69,8 +107,9 @@ TEST(ExpressionRefs, DocRootLookup)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  double k = evalNumberAttributeRequired(use, "k");
+  double k = evalNumberAttributeRequired(use, "k", ctx);
   EXPECT_EQ(k, 42.0);
 }
 
@@ -92,9 +131,10 @@ TEST(ExpressionRefs, NestedReference)
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
 
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Params")->FirstChildElement("Use");
 
-  double b = evalNumberAttributeRequired(use, "b");
+  double b = evalNumberAttributeRequired(use, "b", ctx);
   EXPECT_NEAR(b, 7.0, 1e-12);
 }
 
@@ -117,9 +157,10 @@ TEST(ExpressionRefs, RecursiveReferenceMultiHop)
 
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Params")->FirstChildElement("Use");
 
-  double c = evalNumberAttributeRequired(use, "c");
+  double c = evalNumberAttributeRequired(use, "c", ctx);
   EXPECT_NEAR(c, 13.0, 1e-12);
 }
 
@@ -139,9 +180,10 @@ TEST(ExpressionRefs, RecursiveReferenceCycleDetect)
 
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Params")->FirstChildElement("Use");
 
-  EXPECT_THROW({ (void)evalNumberAttributeRequired(use, "k"); }, std::runtime_error);
+  EXPECT_THROW({ (void)evalNumberAttributeRequired(use, "k", ctx); }, std::runtime_error);
 }
 
 TEST(ExpressionRefs, CurrentElementAttr)
@@ -156,8 +198,9 @@ TEST(ExpressionRefs, CurrentElementAttr)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Params")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "out"), 14.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "out", ctx), 14.0, 1e-12);
 }
 
 TEST(ExpressionRefs, ChildRootScope)
@@ -172,8 +215,9 @@ TEST(ExpressionRefs, ChildRootScope)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "out"), 6.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "out", ctx), 6.0, 1e-12);
 }
 
 TEST(ExpressionRefs, MidPathIdWithinSubtree1)
@@ -189,8 +233,9 @@ TEST(ExpressionRefs, MidPathIdWithinSubtree1)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Group")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "z"), 9.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "z", ctx), 9.0, 1e-12);
 }
 
 TEST(ExpressionRefs, MidPathIdWithinSubtree2)
@@ -204,8 +249,9 @@ TEST(ExpressionRefs, MidPathIdWithinSubtree2)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "h10"), 3.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "h10", ctx), 3.0, 1e-12);
 }
 
 TEST(ExpressionRefs, ZeroBasedIndexing)
@@ -223,9 +269,10 @@ TEST(ExpressionRefs, ZeroBasedIndexing)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Block")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "first"), 10.0, 1e-12);
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "third"), 30.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "first", ctx), 10.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "third", ctx), 30.0, 1e-12);
 }
 
 TEST(ExpressionRefs, IndexOutOfRangeThrows)
@@ -241,8 +288,9 @@ TEST(ExpressionRefs, IndexOutOfRangeThrows)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Block")->FirstChildElement("Use");
-  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad", ctx), std::runtime_error);
 }
 
 TEST(ExpressionRefs, UnclosedRefThrows)
@@ -256,8 +304,9 @@ TEST(ExpressionRefs, UnclosedRefThrows)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad", ctx), std::runtime_error);
 }
 
 TEST(ExpressionRefs, MissingFinalDotAttrThrows)
@@ -271,8 +320,9 @@ TEST(ExpressionRefs, MissingFinalDotAttrThrows)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad", ctx), std::runtime_error);
 }
 
 TEST(ExpressionRefs, UnknownAttributeThrows)
@@ -286,8 +336,9 @@ TEST(ExpressionRefs, UnknownAttributeThrows)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad", ctx), std::runtime_error);
 }
 
 TEST(ExpressionRefs, ParentTraversalBeyondRootThrows)
@@ -300,8 +351,9 @@ TEST(ExpressionRefs, ParentTraversalBeyondRootThrows)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad", ctx), std::runtime_error);
 }
 
 TEST(ExpressionRefs, ParenthesesPreservePrecedence)
@@ -316,8 +368,9 @@ TEST(ExpressionRefs, ParenthesesPreservePrecedence)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "out"), 10.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "out", ctx), 10.0, 1e-12);
 }
 
 TEST(ExpressionRefs, WhitespaceToleratedInRef)
@@ -331,8 +384,9 @@ TEST(ExpressionRefs, WhitespaceToleratedInRef)
   </Root>)";
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "x"), 1.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "x", ctx), 1.0, 1e-12);
 }
 
 TEST(ExpressionRefs, MissingKeyInSelectorThrows)
@@ -347,8 +401,9 @@ TEST(ExpressionRefs, MissingKeyInSelectorThrows)
 
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad"), std::runtime_error);
+  EXPECT_THROW((void)evalNumberAttributeRequired(use, "bad", ctx), std::runtime_error);
 }
 
 TEST(ExpressionRefs, QuotedKeyWithDotIdWorks)
@@ -364,8 +419,9 @@ TEST(ExpressionRefs, QuotedKeyWithDotIdWorks)
 
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "good"), 12.0, 1e-12);
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "good", ctx), 12.0, 1e-12);
 }
 
 TEST(ExpressionRefs, CombineMultipleRefs)
@@ -382,6 +438,7 @@ TEST(ExpressionRefs, CombineMultipleRefs)
 
   tinyxml2::XMLDocument doc;
   ASSERT_EQ(doc.Parse(xml), tinyxml2::XML_SUCCESS);
+  auto ctx = makeContext(doc);
   auto* use = doc.RootElement()->FirstChildElement("Object")->FirstChildElement("Block")->FirstChildElement("Use");
-  EXPECT_NEAR(evalNumberAttributeRequired(use, "sum"), 40.0, 1e-12);  // 10 + 30
+  EXPECT_NEAR(evalNumberAttributeRequired(use, "sum", ctx), 40.0, 1e-12);  // 10 + 30
 }

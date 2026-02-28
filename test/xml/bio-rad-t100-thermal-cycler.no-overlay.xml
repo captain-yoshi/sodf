@@ -153,7 +153,7 @@
     </StackedShape>
 
     <ForLoop row_name="A:H:1" row="1:8:1" col="1:12:1" zipped="[row_name,row]">
-      <Insertion id="insertion/{row_name}{col}">
+      <Insertion id="insertion/{row_name}{col}" role="Receptacle">
         <Transform parent="link/base">
           <Position
             x="{ 0.056559 - (row - 1) * 0.009 }"
@@ -176,7 +176,7 @@
       </StackedShapeRef>
     </ForLoop>
 
-    <Insertion id="insertion/obround_pedestal">
+    <Insertion id="insertion/obround_pedestal" role="Insert">
       <Transform parent="link/base">
         <Position x="-0.059301" y="0.0" z="0.003013"/>
         <Orientation roll="0.0" pitch="pi/2" yaw="0.0"/>

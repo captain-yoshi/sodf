@@ -30,7 +30,7 @@ TEST(DatabaseDiff, ReadThroughAndOverrideTransformElement)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   auto& tc = base.add<components::TransformComponent>(e);
   tc.elements.emplace_back("frameA", makeNode("root", Eigen::Vector3d(0.0, 0.0, 0.0)));
 
@@ -65,7 +65,7 @@ TEST(DatabaseDiff, RemoveTransformElement)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   auto& tc = base.add<components::TransformComponent>(e);
   tc.elements.emplace_back("frameB", makeNode("root", Eigen::Vector3d(5.0, 0.0, 0.0)));
 
@@ -83,7 +83,7 @@ TEST(DatabaseDiff, AddNewTransformElementOnlyInDiff)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   base.add<components::TransformComponent>(e);
 
   database::DatabaseDiff diff(base);
@@ -106,7 +106,7 @@ TEST(DatabaseDiff, RootReadThroughStillWorks)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   base.add<components::TransformComponent>(e);
 
   database::DatabaseDiff diff(base);
@@ -120,7 +120,7 @@ TEST(DatabaseDiff, ClearResetsToBaseView)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   auto& tc = base.add<components::TransformComponent>(e);
   tc.elements.emplace_back("frameC", makeNode("root", Eigen::Vector3d(0.0, 0.0, 0.0)));
 
@@ -155,7 +155,7 @@ TEST(DatabaseDiff, LayeredDiffOverridesParentDiff)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   auto& tc = base.add<components::TransformComponent>(e);
   tc.elements.emplace_back("frameA", makeNode("root", Eigen::Vector3d(0.0, 0.0, 0.0)));
 
@@ -205,7 +205,7 @@ TEST(DatabaseDiff, LayeredDiffRemoveBeatsParentAdd)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   base.add<components::TransformComponent>(e);
 
   database::DatabaseDiff d1(base);
@@ -223,7 +223,7 @@ TEST(SceneGraphDiff, RootGlobalReflectsDiffOverride)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "obj";
 
@@ -249,13 +249,10 @@ TEST(SceneGraphDiff, RootGlobalReflectsDiffOverride)
   }
 
   database::DatabaseDiff d2(d1);
-
-  auto map = systems::make_object_entity_map(d2);
-
   systems::SceneGraphCache cache(d2);
 
-  systems::update_entity_global_transforms(cache, e, map);
-  Eigen::Isometry3d W = systems::get_root_global_transform(cache, map, "obj");
+  systems::update_entity_global_transforms(cache, e);
+  Eigen::Isometry3d W = systems::get_root_global_transform(cache, "obj");
 
   EXPECT_TRUE(W.translation().isApprox(Eigen::Vector3d(1.0, 0.0, 0.0)));
 }
@@ -264,7 +261,7 @@ TEST(SceneGraphDiff, ChildGlobalReflectsDiffOverride)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj_child_override");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "obj_child_override";
 
@@ -291,11 +288,9 @@ TEST(SceneGraphDiff, ChildGlobalReflectsDiffOverride)
   }
 
   database::DatabaseDiff d2(d1);
-
-  auto map = systems::make_object_entity_map(d2);
   systems::SceneGraphCache cache(d2);
 
-  systems::update_entity_global_transforms(cache, e, map);
+  systems::update_entity_global_transforms(cache, e);
 
   Eigen::Isometry3d A = systems::get_global_transform(cache, e, "frameA");
   EXPECT_TRUE(A.translation().isApprox(Eigen::Vector3d(0.0, 1.0, 0.0)));
@@ -305,7 +300,7 @@ TEST(SceneGraphDiff, ParentOverridePropagatesToChild)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj_parent_propagates");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "obj_parent_propagates";
 
@@ -333,11 +328,9 @@ TEST(SceneGraphDiff, ParentOverridePropagatesToChild)
   }
 
   database::DatabaseDiff d2(d1);
-
-  auto map = systems::make_object_entity_map(d2);
   systems::SceneGraphCache cache(d2);
 
-  systems::update_entity_global_transforms(cache, e, map);
+  systems::update_entity_global_transforms(cache, e);
 
   Eigen::Isometry3d B = systems::get_global_transform(cache, e, "frameB");
 
@@ -349,7 +342,7 @@ TEST(SceneGraphDiff, LayeredDiffChildOverrideWins)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj_layered_child");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "obj_layered_child";
 
@@ -391,10 +384,9 @@ TEST(SceneGraphDiff, LayeredDiffChildOverrideWins)
     d2.add_or_replace<components::TransformComponent>(e, std::string("frameA"), a2);
   }
 
-  auto map = systems::make_object_entity_map(d2);
   systems::SceneGraphCache cache(d2);
 
-  systems::update_entity_global_transforms(cache, e, map);
+  systems::update_entity_global_transforms(cache, e);
 
   Eigen::Isometry3d A = systems::get_global_transform(cache, e, "frameA");
   EXPECT_TRUE(A.translation().isApprox(Eigen::Vector3d(2.0, 2.0, 2.0)));
@@ -415,7 +407,7 @@ TEST(SceneGraphDiff, RemoveFrameDoesNotCrashSceneGraphPath)
 
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj_remove_frame");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "obj_remove_frame";
 
@@ -433,11 +425,9 @@ TEST(SceneGraphDiff, RemoveFrameDoesNotCrashSceneGraphPath)
   ASSERT_EQ(d1.get_element<components::TransformComponent>(e, "frameA"), nullptr);
 
   database::DatabaseDiff d2(d1);
-
-  auto map = systems::make_object_entity_map(d2);
   systems::SceneGraphCache cache(d2);
 
-  systems::update_entity_global_transforms(cache, e, map);
+  systems::update_entity_global_transforms(cache, e);
 
   EXPECT_NO_THROW({
     Eigen::Isometry3d A = systems::get_global_transform(cache, e, "frameA");
@@ -449,7 +439,7 @@ TEST(SceneGraphDiff, CacheInvalidatesOnRevisionChange)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj_cache_revision");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "obj_cache_revision";
 
@@ -476,13 +466,11 @@ TEST(SceneGraphDiff, CacheInvalidatesOnRevisionChange)
   }
 
   database::DatabaseDiff d2(d1);
-
-  auto map = systems::make_object_entity_map(d2);
   systems::SceneGraphCache cache(d2);
 
   // Compute once
-  systems::update_entity_global_transforms(cache, e, map);
-  Eigen::Isometry3d W1 = systems::get_root_global_transform(cache, map, "obj_cache_revision");
+  systems::update_entity_global_transforms(cache, e);
+  Eigen::Isometry3d W1 = systems::get_root_global_transform(cache, "obj_cache_revision");
   EXPECT_TRUE(W1.translation().isApprox(Eigen::Vector3d(1.0, 0.0, 0.0)));
 
   // Second override directly on d2 (should bump revision)
@@ -500,8 +488,8 @@ TEST(SceneGraphDiff, CacheInvalidatesOnRevisionChange)
   }
 
   // Recompute using the same cache instance
-  systems::update_entity_global_transforms(cache, e, map);
-  Eigen::Isometry3d W2 = systems::get_root_global_transform(cache, map, "obj_cache_revision");
+  systems::update_entity_global_transforms(cache, e);
+  Eigen::Isometry3d W2 = systems::get_root_global_transform(cache, "obj_cache_revision");
   EXPECT_TRUE(W2.translation().isApprox(Eigen::Vector3d(3.0, 0.0, 0.0)));
 }
 
@@ -509,7 +497,7 @@ TEST(DatabaseDiff, WholeComponentReadThroughAndOverrideObjectComponent)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("base_id");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "base_id";
 
@@ -542,7 +530,7 @@ TEST(DatabaseDiff, WholeComponentAddNewObjectComponentOnlyInDiff)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("obj");
   // no ObjectComponent in base
 
   database::DatabaseDiff diff(base);
@@ -568,7 +556,7 @@ TEST(DatabaseDiff, WholeComponentRemoveObjectComponent)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("to_remove");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "to_remove";
 
@@ -586,7 +574,7 @@ TEST(DatabaseDiff, WholeComponentClearResetsToBaseView)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("base_id");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "base_id";
 
@@ -617,7 +605,7 @@ TEST(DatabaseDiff, LayeredDiffWholeComponentOverridesParent)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("base_id");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "base_id";
 
@@ -660,7 +648,7 @@ TEST(DatabaseDiff, LayeredDiffWholeComponentRemoveBeatsParentOverride)
 {
   database::Database base;
 
-  auto e = base.create();
+  auto e = base.create_object("base_id");
   auto& obj = base.add<components::ObjectComponent>(e);
   obj.id = "base_id";
 
